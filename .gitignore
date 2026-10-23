@@ -15,3 +15,7 @@ dist/
 # Local IDE and OS files
 .vscode/
 .DS_Store
+
+# Repo-local app data and caches (see scripts/nuke.sh)
+.data/
+.npm-cache/
