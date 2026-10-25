@@ -33,6 +33,10 @@ jobs:
           cache-dependency-path: lecture-notes-ai/pyproject.toml
       - name: Install
         run: pip install -e "lecture-notes-ai[web,dev]"
+      # Ubuntu 24.04 runners block unprivileged user namespaces via AppArmor,
+      # which breaks Chrome's sandbox (used by the PDF tests). Re-allow them.
+      - name: Allow Chrome sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Test
         working-directory: lecture-notes-ai
         env:
