@@ -5,7 +5,7 @@ import { startApp, startMockPython } from "./helpers.js";
 import { openDb } from "../src/db.js";
 import { loadConfig } from "../src/config.js";
 import { assertPyUrl } from "../src/pyclient.js";
-import { rateLimit, originMatcher } from "../src/middleware/security.js";
+import { rateLimit, originMatcher, clientKey } from "../src/middleware/security.js";
 
 test("health, security headers, JSON 404s", async () => {
   const t = await startApp();
@@ -105,6 +105,34 @@ test("rateLimit(): window resets", () => {
   assert.equal(run().status, 429);
   now += 150;
   assert.equal(run(), null);
+});
+
+test("clientKey(): CF-Connecting-IP only trusted from loopback, when enabled, and when it is an IP", () => {
+  const r = (sock, cf) => ({ socket: { remoteAddress: sock }, headers: cf === undefined ? {} : { "cf-connecting-ip": cf } });
+  assert.equal(clientKey(r("127.0.0.1", "203.0.113.7"), false), "127.0.0.1");          // flag off
+  assert.equal(clientKey(r("127.0.0.1", "203.0.113.7"), true), "203.0.113.7");
+  assert.equal(clientKey(r("::1", "2001:DB8::1"), true), "2001:db8::1");
+  assert.equal(clientKey(r("::ffff:127.0.0.1", "198.51.100.2"), true), "198.51.100.2");
+  assert.equal(clientKey(r("10.0.0.5", "203.0.113.7"), true), "10.0.0.5");            // non-loopback peer: spoof ignored
+  assert.equal(clientKey(r("127.0.0.1", "not-an-ip"), true), "127.0.0.1");
+  assert.equal(clientKey(r("127.0.0.1", "1.2.3.4, 5.6.7.8"), true), "127.0.0.1");
+  assert.equal(clientKey(r("127.0.0.1", "999.1.1.1"), true), "127.0.0.1");
+  assert.equal(clientKey(r("127.0.0.1"), true), "127.0.0.1");
+  assert.equal(clientKey({ socket: {} }, true), "?");
+});
+
+test("rateLimit(): trustCf gives each tunnel visitor their own bucket", () => {
+  const lim = rateLimit({ max: 1, windowMs: 60_000, trustCf: true }, () => 1000);
+  const run = (cf) => { let err = null; lim({ socket: { remoteAddress: "127.0.0.1" }, headers: { "cf-connecting-ip": cf } }, { setHeader() {} }, (e) => { err = e || null; }); return err; };
+  assert.equal(run("203.0.113.1"), null);
+  assert.equal(run("203.0.113.2"), null);
+  assert.equal(run("203.0.113.1").status, 429);
+});
+
+test("loadConfig(): TRUST_CF_HEADERS", () => {
+  assert.equal(loadConfig({}).trustCfHeaders, false);
+  assert.equal(loadConfig({ TRUST_CF_HEADERS: "1" }).trustCfHeaders, true);
+  assert.equal(loadConfig({ TRUST_CF_HEADERS: "true" }).trustCfHeaders, false);
 });
 
 test("static UI: serves web assets, hides dot-files, scripts, docs and backups; no directory escape", async () => {
