@@ -1,6 +1,6 @@
-# AQ Learning - architecture
+# AQspace - architecture
 
-AQ Learning turns YouTube lectures into **playlists you can watch in order**, with **resume-where-you-left-off progress** and **hand-drawn study notes** (HTML + PDF) written by an AI model from the video's transcript.
+AQspace turns YouTube lectures into **playlists you can watch in order**, with **resume-where-you-left-off progress** and **hand-drawn study notes** (HTML + PDF) written by an AI model from the video's transcript.
 
 It is three small programs, each with one job:
 

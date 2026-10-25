@@ -1,4 +1,4 @@
-# aq-api - AQ Learning application backend
+# aq-api - AQspace application backend
 
 Node.js (Express 5 + the built-in `node:sqlite`) service that owns the application data: users, playlists, videos, watch
 progress and notes records. The Python service (`D:\AQspace\lecture-notes-ai`) stays the **AI/media worker only**; this API
