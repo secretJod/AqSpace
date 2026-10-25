@@ -2,9 +2,9 @@
 
    AQ.importPlaylist.open(opener)         opens the dialog (focus returns to `opener` when it closes)
    AQ.importPlaylist.uniqueName(title)    free playlist name for `title` ("Title", else "Title (2)", "Title (3)"...), <= LIMITS.name
-   AQ.importPlaylist.cleanResponse(data)  validates / normalises the notes server's /api/playlist JSON (null when unusable)
+   AQ.importPlaylist.cleanResponse(data)  validates / normalises aq-api's /api/v1/import/youtube JSON (null when unusable)
 
-   Talks to the notes server: GET http://127.0.0.1:5055/api/playlist?url=<link>
+   Talks to aq-api only: GET <AQ.api.base>/api/v1/import/youtube?url=<link> (aq-api proxies the notes engine)
    -> {id, title, channel, count, videos:[{id, title, channel, duration_sec}], truncated, skipped}.
    Imported playlists are local copies (stored via AQ.store.createWithVideos with source {type:"youtube", listId}); nothing syncs back.
    All text is written with textContent / DOM APIs (never innerHTML). */
@@ -13,8 +13,7 @@
   var u = AQ.util, S = AQ.store, D = AQ.dialog;
   var el = u.el, button = u.button, icon = u.icon;
 
-  var API = "http://127.0.0.1:5055";
-  var OFFLINE_MSG = "Start the notes server (docker compose up)";
+  var OFFLINE_MSG = "AQspace server is not running. Start it with: docker compose up";
   var LIST_RE = /[?&]list=([A-Za-z0-9_-]{10,64})(?:[&#]|$)/;
   var TIMEOUT_MS = 60000;
   var PREVIEW_TILES = 4;
@@ -80,15 +79,14 @@
     var timedOut = false, ctl = typeof AbortController === "function" ? new AbortController() : null;
     var timer = setTimeout(function () { timedOut = true; if (ctl) ctl.abort(); }, TIMEOUT_MS);
     if (signal) signal.addEventListener("abort", function () { if (ctl) ctl.abort(); });
-    var viaApi = !!(AQ.api && AQ.api.available && AQ.api.available());      // served by aq-api: it proxies the notes server
-    var endpoint = viaApi ? AQ.api.base + "/api/v1/import/youtube?url=" : API + "/api/playlist?url=";
-    return fetch(endpoint + encodeURIComponent(link), { cache: "no-store", signal: ctl ? ctl.signal : undefined })
+    if (!(AQ.api && AQ.api.available && AQ.api.available())) { clearTimeout(timer); return Promise.reject(new Error(OFFLINE_MSG)); }
+    return fetch(AQ.api.base + "/api/v1/import/youtube?url=" + encodeURIComponent(link), { cache: "no-store", signal: ctl ? ctl.signal : undefined })
       .then(function (res) {
         return res.json().catch(function () { return null; }).then(function (body) {
           if (!res.ok) {
             var msg = body && typeof body.error === "string" && body.error ? body.error
-              : res.status === 404 ? "The notes server does not know how to import playlists yet - restart it with docker compose up."
-              : "The notes server could not read that playlist (error " + res.status + ").";
+              : res.status === 404 ? "The AQspace server does not know how to import playlists yet - restart it with docker compose up."
+              : "The AQspace server could not read that playlist (error " + res.status + ").";
             var err = new Error(msg); err.http = res.status; throw err;
           }
           return body;

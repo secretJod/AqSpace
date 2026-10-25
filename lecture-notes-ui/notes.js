@@ -1,11 +1,11 @@
-/* AQ Learning - notes jobs manager for the Lecture Notes AI server (http://127.0.0.1:5055).
+/* AQ Learning - notes jobs manager. All requests go through aq-api (/api/v1/notes/*); there is no direct notes-server path.
 
    AQ.notesJobs (the shared brain; rows, the player and the notes button all read it):
      status(videoId)      -> {state:'none'|'queued'|'running'|'ready'|'error', pct:0-100, stage, message, jobId, error}
      start(video)         -> starts a job unless one is already queued / running / ready ({id,title})
      retry(videoId)       -> forget the old result and start again
      subscribe(fn)        -> fn(videoId, status) on every change; returns an unsubscribe function
-     urls(videoId)        -> {html, pdf} (absolute URLs on the notes server) or null unless the notes are ready
+     urls(videoId)        -> {html, pdf} (aq-api URLs) or null unless the notes are ready
 
    Jobs live in the server's memory (a restart loses them -> 404), so {videoId:{jobId,state}} is kept in localStorage
    (`aq.notes.v1`), queued / running jobs resume polling after a reload and ready ones are re-checked lazily.
@@ -16,14 +16,13 @@
   "use strict";
   var u = AQ.util, el = u.el;
 
-  var API = "http://127.0.0.1:5055";
   var KEY = "aq.notes.v1";
   var JOB_RE = /^[a-f0-9]{32}$/;
   var MAX_RUNNING = 2;
   var POLL_MS = 1500;
   var BUSY_RETRY_MS = 6000;
   var STALE_MS = 40 * 60 * 1000;
-  var OFFLINE_MSG = "Start the notes server (docker compose up)";
+  var OFFLINE_MSG = "AQspace server is not running. Start it with: docker compose up";
   var EXPIRED_MSG = "Notes expired — generate again";
 
   var entries = {};   // videoId -> {state, pct, stage, message, jobId, error, startedAt, needsCheck, polling, fails, video}
@@ -32,9 +31,8 @@
   var posting = 0;    // POSTs in flight
   var tickTimer = null;
 
-  /* Server mode: when served by aq-api (AQ.api.available()), notes go through its /api/v1/notes/* endpoints. The server keeps
-     one job per video for everybody and caches finished notes, so a video that is already "ready" comes back immediately.
-     Otherwise (opened from another static server) the notes server on :5055 is called directly, as before. */
+  /* Notes go through aq-api's /api/v1/notes/* endpoints only. The server keeps one job per video for everybody and caches
+     finished notes, so a video that is already "ready" comes back immediately. When aq-api is unreachable, jobs fail with OFFLINE_MSG. */
   function serverMode() { return !!(AQ.api && AQ.api.available && AQ.api.available()); }
   function nurl(id) { return AQ.api.base + "/api/v1/notes/" + id; }
   function readJson(res) { return res.json().catch(function () { return {}; }).then(function (data) { return { res: res, data: data }; }); }
@@ -84,9 +82,8 @@
   function urls(id) {
     var e = entries[id];
     if (!e || e.state !== "ready" || !e.jobId) return null;
-    if (serverMode()) return { html: nurl(id) + "/html", pdf: nurl(id) + "/pdf" };
-    var base = API + "/api/jobs/" + e.jobId;
-    return { html: base + "/notes.html", pdf: base + "/notes.pdf" };
+    if (!serverMode()) return null;
+    return { html: nurl(id) + "/html", pdf: nurl(id) + "/pdf" };
   }
   function subscribe(fn) {
     listeners.push(fn);
@@ -123,7 +120,7 @@
     Object.keys(entries).forEach(function (id) { var e = entries[id]; if (e.jobId && (e.state === "queued" || e.state === "running")) n++; });
     return n;
   }
-  var apiSettled = true;   // false until api.js has decided between server mode and direct mode (see the end of this file)
+  var apiSettled = true;   // false until api.js has found (or failed to find) aq-api (see the end of this file)
   function pump() {
     if (!apiSettled) return;
     while (waiting.length && serverActive() < MAX_RUNNING) postJob(waiting.shift());
@@ -133,35 +130,7 @@
   function postJob(id) {
     var e = entries[id];
     if (!e || e.state !== "queued") return;
-    if (serverMode()) { postJobServer(id, e); return; }
-    posting++;
-    e.message = "Sending to the notes server…"; changed(id);
-    fetch(API + "/api/jobs", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: u.watchUrl(id), provider: "groq" })
-    }).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (data) { return { res: res, data: data }; });
-    }).then(function (o) {
-      posting--;
-      if (entries[id] !== e) return;
-      if (o.res.status === 429) {                       // server busy / rate limited: try again shortly
-        e.message = "Waiting for a free slot…";
-        waiting.push(id); changed(id);
-        setTimeout(pump, BUSY_RETRY_MS);
-        return;
-      }
-      if (!o.res.ok || !JOB_RE.test(String(o.data.job_id || ""))) {
-        fail(id, String(o.data.error || ("The notes server answered with status " + o.res.status + ".")).slice(0, 300));
-        return;
-      }
-      e.jobId = o.data.job_id; e.startedAt = Date.now(); e.message = "Queued…"; e.stage = "";
-      changed(id);
-      poll(id);
-      ensureTick();
-    }).catch(function () {
-      posting--;
-      if (entries[id] === e) fail(id, OFFLINE_MSG);
-    });
+    if (serverMode()) postJobServer(id, e); else fail(id, OFFLINE_MSG);
   }
 
   /* a status object from /api/v1/notes/<id> -> the entry (ready / error / running); true when the entry is still in progress */
@@ -259,33 +228,7 @@
     if (!e || !e.jobId || e.polling) return;
     if (Date.now() - e.startedAt > STALE_MS) { fail(id, "This is taking too long. Please try again."); return; }
     e.polling = true;
-    if (serverMode()) { pollServer(id, e); return; }
-    var jobId = e.jobId;
-    fetch(API + "/api/jobs/" + jobId, { cache: "no-store" }).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (d) { return { res: res, d: d }; });
-    }).then(function (o) {
-      e.polling = false;
-      if (entries[id] !== e || e.jobId !== jobId) return;
-      e.fails = 0;
-      if (o.res.status === 404) { expire(id, "The notes server restarted — generate again"); return; }
-      if (!o.res.ok) { fail(id, String(o.d.error || "The notes server reported a problem.").slice(0, 300)); return; }
-      var d = o.d;
-      if (d.status === "done") {
-        e.state = "ready"; e.pct = 100; e.stage = "pdf"; e.message = "Notes ready"; e.error = "";
-        changed(id); pump(); return;
-      }
-      if (d.status === "error") { fail(id, String(d.error || "The notes engine reported an error.").slice(0, 300)); return; }
-      var pct = Number(d.pct);
-      e.state = d.status === "running" ? "running" : "queued";
-      if (isFinite(pct) && pct >= (e.pct || 0)) e.pct = Math.min(100, pct);   // never move backwards
-      e.stage = String(d.stage || "").slice(0, 20);
-      e.message = String(d.message || "").slice(0, 160);
-      changed(id);
-    }).catch(function () {
-      e.polling = false;
-      if (entries[id] !== e) return;
-      if (++e.fails >= 3) fail(id, OFFLINE_MSG);
-    });
+    if (serverMode()) pollServer(id, e); else { e.polling = false; fail(id, OFFLINE_MSG); }
   }
 
   function expire(id, msg) {
@@ -303,24 +246,17 @@
   function validate(id) {
     var e = entries[id];
     if (!e || !e.jobId) return;
-    var jobId = e.jobId;
-    if (serverMode()) {
-      fetch(nurl(id), { cache: "no-store" }).then(readJson).then(function (o) {
-        if (entries[id] === e && o.res.ok && o.data.state === "none") expire(id, EXPIRED_MSG);
-      }).catch(function () { /* server down: keep it */ });
-      return;
-    }
-    fetch(API + "/api/jobs/" + jobId, { cache: "no-store" }).then(function (res) {
-      if (entries[id] !== e || e.jobId !== jobId) return;
-      if (res.status === 404) expire(id, EXPIRED_MSG);
-    }).catch(function () { /* server down: keep it, the links work again once it is back */ });
+    if (!serverMode()) return;           // server down: keep it, the links work again once it is back
+    fetch(nurl(id), { cache: "no-store" }).then(readJson).then(function (o) {
+      if (entries[id] === e && o.res.ok && o.data.state === "none") expire(id, EXPIRED_MSG);
+    }).catch(function () { /* server down: keep it */ });
   }
 
   /* ---------- player dialog panel ---------- */
   function mount(box, video) {
     box.textContent = "";
     box.className = "notes";
-    box.appendChild(el("p", null, "We send this lecture to your notes server and build a hand-drawn notes notebook. It usually takes a few minutes, and you can close this window while it works."));
+    box.appendChild(el("p", null, "We send this lecture to the AQspace server and build a hand-drawn notes notebook. It usually takes a few minutes, and you can close this window while it works."));
     var row = el("div", "modal__row");
     var b = AQ.noteButton(video, { onView: function () { var l = urls(video.id); if (l) window.open(l.html, "_blank", "noopener"); } });
     row.appendChild(b);
@@ -349,7 +285,7 @@
     AQ.api.ready().then(function () {
       apiSettled = true;
       if (!serverMode()) { resume(); return; }
-      // the server is the source of truth for jobs: forget the direct-mode job ids kept in localStorage
+      // the server is the source of truth for jobs: forget job ids kept in localStorage that it did not hand out
       Object.keys(entries).forEach(function (id) { var e = entries[id]; if (e.jobId && !e.video) { delete entries[id]; changed(id); } });
       hydrateFromServer().catch(function () { /* the buttons simply start from "Get notes" */ }).then(function () { pump(); ensureTick(); });
     });
