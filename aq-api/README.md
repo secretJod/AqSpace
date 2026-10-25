@@ -105,7 +105,21 @@ All SQL is parameterized (`?`); there is no string-built SQL with user input. Ne
 - Python is called only on fixed paths with validated ids; `PY_NOTES_URL` must be loopback; redirects from Python are refused.
 - Logs contain method, path, status, time only.
 
-## Plugging in OAuth later
+## Google sign-in (`AUTH_MODE=google`)
+
+Default `AUTH_MODE=local` = single built-in user (unchanged). With `AUTH_MODE=google` (`src/middleware/google-auth.js`):
+
+| Env | Meaning |
+|---|---|
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth web client from Google Cloud Console |
+| `GOOGLE_REDIRECT_URI` | default `http://localhost:5180/api/v1/auth/google/callback`; must match the Console exactly |
+| `SESSION_SECRET` | >= 32 chars, signs the session cookie (HMAC-SHA256) |
+| `SESSION_MAX_AGE_HOURS` | default 168 |
+| `AUTH_AFTER_LOGIN` | where the callback redirects, default `/` |
+
+Routes: `GET /api/v1/auth/google/login`, `GET /api/v1/auth/google/callback`, `POST /api/v1/auth/logout`, `GET /api/v1/me`.
+Unauthenticated API calls get 401; `health` and the static UI stay public. Sessions are stateless signed cookies (`aq_session`, HttpOnly, SameSite=Lax, Secure when the redirect URI is https); logout clears the cookie (no server-side revocation).
+
 
 Every `/api/v1` route (except `health`) runs one middleware, `authenticate(req, res, next)` (`src/middleware/auth.js`), and then only uses
 `req.user.id`. Today it is `localAuth` (always user 1, `local`). To use the OAuth app (`D:\AQspace\backend`):
