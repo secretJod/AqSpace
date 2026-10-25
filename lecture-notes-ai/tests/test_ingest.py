@@ -38,6 +38,15 @@ VID = "dQw4w9WgXcQ"
         f"https://www.youtube-nocookie.com/embed/{VID}",
         f"https://www.youtube.com/live/{VID}?feature=share",
         f"https://www.youtube.com/v/{VID}",
+        f"https://youtu.be/{VID}?si=AbCdEf123&t=5",
+        f"https://www.youtube.com/shorts/{VID}?feature=share",
+        f"https://m.youtube.com/shorts/{VID}",
+        f"https://youtube.com/shorts/{VID}/",
+        f"https://www.youtube.com/live/{VID}?si=xyz",
+        f"https://m.youtube.com/watch?v={VID}&feature=youtu.be&si=abc",
+        f"https://www.youtube.com/embed/{VID}?start=30&autoplay=1",
+        f"https://www.youtube.com/watch/{VID}",
+        f"https://www.youtube.com/watch?app=desktop&v={VID}&pp=ygU",
         f"  https://www.youtube.com/watch?v={VID}  ",
         f"HTTPS://WWW.YOUTUBE.COM/watch?v={VID}",
         VID,
@@ -87,6 +96,47 @@ def test_parse_id_with_dash_underscore():
 def test_parse_rejects(url):
     with pytest.raises(IngestError):
         parse_video_id(url)
+
+
+@pytest.mark.parametrize(
+    "url,needle",
+    [
+        ("https://www.youtube.com/@SomeCreator", "channel"),
+        ("https://www.youtube.com/@SomeCreator/videos", "channel"),
+        ("https://www.youtube.com/channel/UC1234567890", "channel"),
+        ("https://www.youtube.com/c/SomeName", "channel"),
+        ("https://m.youtube.com/user/someone", "channel"),
+        ("https://www.youtube.com/playlist?list=PL1234567890A", "playlist"),
+        ("https://www.youtube.com/watch?list=PL1234567890A", "playlist"),
+        ("https://www.youtube.com/feed/subscriptions", "single video"),
+        ("https://www.youtube.com/results?search_query=x", "single video"),
+    ],
+)
+def test_parse_friendly_errors_for_non_video_links(url, needle):
+    with pytest.raises(IngestError) as ei:
+        parse_video_id(url)
+    assert needle in str(ei.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://youtu.be/{VID[:10]}",
+        f"https://www.youtube.com/shorts/{VID}x",
+        f"https://www.youtube.com/live/../{VID}",
+        f"https://www.youtube.com/embed/{VID[:5]}%2F{VID[5:]}",
+        f"https://www.youtube.com/watch/{VID}?v=other",
+        f"https://www.youtube.com/watch?v={VID}&v=bad",
+        f"https://www.youtube.com/shorts/{VID[:10]}*",
+    ],
+)
+def test_parse_new_forms_stay_strict(url):
+    # whatever comes back must be an 11-char safe id or an IngestError
+    try:
+        out = parse_video_id(url)
+    except IngestError:
+        return
+    assert len(out) == 11 and all(c.isalnum() or c in "-_" for c in out)
 
 
 def test_parse_non_youtube_message_is_friendly():
