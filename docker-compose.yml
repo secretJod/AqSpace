@@ -40,3 +40,45 @@ services:
       - /app/node_modules
     depends_on:
       - backend
+
+  # Lecture Notes AI (Python worker). Binds 127.0.0.1:5055 inside its own network namespace,
+  # so 5055 is never reachable from the host. aq-api shares this namespace, which is why
+  # aq-api's port 5180 is published here.
+  notes-ai:
+    build: ./lecture-notes-ai
+    env_file: ./lecture-notes-ai/backend/.env   # GROQ_API_KEY etc. (never baked into the image)
+    ports:
+      - "127.0.0.1:5180:5180"             # aq-api (notes app UI + API)
+    volumes:
+      - ./lecture-notes-ai/backend/output:/app/backend/output   # generated notes stay in the repo
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5055/api/providers', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # aq-api (Node/Express + SQLite) serves the notes UI and talks to notes-ai over loopback.
+  aq-api:
+    build:
+      context: .
+      dockerfile: aq-api/Dockerfile
+    network_mode: "service:notes-ai"
+    environment:
+      PY_NOTES_URL: http://127.0.0.1:5055
+      PY_NOTES_PROVIDER: groq
+      TUNNEL_ORIGINS: https://*.trycloudflare.com   # pages served through the tunnel may write
+    volumes:
+      - ./aq-api/data:/app/aq-api/data    # SQLite aq.db stays in the repo (gitignored)
+    depends_on:
+      notes-ai:
+        condition: service_healthy
+
+  # Public link to the UI (aq-api :5180). Opt-in: docker compose --profile tunnel up
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.3
+    profiles: ["tunnel"]
+    network_mode: "service:notes-ai"      # same loopback as aq-api
+    command: tunnel --no-autoupdate --url http://127.0.0.1:5180 --http-host-header localhost:5180
+    depends_on:
+      - aq-api

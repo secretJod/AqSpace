@@ -19,3 +19,23 @@ dist/
 # Repo-local app data and caches (see scripts/nuke.sh)
 .data/
 .npm-cache/
+
+# Personal Claude Code settings
+.claude/settings.local.json
+
+# AQspace notes app (repo-local runtime, venv and caches; see scripts/nuke.sh)
+.run/
+.pip-cache/
+.venv/
+**/output/
+lecture-notes-ai/backend/output/
+lecture-notes-ai/backend/.env
+aq-api/data/
+*.db
+__pycache__/
+.pytest_cache/
+*.egg-info/
+
+# Repo-local GitHub CLI binary + login (see docs/GITHUB_SETUP.md)
+.tools/
+.gh-config/

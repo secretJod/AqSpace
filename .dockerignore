@@ -1,0 +1,13 @@
+**/node_modules
+**/.venv
+.data
+.run
+.npm-cache
+.pip-cache
+.git
+**/.env
+aq-api/data
+aq-api/.npmrc
+lecture-notes-ai/backend/output
+lecture-notes-ui/screenshots
+docs/*.pdf

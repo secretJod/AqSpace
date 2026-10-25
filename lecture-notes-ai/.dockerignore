@@ -1,0 +1,10 @@
+.venv
+**/__pycache__
+**/*.pyc
+*.egg-info
+.pytest_cache
+backend/output
+backend/.env
+**/.env
+.git
+start.ps1
