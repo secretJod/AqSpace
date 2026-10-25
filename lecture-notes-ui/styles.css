@@ -637,3 +637,20 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; backgro
   .imp__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) { .imp__spin { animation-duration: 2.4s; } }
+
+/* ---------- accessibility: global reduced-motion catch-all (#10) ----------
+   Per-component rules above handle specifics; this stops any remaining CSS
+   animation/transition. JS effects (water.js, clickspark.js) must also check
+   matchMedia('(prefers-reduced-motion: reduce)') themselves. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* loading spinner stays a slow spin so users still see progress */
+@media (prefers-reduced-motion: reduce) { .imp__spin { animation-duration: 2.4s !important; animation-iteration-count: infinite !important; } }
+/* keep a visible focus ring in Windows high-contrast / forced-colors mode */
+@media (forced-colors: active) { :focus-visible { outline: 2px solid CanvasText; } }
