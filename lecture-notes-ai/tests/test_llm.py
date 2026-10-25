@@ -1022,3 +1022,78 @@ def test_prompts_describe_all_eight_diagram_types():
     assert "topic overview" in low and "request/response" in low
     assert "mindmap" in prompts.DIGEST_SHAPE and "sequence" in prompts.DIGEST_SHAPE
     assert set(notes_schema.DIAGRAM_TYPES) == {"flow", "stack", "compare", "cycle", "tree", "timeline", "mindmap", "sequence"}
+
+
+# ------------------------------------------------- provider fallback (#8) ---
+SERVER_GROQ = "gsk_SERVERKEY0123456789abcdefghij"
+
+
+@pytest.fixture
+def fb_env(monkeypatch):
+    for v in llm.SERVER_KEY_ENV.values():
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("LNA_PROVIDER_FALLBACK", "1")
+    return monkeypatch
+
+
+def _by_host(primary_resp):
+    """Gemini calls get `primary_resp`; anything else (the fallback) gets good notes."""
+    groq = pipeline_script("groq")
+
+    def script(call, i):
+        if "googleapis" in call["url"]:
+            return primary_resp
+        return groq(call, i)
+    return script
+
+
+@pytest.mark.parametrize("bad", [FakeResp(429, {"error": {"message": "rate"}}), FakeResp(503, {}),
+                                 requests.Timeout("t")])
+def test_fallback_on_transient_uses_server_key(fb_env, bad, caplog):
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    rec = install(fb_env, _by_host(bad))
+    with caplog.at_level("WARNING"):
+        notes = run("gemini")
+    assert notes["meta"]["provider"] == "groq" and notes["meta"]["fallback_from"] == "gemini"
+    assert notes["meta"]["model"].startswith("groq/")
+    groq_calls = [c for c in rec.calls if "groq" in c["url"]]
+    assert groq_calls and groq_calls[0]["headers"]["Authorization"] == "Bearer " + SERVER_GROQ
+    assert "falling back to groq" in caplog.text
+    assert KEYS["gemini"] not in caplog.text and "SERVERKEY" not in caplog.text
+
+
+def test_fallback_off_by_default(fb_env):
+    fb_env.delenv("LNA_PROVIDER_FALLBACK")
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    rec = install(fb_env, _by_host(FakeResp(503, {})))
+    with pytest.raises(LLMError, match="(?i)unavailable"):
+        run("gemini")
+    assert all("googleapis" in c["url"] for c in rec.calls)
+
+
+def test_no_fallback_on_bad_key(fb_env):
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    rec = install(fb_env, _by_host(FakeResp(401, {"error": {"message": "bad key"}})))
+    with pytest.raises(LLMError, match="rejected the API key"):
+        run("gemini")
+    assert all("googleapis" in c["url"] for c in rec.calls)
+
+
+def test_no_fallback_without_server_key(fb_env):
+    # only the primary's own env key exists; nothing else to fall back to
+    fb_env.setenv("GEMINI_API_KEY", KEYS["gemini"])
+    rec = install(fb_env, _by_host(FakeResp(503, {})))
+    with pytest.raises(LLMError, match="(?i)unavailable"):
+        run("gemini")
+    assert all("googleapis" in c["url"] for c in rec.calls)
+
+
+def test_fallback_happens_only_once(fb_env):
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.setenv("XAI_API_KEY", "xai-SERVERKEY0123456789abcdefghij")
+    rec = install(fb_env, [FakeResp(503, {})])
+    with pytest.raises(LLMError, match="also failed") as ei:
+        run("gemini")
+    hosts = {c["url"].split("/")[2] for c in rec.calls}
+    assert hosts == {"generativelanguage.googleapis.com", "api.groq.com"}
+    assert "SERVERKEY" not in str(ei.value) and KEYS["gemini"] not in str(ei.value)
