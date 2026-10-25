@@ -39,3 +39,6 @@ __pycache__/
 # Repo-local GitHub CLI binary + login (see docs/GITHUB_SETUP.md)
 .tools/
 .gh-config/
+
+# Agent git worktrees
+.claude/worktrees/

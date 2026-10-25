@@ -19,12 +19,16 @@ AQspace runs like a small company. The user is the **QA Tester** and final appro
 Work outside your area goes to its owner. Cross-area changes need a note to the other owner in the journal.
 
 ## Board (GitHub Project, the source of truth)
+**AQspace Board**: https://github.com/users/secretJod/projects/2 (repo `secretJod/AqSpace`)
+- `scripts/board.sh list` shows every card; `scripts/board.sh move <issue#> "In Progress"` moves one.
+- `scripts/gh.sh` is the repo-local GitHub CLI; use it for issues, comments and PRs (`scripts/gh.sh pr create ...`).
+- In a git worktree, call these with the main checkout's absolute path: `/Users/karanupadhyay/WorkSpace/AQspace/scripts/board.sh` (the gh binary only lives there).
+
 Columns: **Backlog → Todo → In Progress → In Review → QA → Done**
 - Every task is a GitHub issue on the board. No work starts without a card.
 - Labels: `role:<agent-name>`, `type:feature|bug|chore|decision`, `priority:p0|p1|p2`.
 - An agent moves only its own cards, and comments on the card when it starts, when it opens a PR, and when it hands off to QA.
 - **QA gate:** only the user (with `qa-guide`) moves a card from QA to Done. A failed QA goes back to In Progress with a bug comment.
-- Until GitHub is connected (see `docs/GITHUB_SETUP.md`), mirror the board in `docs/BOARD.md` using the same columns.
 
 ## Git
 - One branch per card: `<agent-name>/<issue#>-<short-slug>`. Never commit directly to `main`.
@@ -34,5 +38,6 @@ Columns: **Backlog → Todo → In Progress → In Review → QA → Done**
 ## Daily track
 - Each working day has `docs/daily/YYYY-MM-DD.md` (copy `docs/daily/TEMPLATE.md`).
 - Every agent that worked that day adds its section: **Done / Next / Blockers / Cards**.
+- Agents working in parallel branches do NOT edit `docs/AGENT_JOURNAL.md` or `docs/daily/` in their branch (that causes merge conflicts). They put their journal entry in the PR description and report it to the team lead, who appends journal and daily entries on `main`.
 - `scaling-lead` adds any decisions taken. `client-presenter` adds a 3-line client summary at the end of the day.
 - This works alongside `docs/AGENT_JOURNAL.md` (the per-feature story) and `docs/PLAN.md` (requirements).
