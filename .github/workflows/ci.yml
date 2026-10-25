@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  aq-api:
+    name: aq-api (Node 24)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: aq-api/package-lock.json
+      - name: Install and test
+        working-directory: aq-api
+        run: |
+          npm ci
+          npm test
+
+  lecture-notes-ai:
+    name: lecture-notes-ai (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: lecture-notes-ai/pyproject.toml
+      - name: Install
+        run: pip install -e "lecture-notes-ai[web,dev]"
+      # Ubuntu 24.04 runners block unprivileged user namespaces via AppArmor,
+      # which breaks Chrome's sandbox (used by the PDF tests). Re-allow them.
+      - name: Allow Chrome sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Test
+        working-directory: lecture-notes-ai
+        env:
+          LNA_OFFLINE: "1"
+        run: python -m pytest tests -q
