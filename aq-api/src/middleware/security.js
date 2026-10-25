@@ -69,13 +69,32 @@ export function cors(req, res, next) {
   next();
 }
 
-/** Tiny in-memory fixed-window limiter per client IP (no X-Forwarded-For: this service is not behind a proxy). */
-export function rateLimit({ max, windowMs }, now = Date.now) {
+const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+const IPV6_RE = /^[0-9a-f:.]{2,45}$/i;
+function looksLikeIp(v) { return IPV4_RE.test(v) || (v.includes(":") && IPV6_RE.test(v)); }
+
+/**
+ * Client key for rate limiting. With trustCf, a CF-Connecting-IP header is used only when the TCP peer is
+ * loopback (i.e. the local cloudflared) and the header value is a plausible IP; otherwise the socket address.
+ */
+export function clientKey(req, trustCf = false) {
+  const sock = req.socket?.remoteAddress || "?";
+  if (trustCf && LOOPBACK.has(sock)) {
+    const raw = req.headers?.["cf-connecting-ip"];
+    const v = typeof raw === "string" ? raw.trim() : "";
+    if (v && looksLikeIp(v)) return v.toLowerCase();
+  }
+  return sock;
+}
+
+/** Tiny in-memory fixed-window limiter per client IP. X-Forwarded-For is never trusted; CF-Connecting-IP only with trustCf (see clientKey). */
+export function rateLimit({ max, windowMs, trustCf = false }, now = Date.now) {
   const hits = new Map();
   const timer = setInterval(() => { const t = now(); for (const [k, h] of hits) if (h.reset <= t) hits.delete(k); }, windowMs);
   timer.unref();
   return function limiter(req, res, next) {
-    const key = req.socket.remoteAddress || "?";
+    const key = clientKey(req, trustCf);
     const t = now();
     let h = hits.get(key);
     if (!h || h.reset <= t) { h = { n: 0, reset: t + windowMs }; hits.set(key, h); }

@@ -68,6 +68,7 @@ services:
       PY_NOTES_URL: http://127.0.0.1:5055
       PY_NOTES_PROVIDER: groq
       TUNNEL_ORIGINS: https://*.trycloudflare.com   # pages served through the tunnel may write
+      TRUST_CF_HEADERS: "1"                         # rate-limit per visitor via CF-Connecting-IP (only from loopback cloudflared)
     volumes:
       - ./aq-api/data:/app/aq-api/data    # SQLite aq.db stays in the repo (gitignored)
     depends_on:

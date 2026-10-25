@@ -19,6 +19,7 @@ export function loadConfig(env = process.env, overrides = {}) {
     requireMembership: env.NOTES_REQUIRE_MEMBERSHIP !== "0",   // notes can only be started for videos in the user's playlists
     bodyLimit: env.BODY_LIMIT || "256kb",
     log: env.LOG !== "0",
+    trustCfHeaders: env.TRUST_CF_HEADERS === "1",       // rate-limit by CF-Connecting-IP when the peer is loopback (cloudflared)
     rate: {                                              // per client IP, fixed window
       general: { max: int(env.RATE_LIMIT_PER_MIN, 600), windowMs: 60_000 },
       heavy: { max: int(env.RATE_LIMIT_HEAVY_PER_MIN, 20), windowMs: 60_000 }   // starting notes / YouTube imports
