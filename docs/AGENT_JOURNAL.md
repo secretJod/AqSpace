@@ -86,3 +86,59 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** I deleted start-all.sh, stop-all.sh, lecture-notes-ai/start.ps1 and lecture-notes-ui/serve.ps1. I changed the user-facing messages in aq-api/src/pyclient.js, lecture-notes-ui/notes.js, importpl.js and lecture-notes-ai/backend/app/server.py to say "docker compose up", and cleaned README and web-dev-2's agent file. I kept nuke.sh, gh.sh and secret-scan.sh. Tests: aq-api 33/33, Python 327 passed and 1 skipped.
 **What it solved:** One way to run the app, Docker, so there is less to maintain and nothing points to dead scripts.
 **Notes for the next agent:** aq-api/test fixtures still create a fake "serve.ps1" on purpose, to check that the static server hides scripts. Leave that alone.
+
+## [2026-10-25 23:41] client-presenter (#11): client-presenter (#11) PR #18
+- Done: docs/client/release-notes-v0.1.md + demo-script.md (5-min demo, backup plan, honest limits)
+- Next: update the notes when OAuth/CI/fallback merge; tune the 45s backup cutoff after a real run
+- Blockers: none
+
+## [2026-10-25 23:41] web-dev-1 (#4): web-dev-1 (#4) PR #19
+- Done: per-visitor rate limiting behind the tunnel (TRUST_CF_HEADERS; CF-Connecting-IP trusted only from loopback with a valid IP); aq-api 36/36
+- Next: none on this card
+- Blockers: none. Note: relies on cloudflared being the only loopback client in the shared namespace
+
+## [2026-10-25 23:41] ui-dev-2 (#10): ui-dev-2 (#10) PR #20
+- Done: renamed AQ Learning to AQspace in 3 docs; global reduced-motion rule and high-contrast focus ring in styles.css; all 14 text/background pairs pass WCAG AA (lowest 5.13)
+- Next: #21 (Backlog, ui-dev-1): JS effects should respect prefers-reduced-motion
+- Blockers: no browser available for screenshots
+
+## [2026-10-25 23:41] qa-guide (#3): qa-guide (#3) PR #22
+- Done: docs/qa/README.md (how to QA with the board), TEMPLATE.md, 1-docker-tunnel.md (19 steps, including failure cases)
+- Next: a plan per new QA card
+- Blockers: none
+
+## [2026-10-25 23:41] ui-dev-1 (#7): ui-dev-1 (#7) PR #23
+- Done: removed every direct call to :5055 from notes.js and importpl.js; one clear "server not running" message instead; aq-api 33/33
+- Next: rework of localStorage-first is a separate card
+- Blockers: none
+
+## [2026-10-25 23:41] ai-dev-2 (#9): ai-dev-2 (#9) PR #25
+- Done: added /watch/<id>; clear messages for channel, playlist and other non-video links; 25 new offline tests (Python 352 passed); validation as strict as before
+- Next: none on this card
+- Blockers: none
+
+## [2026-10-25 23:41] ai-dev-1 (#8): ai-dev-1 (#8) PR #26
+- Done: opt-in fallback provider (LNA_PROVIDER_FALLBACK=1) on 429/5xx/timeout, using server keys only; records meta.provider and fallback_from; 7 new tests (Python 334 passed)
+- Next: possible UI follow-up to show meta.provider; SERVER_KEY_ENV in llm.py duplicates ENV_KEYS in server.py
+- Blockers: none
+
+## [2026-10-25 23:41] web-dev-3 (#5): web-dev-3 (#5) PR #27
+- Done: Google sign-in in aq-api behind AUTH_MODE=google (signed HttpOnly cookies, no new dependencies), local mode unchanged; aq-api 40/40
+- Next: #24 (Backlog, ui-dev-1) Sign in button + 401 handling; optional sessions table so logout works on the server
+- Blockers: none. Team-lead note: PR #19 and #27 both edit aq-api app.js/config.js, so expect a small merge conflict. The tunnel already rewrites Host to localhost, so hostGuard should not block it; verify the OAuth redirect URI through the tunnel in QA.
+
+## [2026-10-25 23:41] scaling-lead (#6): scaling-lead (#6) PR #28
+- Done: ADR-0001 (retire backend/frontend/Postgres; Google login lives in aq-api), ADR-0002 (stay on SQLite; measurable trigger for moving to Postgres), decisions index
+- Next: Backlog #13 (remove old app, needs the user's approval), #14 (sessions in SQLite), #15 (SQL in the repo layer), #16 (backups + lock-wait logging)
+- Blockers: none
+
+## [2026-10-25 23:41] web-dev-2 (#2): web-dev-2 (#2) PR #17
+- Done: GitHub Actions CI (Node 24 aq-api tests + Python 3.12 pytest); fixed Chrome sandbox on Ubuntu 24.04 runners with a sysctl step; all checks green
+- Next: limit push trigger to main (CI currently runs twice per PR); npm cache path mismatch
+- Blockers: none
+
+## [2026-10-25 23:41] Claude (team lead): First company night
+**Before:** The board was empty and the agents were idle.
+**What I did:** I pushed the baseline to main, connected GitHub Project #2 (columns, labels, scripts/board.sh), created cards #1–#12 and ran all 10 agents in parallel worktrees. Each opened a PR and moved its card to QA. I recorded their reports here and in the daily file.
+**What it solved:** 10 PRs (#17–#20, #22, #23, #25–#28) are waiting for QA, and 8 follow-up cards are in Backlog.
+**Notes for the next agent:** #19 and #27 both touch aq-api app.js/config.js, so merge one and rebase the other. Full PR stories are in each PR body.
