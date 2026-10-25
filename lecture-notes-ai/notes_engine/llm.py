@@ -28,7 +28,9 @@ message.
 from __future__ import annotations
 
 import json
+import logging
 import math
+import os
 import random
 import re
 import time
@@ -91,6 +93,10 @@ class _OutputTruncated(LLMError):
     def __init__(self, message: str, text: str = ""):
         super().__init__(message)
         self.text = text
+
+
+class _TransientError(LLMError):
+    """Rate limit (429), server error (5xx) or timeout - another provider may still work."""
 
 
 class _HTTPStatusError(LLMError):
@@ -393,7 +399,7 @@ class _Client:
             except (requests.Timeout, requests.ConnectionError) as e:
                 last_status = type(e).__name__
                 if attempt + 1 >= MAX_ATTEMPTS:
-                    raise LLMError(f"Could not reach {self.label} (network error or timeout) after "
+                    raise _TransientError(f"Could not reach {self.label} (network error or timeout) after "
                                    f"{MAX_ATTEMPTS} tries. Check your connection and try again.") from None
                 _sleep(self._backoff(attempt))
                 continue
@@ -412,21 +418,21 @@ class _Client:
             except Exception:  # noqa: BLE001
                 pass
             if sc == 429 and _daily_quota_hit(body_text):
-                raise LLMError(self._quota_message("daily quota"))
+                raise _TransientError(self._quota_message("daily quota"))
             if sc in (408, 429, 500, 502, 503, 504, 529):
                 last_status = sc
                 wait = _parse_retry_delay(resp)
                 if wait is not None and wait > 90:
-                    raise LLMError(self._quota_message(f"limit (asks to wait {int(wait)} s)")) if sc == 429 else \
-                        LLMError(f"{self.label} is overloaded (HTTP {sc}); try again later.")
+                    raise _TransientError(self._quota_message(f"limit (asks to wait {int(wait)} s)")) if sc == 429 else \
+                        _TransientError(f"{self.label} is overloaded (HTTP {sc}); try again later.")
                 if attempt + 1 >= MAX_ATTEMPTS:
                     break
                 _sleep(min(MAX_RETRY_WAIT, (wait + 0.5) if wait is not None else self._backoff(attempt)))
                 continue
             raise self._http_error(sc, resp, body_text)
         if last_status == 429:
-            raise LLMError(self._quota_message("rate limit"))
-        raise LLMError(f"{self.label} is temporarily unavailable (HTTP {last_status}) after "
+            raise _TransientError(self._quota_message("rate limit"))
+        raise _TransientError(f"{self.label} is temporarily unavailable (HTTP {last_status}) after "
                        f"{MAX_ATTEMPTS} tries. Please try again in a few minutes.")
 
     @staticmethod
@@ -805,9 +811,67 @@ def _clean_key(api_key: str | None) -> str:
     return key
 
 
+# provider id -> env var holding a SERVER-side key (mirrors backend/app/server.py ENV_KEYS)
+SERVER_KEY_ENV = {
+    "gemini": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "xai": "XAI_API_KEY",
+    "huggingface": "HF_TOKEN",
+}
+_log = logging.getLogger(__name__)
+
+
+def _fallback_enabled() -> bool:
+    return (os.environ.get("LNA_PROVIDER_FALLBACK") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _fallback_target(primary: str) -> tuple[str, str] | None:
+    """First other provider with a server-side (env) key. Never uses a key the user typed."""
+    for pid in PROVIDERS:
+        if pid == primary:
+            continue
+        key = (os.environ.get(SERVER_KEY_ENV.get(pid, "")) or "").strip()
+        if key:
+            return pid, key
+    return None
+
+
 def generate_notes(transcript: dict, *, provider: str, api_key: str, model: str | None = None,
                    progress: Progress | None = None) -> dict:
-    """Transcript -> validated Notes dict. Raises LLMError (user-safe message) on failure."""
+    """Transcript -> validated Notes dict. Raises LLMError (user-safe message) on failure.
+
+    With ``LNA_PROVIDER_FALLBACK=1``, a rate limit / 5xx / timeout from ``provider`` triggers one
+    retry with the first other provider that has a server-side key in the environment. The
+    provider actually used is in ``meta.model`` (and ``meta.provider`` / ``meta.fallback_from``).
+    """
+    try:
+        return _generate_notes(transcript, provider=provider, api_key=api_key, model=model, progress=progress)
+    except _TransientError as e:
+        if not _fallback_enabled():
+            raise
+        target = _fallback_target(provider)
+        if target is None:
+            raise
+        fb, fb_key = target
+        _log.warning("LLM provider %s failed (%s); falling back to %s",
+                     provider, _scrub(e, api_key, 160), fb)
+        if progress:
+            try:
+                progress("notes", 3, f"{PROVIDERS[provider]['label']} is busy; retrying with {PROVIDERS[fb]['label']}...")
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            notes = _generate_notes(transcript, provider=fb, api_key=fb_key, model=None, progress=progress)
+        except LLMError as e2:
+            raise LLMError(f"{e} Fallback to {PROVIDERS[fb]['label']} also failed: {_scrub(e2, fb_key, 300)}") from None
+        meta = notes.setdefault("meta", {})
+        meta["provider"] = fb
+        meta["fallback_from"] = provider
+        return notes
+
+
+def _generate_notes(transcript: dict, *, provider: str, api_key: str, model: str | None,
+                    progress: Progress | None) -> dict:
     if provider not in PROVIDERS:
         raise LLMError(f"Unknown provider '{_scrub(provider, None, 40)}'. Choose one of: {', '.join(PROVIDERS)}.")
     key = _clean_key(api_key)
