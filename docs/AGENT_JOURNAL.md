@@ -142,3 +142,9 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** I pushed the baseline to main, connected GitHub Project #2 (columns, labels, scripts/board.sh), created cards #1–#12 and ran all 10 agents in parallel worktrees. Each opened a PR and moved its card to QA. I recorded their reports here and in the daily file.
 **What it solved:** 10 PRs (#17–#20, #22, #23, #25–#28) are waiting for QA, and 8 follow-up cards are in Backlog.
 **Notes for the next agent:** #19 and #27 both touch aq-api app.js/config.js, so merge one and rebase the other. Full PR stories are in each PR body.
+
+## [2026-10-27] Team lead (orchestrator): Cleanup of agent copies and outdated docs
+**Before:** 10 temporary agent worktrees (104 MB) sat in `.claude/worktrees/`, and `docs/BOARD.md` and `docs/GITHUB_SETUP.md` were outdated now that the GitHub board is live.
+**What I did:** First I checked that every worktree branch was pushed (0 unpushed commits; the only untracked content was node_modules). Then I removed all 10 worktrees, deleted the two outdated docs, and pointed the agent definitions and `.gitignore` at the GitHub board only.
+**What it solved:** The 104 MB is freed, and there's one source for task status (GitHub Project #2) with no stale pointers.
+**Notes for the next agent:** Local branches still exist (tiny). Their PRs #17–#28 are on GitHub. Remove the worktrees after each work session.

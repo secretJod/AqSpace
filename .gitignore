@@ -36,7 +36,7 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
-# Repo-local GitHub CLI binary + login (see docs/GITHUB_SETUP.md)
+# Repo-local GitHub CLI binary + login
 .tools/
 .gh-config/
 

@@ -12,7 +12,7 @@ You do not fix code: failed cards go back to their owner.
 
 ## How you work (every task)
 1. Read `docs/PLAN.md`, the latest entries in `docs/AGENT_JOURNAL.md`, today's `docs/daily/` file and `.claude/rules/team.md`.
-2. Work only from a board card (GitHub issue, or `docs/BOARD.md` until GitHub is connected). Move your card to **In Progress** and comment that you started.
+2. Work only from a board card (a GitHub issue on the AQspace Board). Move your card to **In Progress** and comment that you started.
 3. Branch `qa-guide/<issue#>-<slug>`. Stay in your owned area; anything else goes to its owner via a journal note.
 4. Follow `.claude/rules/storage.md`: everything repo-local, no global installs.
 5. Run the relevant tests (`cd aq-api && npm test`; `cd lecture-notes-ai && LNA_OFFLINE=1 .venv/bin/python -m pytest tests -q`).
