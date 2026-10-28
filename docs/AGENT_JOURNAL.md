@@ -148,3 +148,9 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** First I checked that every worktree branch was pushed (0 unpushed commits; the only untracked content was node_modules). Then I removed all 10 worktrees, deleted the two outdated docs, and pointed the agent definitions and `.gitignore` at the GitHub board only.
 **What it solved:** The 104 MB is freed, and there's one source for task status (GitHub Project #2) with no stale pointers.
 **Notes for the next agent:** Local branches still exist (tiny). Their PRs #17–#28 are on GitHub. Remove the worktrees after each work session.
+
+## [2026-10-28] Team lead (orchestrator): R5 planned, Colab Pro GPU worker
+**Before:** Notes were generated only by Groq (a cloud API). The user wants their own model running on Colab Pro, with notes backed up to Google Drive.
+**What I did:** I added R5 to `docs/PLAN.md` with a changelog row. I designed a pull-based worker: Colab asks aq-api for jobs through the tunnel using a worker token, saves the notes to Drive and posts them back, and Groq is the fallback. I created cards #29–#35 in Todo for scaling-lead, web-dev-1, ai-dev-1, web-dev-3, ai-dev-2, qa-guide and client-presenter.
+**What it solved:** The work has a design that survives Colab disconnects, and every piece has an owner.
+**Notes for the next agent:** #29 (the ADR) goes first; #30 and #31 depend on it. Keep the notes prompt and schema identical to Groq's. The worker token goes only in the gitignored `.env`. Nothing has been built yet.

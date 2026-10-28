@@ -16,6 +16,7 @@ Reference: https://github.com/developer4-gif/aq (read remotely, never cloned).
 - **R2 (2026-10-25):** Wrap the whole application in containers so a single command (`docker compose up --build`) starts everything. The Groq API key goes in `lecture-notes-ai/backend/.env`. Work split across 3 agents (A: notes-ai image, B: aq-api image, C: compose integration and verification).
 - **R3 (2026-10-25):** Public access through a Cloudflare quick tunnel pointed at the UI port (5180); the app must accept requests coming through the tunnel. Opt-in compose profile `tunnel`.
 - **R4 (2026-10-25):** Fixed agent team (3 web, 2 AI, 2 UI developers, scaling-lead, client-presenter, qa-guide) working like a company: GitHub Project kanban (Backlog→Todo→In Progress→In Review→QA→Done) as the source of truth, daily standup files, and a QA gate where the user (QA tester, guided by qa-guide) approves Done.
+- **R5 (2026-10-28):** Turn transcripts into notes on a **Google Colab Pro GPU worker** running an open model (~25 GB class, L4/A100). The worker *pulls* jobs from aq-api through the tunnel with a worker token, sends notes back, and saves a copy of every note to **Google Drive** so nothing is lost. Groq stays as the fallback when Colab is offline.
 
 ## Architecture
 | Service | Path | Port | Tech |
@@ -40,3 +41,4 @@ Run with Docker only: `docker compose up --build`.
 | 2026-10-25 | R3: added cloudflared `tunnel` service (profile) and `TUNNEL_ORIGINS` allowlist in aq-api CORS guard | User wants traffic via Cloudflare tunnel on the UI port | User |
 | 2026-10-25 | R4: fixed agent team, board workflow, daily standups, QA gate | User wants to run the project like a company | User |
 | 2026-10-25 | Docker is the only way to run AQspace: removed start-all.sh/stop-all.sh and the Windows start.ps1/serve.ps1 | Remove duplicate and unused scripts | User |
+| 2026-10-28 | Added R5: Colab Pro GPU worker for transcript→notes, Google Drive backup, Groq fallback | User wants own model on Colab Pro and notes saved to Drive | User |
