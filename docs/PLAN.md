@@ -41,4 +41,4 @@ Run with Docker only: `docker compose up --build`.
 | 2026-10-25 | R3: added cloudflared `tunnel` service (profile) and `TUNNEL_ORIGINS` allowlist in aq-api CORS guard | User wants traffic via Cloudflare tunnel on the UI port | User |
 | 2026-10-25 | R4: fixed agent team, board workflow, daily standups, QA gate | User wants to run the project like a company | User |
 | 2026-10-25 | Docker is the only way to run AQspace: removed start-all.sh/stop-all.sh and the Windows start.ps1/serve.ps1 | Remove duplicate and unused scripts | User |
-| 2026-10-28 | Added R5: Colab Pro GPU worker for transcript→notes, Google Drive backup, Groq fallback | User wants own model on Colab Pro and notes saved to Drive | User |
+| 2026-10-28 | Added R5: Colab Pro GPU worker (open-source model, no rate limits) for transcript→notes, Google Drive backup, Groq fallback | User wants own model on Colab Pro and notes saved to Drive | User |
