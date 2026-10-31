@@ -18,6 +18,7 @@ Reference: https://github.com/developer4-gif/aq (read remotely, never cloned).
 - **R4 (2026-10-25):** Fixed agent team (3 web, 2 AI, 2 UI developers, scaling-lead, client-presenter, qa-guide) working like a company: GitHub Project kanban (Backlog→Todo→In Progress→In Review→QA→Done) as the source of truth, daily standup files, and a QA gate where the user (QA tester, guided by qa-guide) approves Done.
 - **R5 (2026-10-28):** Turn transcripts into notes on a **Google Colab Pro GPU worker** running an open-source model (~25 GB class, L4/A100) that is powerful and fast, with no request or token rate limits. The worker *pulls* jobs from aq-api through the tunnel with a worker token, sends notes back, and saves a copy of every note to **Google Drive** so nothing is lost. Main reason: videos can be up to 24 hours long, which Groq cannot handle, so long transcripts are processed with chunked map-reduce and checkpoints in Drive. Groq stays as the fallback when Colab is offline (short videos only). Starting it takes one click (aq-api opens the notebook link); no browser automation.
 
+  - **R5 update (2026-11-01):** the model is **Qwen3-8B-Q4_K_M (GGUF, 5 GB)**, kept in `models/` (gitignored). It runs with llama.cpp `llama-server` natively on the Mac (M2, Metal GPU) at 127.0.0.1:8081 as a new `local` provider in notes_engine. Colab becomes an optional runner of the same server. Notes should match or beat Groq quality. The team lead runs the team on their own and reports when done; other GPU jobs on the Mac may be stopped.
 ## Architecture
 | Service | Path | Port | Tech |
 |---|---|---|---|
@@ -44,3 +45,4 @@ Run with Docker only: `docker compose up --build`.
 | 2026-10-28 | Added R5: Colab Pro GPU worker (open-source model, no rate limits) for transcript→notes, Google Drive backup, Groq fallback | User wants own model on Colab Pro and notes saved to Drive | User |
 | 2026-10-28 | R5: Colab Pro started with one click (no Playwright automation); evaluation vs Groq added to QA | User chose the safe one-click option | User |
 | 2026-10-28 | R5: support videos up to 24h (chunked map-reduce, Drive checkpoints, GPU Whisper, card #36) | User: long videos are why we need the local model | User |
+| 2026-11-01 | R5 update: model Qwen3-8B-Q4_K_M GGUF moved to `models/`, served by llama.cpp on the Mac (Metal); Colab optional; cards #37-#39 | User chose the model and handed orchestration to the team lead | User |
