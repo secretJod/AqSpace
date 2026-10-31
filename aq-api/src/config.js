@@ -23,7 +23,7 @@ export function loadConfig(env = process.env, overrides = {}) {
       general: { max: int(env.RATE_LIMIT_PER_MIN, 600), windowMs: 60_000 },
       heavy: { max: int(env.RATE_LIMIT_HEAVY_PER_MIN, 20), windowMs: 60_000 }   // starting notes / YouTube imports
     },
-    notes: { pollMinMs: 800, verifyMs: 5 * 60_000, pyTimeoutMs: 10_000, importTimeoutMs: 60_000 }
+    notes: { pollMinMs: 800, verifyMs: 5 * 60_000, pyTimeoutMs: 10_000, importTimeoutMs: 60_000, maxAutoResumes: int(env.NOTES_MAX_AUTO_RESUMES, 3) }
   };
   return Object.assign(cfg, overrides);
 }

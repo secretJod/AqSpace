@@ -132,7 +132,9 @@ test("migrations are idempotent and create the expected tables", async () => {
   assert.equal(db.prepare("SELECT name FROM users WHERE id = 1").get().name, "local");
   const { migrate } = await import("../src/db.js");
   migrate(db, cfg.sqlDir);
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get().n, 1);
+  const fs = await import("node:fs");
+  const files = fs.readdirSync(cfg.sqlDir).filter((f) => /^\d+.*\.sql$/.test(f)).length;
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get().n, files);   // each applied exactly once
   // the "one live job per video" rule is enforced by the database itself
   db.prepare("INSERT INTO videos (id) VALUES ('aaaaaaaaaaa')").run();
   const ins = (s) => db.prepare("INSERT INTO notes_jobs (video_id, status, created_at, updated_at) VALUES ('aaaaaaaaaaa', ?, 'x', 'x')").run(s);

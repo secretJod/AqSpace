@@ -16,7 +16,7 @@ function listen(server) {
 export async function startMockPython() {
   const state = {
     jobsCreated: [], nextJob: 1, jobs: new Map(),       // jobId -> {status, pct}
-    busy: false, rejectWith: null, playlistUrls: [], hits: { status: 0, html: 0 }
+    busy: false, rejectWith: null, playlistUrls: [], hits: { status: 0, html: 0 }, providers: [], providersStatus: 200
   };
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, "http://x");
@@ -37,7 +37,7 @@ export async function startMockPython() {
       state.hits.status++;
       const j = state.jobs.get(m[1]);
       if (!j) return json(404, { error: "Job not found" });
-      json(200, { status: j.status, pct: j.pct, stage: "x", message: "m", job_id: m[1], ...(j.error ? { error: j.error } : {}) });
+      json(200, { status: j.status, pct: j.pct, stage: j.stage ?? "x", message: j.message ?? "m", job_id: m[1], ...(j.error ? { error: j.error } : {}), ...(j.chunk != null ? { chunk: j.chunk, chunks: j.chunks } : {}) });
     } else if ((m = /^\/api\/jobs\/([a-f0-9]{32})\/notes\.(html|pdf)$/.exec(u.pathname))) {
       if (m[2] === "html") state.hits.html++;
       const j = state.jobs.get(m[1]);
@@ -53,7 +53,7 @@ export async function startMockPython() {
       state.playlistUrls.push(u.searchParams.get("url"));
       json(200, { id: "PLabcdefghij", title: "T", channel: "C", count: 1, videos: [{ id: VID(1), title: "v", channel: "C", duration_sec: 61 }], truncated: false, skipped: 0 });
     } else if (u.pathname === "/api/providers") {
-      json(200, { providers: [] });
+      json(state.providersStatus, { providers: state.providers });
     } else if ((m = /^\/static\/fonts\/([A-Za-z0-9._-]+)$/.exec(u.pathname))) {
       res.writeHead(200, { "content-type": "font/woff2" }); res.end("font");
     } else json(404, { error: "nope" });
