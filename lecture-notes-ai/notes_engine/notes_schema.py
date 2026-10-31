@@ -575,8 +575,12 @@ def _unwrap(raw: Any) -> dict:
 
 
 # ------------------------------------------------------------------ main ----
-def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | None = None) -> dict:
+def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | None = None,
+                   max_sections: int = MAX_SECTIONS) -> dict:
     """Coerce ``raw`` into the contract schema. Raises ValueError if unusable.
+
+    ``max_sections`` (keyword) raises the section cap for very long lectures (the local provider
+    writes up to ~200 pages for a 24 h video); the JSON shape is unchanged.
 
     ``model`` (optional, keyword) sets ``meta.model`` (e.g. "groq/llama-3.3-70b-versatile");
     otherwise any value present in ``raw['meta']['model']`` is kept.
@@ -593,7 +597,7 @@ def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | No
         cs = _coerce_section(s)
         if cs:
             sections.append(cs)
-        if len(sections) >= MAX_SECTIONS:
+        if len(sections) >= max(1, int(max_sections)):
             break
     if not sections:
         raise ValueError("notes contain no usable sections")

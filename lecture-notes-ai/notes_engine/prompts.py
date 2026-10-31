@@ -14,6 +14,9 @@ import json
 import math
 from typing import Any
 
+# Bump when any prompt changes: it is part of the checkpoint key, so old cached chunks are not reused.
+PROMPT_VERSION = "2026-11-01.1"
+
 # ------------------------------------------------------------ shared text ----
 RULES = """\
 You write STUDY NOTES from a lecture/video transcript, in the voice of a diligent student's hand-written field notebook: terse, concrete, well organised, lower-case friendly section titles (like "architecture, the 30,000ft map" or "session & auth").
@@ -74,13 +77,16 @@ SECTION_EXAMPLE_JSON = _j({"sections": [SECTION_EXAMPLE]})
 FRONT_EXAMPLE_JSON = _j(FRONT_EXAMPLE)
 
 
-def target_section_count(duration_sec: int | None, transcript_chars: int) -> int:
-    """~1 section (= 1 notebook page) per 2.5 minutes; 6..18 (dense, one idea per page)."""
+def target_section_count(duration_sec: int | None, transcript_chars: int, max_sections: int = 18) -> int:
+    """~1 section (= 1 notebook page) per 2.5 minutes; 6..max_sections (dense, one idea per page).
+
+    Rate-limited cloud providers keep the default cap of 18; the local provider raises it so a
+    multi-hour lecture still gets a page every few minutes."""
     if duration_sec and duration_sec > 0:
         n = round(duration_sec / 150)
     else:
         n = round(transcript_chars / 1900)  # ~ 2.5 min of speech is ~ 1.9k chars
-    return max(6, min(18, n))
+    return max(6, min(max(6, max_sections), n))
 
 
 def _meta_line(meta: dict) -> str:
@@ -164,6 +170,15 @@ def digest_to_text(d: Any, max_chars: int) -> str:
 COMPOSE_SYSTEM = RULES
 
 
+SECTION_RECIPE = """\
+Recipe for EACH section (follow it in order):
+1. `title`: lower-case, 2-7 words, names the topic. `subtitle`: <= 8 words. `timestamp`: the first [mm:ss] marker of its group.
+2. `blocks` (3-7): open with a `paragraph` that explains the idea in 1-3 sentences; every "TERM x: y" line becomes a `definition` block; every STEPS line becomes a `steps` block; TABLE -> `table`; CODE -> `code` (copy the code exactly); FORMULA -> `formula`; EXAMPLE -> `example`; a warning or rule of thumb -> `callout`; remaining facts -> `bullets`. Keep every number, name and command from the facts.
+3. `diagram`: build it from a DIAGRAM hint when there is one, else null.
+4. `key_takeaways`: 2-4 short lines. `recall`: one {"q": "...", "a": "..."} answerable from this section.
+Check before answering: valid JSON, one object with a "sections" list, no fact that is not in the digests."""
+
+
 def compose_single_messages(meta: dict, transcript_text: str, n_sections: int) -> tuple[str, str]:
     lo, hi = n_sections, n_sections + 3
     user = f"""\
@@ -199,6 +214,7 @@ This is part {batch_no} of {batch_total} of the lecture. Below are condensed, al
 
 {prior}Produce {n_min}-{n_max} sections for this part, NEVER fewer than {n_min}: split the digests into consecutive groups by [mm:ss] marker and give each group its own section (about one notebook page, ~2.5 minutes of lecture), so this whole part is covered from its first to its last marker. Use only the facts below. Do NOT output meta/cover/glossary/recap, section `number` or `next`.
 
+{SECTION_RECIPE}
 {strict}
 Output shape and style example (illustrates FORMAT only; never reuse its facts):
 {SECTION_EXAMPLE_JSON}
@@ -210,11 +226,21 @@ DIGESTS:
     return COMPOSE_SYSTEM, user
 
 
-def compose_final_messages(meta: dict, outline: list[dict], terms: list[str]) -> tuple[str, str]:
+def outline_lines(outline: list[dict]) -> list[str]:
+    """One line per written section: "number. [timestamp] title - subtitle | takeaways"."""
     lines = []
     for i, s in enumerate(outline):
         take = "; ".join(s.get("key_takeaways") or [])[:260]
-        lines.append(f"{i + 2}. {s.get('title')} - {s.get('subtitle') or ''} | {take}")
+        ts = f"[{s['timestamp']}] " if s.get("timestamp") else ""
+        lines.append(f"{i + 2}. {ts}{s.get('title')} - {s.get('subtitle') or ''} | {take}")
+    return lines
+
+
+def compose_final_messages(meta: dict, outline: list[dict], terms: list[str],
+                           lines: list[str] | None = None) -> tuple[str, str]:
+    """``lines`` (optional) replaces the outline with pre-condensed lines (very long lectures)."""
+    if lines is None:
+        lines = outline_lines(outline)
     user = f"""\
 Lecture: {_meta_line(meta)}
 All sections of the notebook are already written. Below is their outline (number. title - subtitle | takeaways). Using ONLY this information, write the front matter and back matter.
@@ -234,6 +260,26 @@ OUTLINE:
 CANDIDATE TERMS (already defined in the notes; reuse these definitions, tightened if needed):
 {chr(10).join("- " + t for t in terms[:40]) or "(none)"}"""
     return COMPOSE_SYSTEM, user
+
+
+# ------------------------------------------------------------------- merge ----
+MERGE_SYSTEM = """\
+You merge consecutive fact digests of a very long lecture into ONE shorter part digest for a later stage that writes notebook pages. Keep chronological order, keep the [mm:ss] / [h:mm:ss] start marker of every topic you keep, keep every definition, number, name, command and code line that matters, and drop repetition. Never add facts that are not in the digests. Output ONE JSON object only."""
+
+
+def merge_messages(meta: dict, digest_text: str, level: int, part: int, total: int, max_words: int) -> tuple[str, str]:
+    user = f"""\
+Lecture: {_meta_line(meta)}
+Merge level {level}, part {part} of {total}. Fold the digests below into one part digest of 4-12 topics, in order, under about {max_words} words in total. Merge topics that repeat; keep the earliest start marker of each merged topic.
+
+JSON shape (omit empty/null optional fields):
+{DIGEST_SHAPE}
+
+DIGESTS TO MERGE:
+\"\"\"
+{digest_text}
+\"\"\""""
+    return MERGE_SYSTEM, user
 
 
 FIX_JSON_SYSTEM = "You repair malformed JSON. Output ONLY the corrected JSON object: same content, valid syntax, no commentary, no code fences."
