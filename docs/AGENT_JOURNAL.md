@@ -190,3 +190,15 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** I wrote `docs/qa/r5-local-model.md` (17 steps) and `docs/qa/r5-eval.md`: 5 fixed videos, minutes per hour of video, and a blind 1–5 side-by-side against Groq with a pass rule.
 **What it solved:** The user can test R5 alone and decide pass or fail on facts.
 **Notes for the next agent:** The log grep steps assume certain log words; tell qa-guide if the actual logs differ.
+
+## [2026-11-01] web-dev-3: R5 integration, local model end to end (#32, PR #45)
+**Before:** R5 was spread across five PRs that had never run together, and compose still pointed at Groq.
+**What I did:** I merged #26, #43, #25, #44, #42 and the #41/#40 docs onto one branch (no conflicts), checked the cross-PR contracts, and wired compose: LNAI_LOCAL_URL through host.docker.internal, fallback on, PY_NOTES_PROVIDER=local, and the whisper extra in the image. I added `tests/test_e2e_local.py`: a fake llama-server, a crash mid-compose, and a resume. Python 400 passed, aq-api 40/40.
+**What it solved:** There is now one tested branch where every R5 piece fits together.
+**Notes for the next agent:** llama-server must stay bound to 127.0.0.1. The Whisper cache in the container isn't bind-mounted yet. Stale chunk counters after the map stage are cosmetic. After #45 merges, close #26, #43, #25, #44, #42, #41 and #40.
+
+## [2026-11-01] client-presenter: Guide for the local Qwen3-8B model (#35, PR #46)
+**Before:** The user had no plain page explaining how to use the local model.
+**What I did:** I wrote `docs/client/local-model.md`: what changed, setup, daily use, time estimates, fallback, how to stop it, and where notes are saved. Steps that depend on #37 are marked.
+**What it solved:** One page for the user to follow once #37 is approved.
+**Notes for the next agent:** Update it with real llm.sh output and measured times after #37.
