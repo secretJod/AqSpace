@@ -49,3 +49,5 @@ The board is GitHub Project #2 ("AQspace Board"). Each card is a GitHub issue.
 | `README.md` | This guide |
 | `TEMPLATE.md` | Blank test plan + bug report format to copy |
 | `1-docker-tunnel.md` | Plan for card #1: Docker one-command start + Cloudflare tunnel |
+| `r5-local-model.md` | Plan for card #34: local Qwen3-8B model (R5), resume, fallback, security |
+| `r5-eval.md` | R5 evaluation: 5 fixed videos, speed, local vs Groq quality scores |
