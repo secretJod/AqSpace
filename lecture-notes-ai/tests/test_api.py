@@ -39,7 +39,7 @@ def make_fakes(*, gate=None, transcript_exc=None, llm_exc=None, pdf_exc=None, ht
             raise FakeIngestError("That does not look like a YouTube link.")
         return "dQw4w9WgXcQ"
 
-    def get_transcript(url, *, groq_key=None, progress=None):
+    def get_transcript(url, *, groq_key=None, progress=None, work_dir=None):
         calls["groq_key"] = groq_key
         if progress:
             progress("transcript", 0, "starting")

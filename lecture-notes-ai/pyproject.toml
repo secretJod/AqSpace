@@ -26,6 +26,9 @@ dependencies = [
 [project.optional-dependencies]
 web = ["flask>=3.0", "flask-cors>=4.0", "python-dotenv>=1.0"]
 dev = ["pytest>=8"]
+# local speech-to-text for videos without captions (CPU int8; model downloads on first use
+# into <repo>/.tools/whisper-models). imageio-ffmpeg ships a static ffmpeg into the venv.
+whisper = ["faster-whisper>=1.0", "imageio-ffmpeg>=0.5"]
 
 [project.scripts]
 lecture-notes = "notes_engine.__main__:main"
