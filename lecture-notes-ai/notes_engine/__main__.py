@@ -77,8 +77,8 @@ def _build_parser() -> argparse.ArgumentParser:
                "or a .env file; --api-key works too but may be saved in your shell history.",
     )
     p.add_argument("url", nargs="?", help="YouTube video link (watch, youtu.be, shorts, embed ...)")
-    p.add_argument("--provider", "-p", default="groq", choices=sorted(ENV_KEYS),
-                   help="AI provider (default: groq)")
+    p.add_argument("--provider", "-p", default="groq", choices=sorted([*ENV_KEYS, "local"]),
+                   help="AI provider (default: groq; 'local' = llama-server at LNAI_LOCAL_URL, no key)")
     p.add_argument("--model", "-m", help="model name (default: the provider's default model)")
     p.add_argument("--out", "-o", default="notes.pdf",
                    help="output PDF path (default: notes.pdf); a folder name puts notes.pdf inside it")
@@ -133,10 +133,10 @@ def main(argv: list[str] | None = None) -> int:
         _say("error: a YouTube URL is required", sys.stderr)
         return EXIT_USAGE
 
-    env_name = ENV_KEYS[args.provider]
-    key = (args.api_key or os.environ.get(env_name) or "").strip()
+    env_name = ENV_KEYS.get(args.provider, "-")
+    key = (args.api_key or os.environ.get(env_name) or "").strip() if args.provider in ENV_KEYS else "local"
     groq_key = (args.groq_key or "").strip() or None
-    _secrets.extend(k for k in (key, groq_key, os.environ.get("GROQ_API_KEY")) if k)
+    _secrets.extend(k for k in (key if args.provider in ENV_KEYS else None, groq_key, os.environ.get("GROQ_API_KEY")) if k)
     if not key:
         _say(f"error: no API key for '{args.provider}'. Set {env_name} (or put it in a .env file), "
              "or pass --api-key. Free keys: run with --list-providers.", sys.stderr)

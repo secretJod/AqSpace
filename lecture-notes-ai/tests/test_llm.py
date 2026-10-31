@@ -1097,3 +1097,179 @@ def test_fallback_happens_only_once(fb_env):
     hosts = {c["url"].split("/")[2] for c in rec.calls}
     assert hosts == {"generativelanguage.googleapis.com", "api.groq.com"}
     assert "SERVERKEY" not in str(ei.value) and KEYS["gemini"] not in str(ei.value)
+
+
+# ------------------------------------------------- local provider (#31) ---
+@pytest.fixture
+def local_env(monkeypatch):
+    for v in ("LNAI_LOCAL_URL", "LNAI_CHECKPOINT_DIR", "LNA_PROVIDER_FALLBACK", *llm.SERVER_KEY_ENV.values()):
+        monkeypatch.delenv(v, raising=False)
+    return monkeypatch
+
+
+def run_local(transcript=None, **kw):
+    return llm.generate_notes(transcript or make_transcript(5), provider="local", **kw)
+
+
+def test_local_request_shape_no_key_no_think(local_env):
+    local_env.setenv("LNAI_LOCAL_URL", "http://127.0.0.1:9999/v1/")
+    rec = install(local_env, pipeline_script("local"))
+    notes = run_local(make_transcript(30))
+    c = rec.calls[0]
+    assert c["url"] == "http://127.0.0.1:9999/v1/chat/completions"
+    assert "Authorization" not in c["headers"]
+    assert c["json"]["model"] == "qwen3-8b"
+    assert c["json"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert c["json"]["messages"][1]["content"].endswith("/no_think")
+    assert c["json"]["response_format"] == {"type": "json_object"}
+    assert c["timeout"][1] == llm.LOCAL_READ_TIMEOUT
+    assert notes["meta"]["model"] == "local/qwen3-8b"
+    # the final (cover/glossary/recap) call thinks, with a reasoning budget and no JSON grammar
+    final = [x for x in rec.calls if kind_of(x) == "final"][0]
+    assert final["json"]["chat_template_kwargs"] == {"enable_thinking": True}
+    assert "response_format" not in final["json"]
+    assert not final["json"]["messages"][1]["content"].endswith("/no_think")
+    prof = llm._profile("local", "qwen3-8b")
+    assert final["json"]["max_tokens"] == prof["final_out"] + prof["final_reasoning_reserve"]
+
+
+def test_local_profile_fits_16k_context():
+    p = llm._profile("local", "qwen3-8b")
+    assert p["tpm"] is None and p["max_sections_per_call"] >= 4 and p["max_total_sections"] >= 100
+    rules = len(prompts.compose_batch_messages({"title": "x"}, "", 4, 5, [], 1, 1)[0]) + 2500
+    assert (p["batch_chars"] + rules) / 4.0 + p["out_batch"] <= 14500   # compose (Qwen ~4 chars/token)
+    assert (p["chunk_chars"] + 3000) / 4.0 + p["digest_out"] <= 14500   # digest
+
+
+def test_local_unclosed_think_is_dropped(local_env):
+    install(local_env, [FakeResp(200, ok_payload("local", "<think>still reasoning about"))])
+    client = llm._Client("local", "", "qwen3-8b")
+    assert client.complete("s", "u", 10) == ("", False)
+
+
+def test_local_server_down_is_friendly_and_fast(local_env, sleeps):
+    rec = install(local_env, [requests.ConnectionError("refused")])
+    with pytest.raises(LLMError, match="local model server is not reachable"):
+        run_local()
+    assert len(rec.calls) == llm.LOCAL_MAX_ATTEMPTS
+
+
+def test_local_falls_back_to_groq_only_for_short_videos(local_env):
+    local_env.setenv("LNA_PROVIDER_FALLBACK", "1")
+    local_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    groq = pipeline_script("groq")
+
+    def script(call, i):
+        if "127.0.0.1" in call["url"]:
+            raise requests.ConnectionError("refused")
+        return groq(call, i)
+    rec = install(local_env, script)
+    notes = run_local(make_transcript(20))
+    assert notes["meta"]["provider"] == "groq" and notes["meta"]["fallback_from"] == "local"
+    # a 2 h video waits for the local server instead of going to Groq
+    rec.calls.clear()
+    with pytest.raises(LLMError, match="not reachable"):
+        run_local(make_transcript(120))
+    assert all("127.0.0.1" in c["url"] for c in rec.calls)
+
+
+def test_cloud_falls_back_to_local_when_online(local_env):
+    local_env.setenv("LNA_PROVIDER_FALLBACK", "1")
+    local_env.setattr(llm, "local_online", lambda timeout=1.0: True)
+    loc = pipeline_script("local")
+
+    def script(call, i):
+        if "googleapis" in call["url"]:
+            return FakeResp(503, {})
+        return loc(call, i)
+    install(local_env, script)
+    notes = run("gemini")
+    assert notes["meta"]["provider"] == "local"
+
+
+def merge_script(counter):
+    base = pipeline_script("local", n_batch_sections=4)
+
+    def script(call, i):
+        system = call["json"]["messages"][0]["content"]
+        if system.startswith("You merge"):
+            counter["merge"] = counter.get("merge", 0) + 1
+            user = call["json"]["messages"][1]["content"]
+            starts = re.findall(r"## \[([0-9:?]+)\]", user)
+            d = {"topics": [{"heading": "merged", "start": starts[0] if starts else "?",
+                             "facts": ["merged fact " * 30]}]}
+            return FakeResp(200, ok_payload("local", json.dumps(d)))
+        k = kind_of(call)
+        counter[k] = counter.get(k, 0) + 1
+        return base(call, i)
+    return script
+
+
+def test_24h_transcript_hierarchical_merge_keeps_order(local_env):
+    tr = make_transcript(minutes=24 * 60, chars_per_seg=160)  # ~1.4M chars
+    counter: dict = {}
+    events = []
+    rec = install(local_env, merge_script(counter))
+    notes = run_local(tr, progress=lambda st, pct, msg: events.append(msg))
+    assert counter["merge"] >= 2 and counter["batch"] >= 2
+    n_chunks = counter["digest"]
+    assert n_chunks >= 50
+    # merged digests (not raw ones) feed the compose calls, and they stay under the batch budget
+    batch_users = [c["json"]["messages"][1]["content"] for c in rec.calls if kind_of(c) == "batch"]
+    assert all("merged fact" in u for u in batch_users)
+    prof = llm._profile("local", "qwen3-8b")
+    for c in rec.calls:
+        chars = sum(len(m["content"]) for m in c["json"]["messages"])
+        assert chars / 4.0 + c["json"]["max_tokens"] <= 16384, kind_of(c)
+    # merge preserved chronological markers: the first part starts at the lecture start
+    first = [c for c in rec.calls if c["json"]["messages"][0]["content"].startswith("You merge")][0]
+    assert "[00:10]" in first["json"]["messages"][1]["content"]
+    assert any(f"chunk {n_chunks}/{n_chunks}" in m for m in events)
+    assert len(notes["sections"]) > 18   # the 18-page cloud cap does not apply locally
+    assert prof["merge_budget_chars"]
+
+
+def test_checkpoint_resume_skips_finished_chunks(local_env, tmp_path):
+    tr = make_transcript(minutes=90, chars_per_seg=160)
+    calls = {"n": 0}
+    base = pipeline_script("local")
+
+    def crashing(call, i):
+        calls["n"] += 1
+        if kind_of(call) == "batch":   # die after all map digests were written
+            raise requests.ConnectionError("server killed")
+        return base(call, i)
+    install(local_env, crashing)
+    with pytest.raises(LLMError):
+        run_local(tr, checkpoint_dir=tmp_path)
+    vdir = tmp_path / tr["video_id"]
+    maps = sorted(vdir.glob("map-*.json"))
+    assert maps and (vdir / "manifest.json").is_file()
+    assert not list(vdir.glob("*.tmp"))
+
+    rec = install(local_env, pipeline_script("local"))
+    notes = run_local(tr, checkpoint_dir=tmp_path)
+    kinds = [kind_of(c) for c in rec.calls]
+    assert "digest" not in kinds and "batch" in kinds   # resumed: no map call repeated
+    assert notes["sections"]
+    assert not vdir.exists()                             # cleaned up after success
+
+
+def test_checkpoint_discarded_when_prompt_or_transcript_changes(local_env, tmp_path, monkeypatch):
+    tr = make_transcript(minutes=90, chars_per_seg=160)
+    install(local_env, pipeline_script("local"))
+    vdir = tmp_path / tr["video_id"]
+    vdir.mkdir(parents=True)
+    (vdir / "manifest.json").write_text(json.dumps({"video_id": tr["video_id"], "transcript_hash": "x",
+                                                    "profile_hash": "y"}))
+    (vdir / "map-0000.json").write_text(json.dumps({"value": "STALE DIGEST"}))
+    rec = install(local_env, pipeline_script("local"))
+    run_local(tr, checkpoint_dir=tmp_path)
+    assert all("STALE DIGEST" not in json.dumps(c["json"]) for c in rec.calls)
+    assert [kind_of(c) for c in rec.calls].count("digest") >= 1
+
+
+def test_local_listed_first_and_keyless():
+    assert list(llm.PROVIDERS)[0] == "local"
+    assert llm.PROVIDERS["local"]["needs_key"] is False
+    assert llm.PROVIDERS["local"]["default_model"] == "qwen3-8b"

@@ -58,8 +58,14 @@ ENV_KEYS = {
     "huggingface": "HF_TOKEN",
 }
 
+# providers that need no key (served locally; see notes_engine.llm.PROVIDERS["local"])
+KEYLESS = {"local"}
+CHUNK_RE = re.compile(r"\bchunk (\d+)/(\d+)")
+
 # Used only if llm.PROVIDERS cannot be imported (so the UI still renders).
 FALLBACK_PROVIDERS = {
+    "local": {"label": "Local model (Qwen3-8B)", "default_model": "qwen3-8b",
+              "key_hint": "No key needed: runs on your own llama-server"},
     "gemini": {"label": "Google Gemini", "default_model": "gemini-2.5-flash",
                "key_hint": "Free key at aistudio.google.com/apikey"},
     "groq": {"label": "Groq", "default_model": "llama-3.3-70b-versatile",
@@ -69,7 +75,7 @@ FALLBACK_PROVIDERS = {
     "huggingface": {"label": "Hugging Face", "default_model": "meta-llama/Llama-3.3-70B-Instruct",
                     "key_hint": "Token from huggingface.co/settings/tokens"},
 }
-PROVIDER_ORDER = ["gemini", "groq", "xai", "huggingface"]
+PROVIDER_ORDER = ["local", "gemini", "groq", "xai", "huggingface"]
 
 GENERIC_ERROR = ("Something went wrong while making your notes. Please try again - "
                  "if it keeps happening, check the server console for details.")
@@ -126,6 +132,14 @@ def cleanup_old_jobs(output_dir: Path, max_age_sec: int = 24 * 3600) -> int:
             if child.is_dir() and JOB_ID_RE.match(child.name) and now - child.stat().st_mtime > max_age_sec:
                 shutil.rmtree(child, ignore_errors=True)
                 removed += 1
+        except OSError:
+            continue
+    # unfinished per-video checkpoints (output/checkpoints/<video_id>/) are kept 7 days for a retry
+    ck = output_dir / "checkpoints"
+    for child in (ck.iterdir() if ck.is_dir() else []):
+        try:
+            if child.is_dir() and now - child.stat().st_mtime > 7 * 24 * 3600:
+                shutil.rmtree(child, ignore_errors=True)
         except OSError:
             continue
     return removed
@@ -185,7 +199,7 @@ class State:
     def public(self, job: dict) -> dict:
         with self.lock:
             out = {k: job[k] for k in ("status", "stage", "pct", "message") if k in job}
-            for k in ("error", "meta", "links", "warning"):
+            for k in ("error", "meta", "links", "warning", "chunk", "chunks"):
                 if job.get(k):
                     out[k] = job[k]
             out["job_id"] = job["id"]
@@ -206,6 +220,9 @@ def _safe_progress(state: State, job: dict, lo: float, hi: float, stage: str):
                 fields["pct"] = glob
             if message:
                 fields["message"] = str(message)[:240]
+                m = CHUNK_RE.search(str(message))
+                if m:  # map-stage progress: chunks finished / total (aq-api shows "chunk i/N")
+                    fields["chunk"], fields["chunks"] = int(m.group(1)), int(m.group(2))
             state.update(job, **fields)
         except Exception:  # a broken progress callback must never kill the job
             pass
@@ -242,8 +259,10 @@ def _run_job(state: State, job_id: str, url: str, provider: str, api_key: str,
                      message="Transcript ready. Writing notes...")
 
         # 2. notes (25-85 %)
+        # per-video checkpoints (output/checkpoints/<video_id>/) let a retry resume finished chunks
         notes = llm.generate_notes(transcript, provider=provider, api_key=api_key, model=model,
-                                   progress=_safe_progress(state, job, 25, 85, "notes"))
+                                   progress=_safe_progress(state, job, 25, 85, "notes"),
+                                   checkpoint_dir=str(state.output_dir / "checkpoints"))
         job_dir.mkdir(parents=True, exist_ok=True)
         (job_dir / "notes.json").write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
         try:  # prefer the notes' own title if the model produced a nicer one
@@ -420,7 +439,7 @@ def create_app(config: dict | None = None) -> Flask:
         try:
             from notes_engine import llm
             for pid, meta in (getattr(llm, "PROVIDERS", None) or {}).items():
-                if pid in ENV_KEYS and isinstance(meta, dict):
+                if pid in FALLBACK_PROVIDERS and isinstance(meta, dict):
                     fb = FALLBACK_PROVIDERS[pid]
                     table[pid] = {
                         "label": meta.get("label") or fb["label"],
@@ -434,14 +453,26 @@ def create_app(config: dict | None = None) -> Flask:
         return table
 
     def server_key(pid: str) -> str:
-        return (os.environ.get(ENV_KEYS[pid]) or "").strip()
+        return (os.environ.get(ENV_KEYS[pid]) or "").strip() if pid in ENV_KEYS else ""
+
+    def local_online() -> bool:
+        try:
+            from notes_engine import llm
+            return bool(llm.local_online(timeout=1.0))
+        except Exception:
+            return False
 
     @app.get("/api/providers")
     def providers():
         table = provider_table()
-        return jsonify(providers=[
-            {"id": pid, **table[pid], "server_key": bool(server_key(pid))} for pid in PROVIDER_ORDER
-        ])
+        out = []
+        for pid in PROVIDER_ORDER:
+            row = {"id": pid, **table[pid], "needs_key": pid not in KEYLESS,
+                   "server_key": bool(server_key(pid))}
+            if pid in KEYLESS:
+                row["online"] = local_online()
+            out.append(row)
+        return jsonify(providers=out)
 
     def bad(msg: str, code: int = 400):
         return jsonify(error=msg), code
@@ -483,7 +514,9 @@ def create_app(config: dict | None = None) -> Flask:
         if err:
             return bad(err)
         api_key = api_key or server_key(provider) or None
-        if not api_key:
+        if provider in KEYLESS:
+            api_key = None  # never forward a typed key to the local server
+        elif not api_key:
             return bad(f"No API key for {table[provider]['label']}. Paste one in the form, "
                        f"or put {ENV_KEYS[provider]} in backend/.env.")
         # Whisper fallback key: request > env > the main key when the provider is Groq
