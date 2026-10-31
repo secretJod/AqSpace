@@ -231,8 +231,11 @@ def _run_job(state: State, job_id: str, url: str, provider: str, api_key: str,
         PdfError = getattr(pdf, "PdfError", ())
 
         # 1. transcript (0-25 %)
+        # speech-to-text checkpoints live in output/_cache/<video_id>/ (not a job dir, so
+        # cleanup_old_jobs keeps them and a restarted job for the same video resumes)
         transcript = ingest.get_transcript(url, groq_key=groq_key,
-                                           progress=_safe_progress(state, job, 0, 25, "transcript"))
+                                           progress=_safe_progress(state, job, 0, 25, "transcript"),
+                                           work_dir=str(state.output_dir / "_cache"))
         meta = {
             "title": str(transcript.get("title") or "Untitled lecture"),
             "channel": str(transcript.get("channel") or ""),

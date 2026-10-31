@@ -8,8 +8,15 @@ Fallback chain for get_transcript():
     1. youtube-transcript-api (v1.x instance API): manual captions > auto captions,
        English first, then any language.
     2. yt-dlp subtitle extraction (json3 / vtt).
-    3. Only when a Groq key is supplied: yt-dlp audio download + ffmpeg
-       (16 kHz mono, chunked well under 24 MB) + Groq Whisper.
+    3. Speech-to-text when there are no captions: yt-dlp audio download, ffmpeg
+       splits it into 10-minute segments, and each segment is transcribed by the
+       local faster-whisper model (CPU int8, preferred, no key) or by Groq Whisper
+       (only when a Groq key is supplied). Every finished segment is checkpointed
+       to disk under the work dir (keyed by video id), so a restart of a 24 h job
+       resumes at the first unfinished segment.
+
+Long videos (up to 24 h): caption downloads stream to disk with long read
+timeouts and retries; timestamps are h:mm:ss with any number of hours.
 
 Secrets: the Groq key is only ever sent in the Authorization header of the Groq
 request; it is never logged and never included in an error message.
@@ -58,11 +65,23 @@ _PATH_PREFIXES = ("shorts", "embed", "live", "v", "e", "watch")
 _CHANNEL_PREFIXES = ("channel", "c", "user")
 
 _HTTP_TIMEOUT = 20
+# (connect, read) for big downloads: a 24 h json3 caption file can be 30-60 MB
+_DOWNLOAD_TIMEOUT = (20, 180)
+DOWNLOAD_RETRIES = 4
+MAX_SUBTITLE_BYTES = 200 * 1024 * 1024
 GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 GROQ_MODEL = "whisper-large-v3-turbo"
 WHISPER_CHUNK_SECONDS = 600          # 10 min of 32 kbps mono mp3 ~ 2.4 MB
 WHISPER_MAX_UPLOAD_BYTES = 24 * 1024 * 1024
-MAX_AUDIO_BYTES = 600 * 1024 * 1024  # refuse to download absurdly large audio
+# 24 h of ~50 kbps opus is ~540 MB; refuse anything absurdly larger
+MAX_AUDIO_BYTES = 2 * 1024 * 1024 * 1024
+MAX_VIDEO_SECONDS = 25 * 3600
+
+# local speech-to-text (faster-whisper, CPU int8); see _local_whisper_model()
+LOCAL_WHISPER_MODEL = "small"
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+WHISPER_MODEL_DIR = os.path.join(_REPO_ROOT, ".tools", "whisper-models")  # gitignored, nuked
+DEFAULT_WORK_DIR = os.path.join(_REPO_ROOT, "lecture-notes-ai", "backend", "output", "_cache")
 
 MARKER_EVERY_SEC = 30
 
@@ -107,12 +126,13 @@ MSG_BLOCKED = (
 )
 MSG_NO_CAPTIONS = (
     "This video has no usable captions (the creator turned them off or none "
-    "exist) and no Groq API key was provided for speech-to-text. Add a free "
-    "Groq key in the settings to transcribe the audio, or choose a video that "
-    "has captions."
+    "exist) and speech-to-text is not available: the local Whisper model is not "
+    "installed and no Groq API key was provided. Install it with "
+    "'pip install -e .[whisper]' in lecture-notes-ai, add a Groq key in the "
+    "settings, or choose a video that has captions."
 )
 MSG_NO_CAPTIONS_WHISPER_FAILED = (
-    "This video has no usable captions, and the Groq speech-to-text fallback "
+    "This video has no usable captions, and the speech-to-text fallback "
     "failed: {why}"
 )
 MSG_LIVE = (
@@ -234,11 +254,57 @@ def _progress(cb, stage: str, pct: int, msg: str) -> None:
 
 
 class _TimeoutSession(requests.Session):
-    """requests.Session with a default timeout (youtube-transcript-api sets none)."""
+    """requests.Session with a default timeout (youtube-transcript-api sets none).
+
+    The read timeout is long because a 24 h transcript is a big response."""
 
     def request(self, method, url, **kwargs):  # type: ignore[override]
-        kwargs.setdefault("timeout", _HTTP_TIMEOUT)
+        kwargs.setdefault("timeout", _DOWNLOAD_TIMEOUT)
         return super().request(method, url, **kwargs)
+
+
+def _backoff(attempt: int) -> float:
+    """Seconds to wait before retry number attempt+1 (1.5, 3, 6, 12 ... capped at 30)."""
+    return min(30.0, 1.5 * (2 ** attempt))
+
+
+def _download_to_file(url: str, dest: str, *, max_bytes: int = MAX_SUBTITLE_BYTES,
+                      retries: int = DOWNLOAD_RETRIES, sleep=time.sleep) -> str:
+    """Stream ``url`` to ``dest`` in 64 KB pieces (no whole-body buffering in memory).
+
+    Retries timeouts, connection errors, 429 and 5xx with exponential backoff.
+    Raises _Fail("blocked") when YouTube keeps answering 429, else _Fail("other")."""
+    last = "unknown error"
+    blocked = False
+    for attempt in range(retries):
+        if attempt:
+            sleep(_backoff(attempt - 1))
+        try:
+            with requests.get(url, timeout=_DOWNLOAD_TIMEOUT, stream=True) as r:
+                if r.status_code == 429 or r.status_code >= 500:
+                    blocked = r.status_code == 429
+                    last = f"HTTP {r.status_code}"
+                    continue
+                if r.status_code != 200:
+                    raise _Fail("other", f"subtitle HTTP {r.status_code}")
+                size = 0
+                with open(dest, "wb") as fh:
+                    for piece in r.iter_content(chunk_size=65536):
+                        if not piece:
+                            continue
+                        size += len(piece)
+                        if size > max_bytes:
+                            raise _Fail("other", "subtitle file too large")
+                        fh.write(piece)
+                return dest
+        except _Fail:
+            raise
+        except (requests.RequestException, OSError) as e:
+            blocked = False
+            last = f"{type(e).__name__}"
+    if blocked:
+        raise _Fail("blocked", "subtitle 429")
+    raise _Fail("other", f"subtitle download: {last}")
 
 
 # --------------------------------------------------------------------------- #
@@ -374,8 +440,10 @@ _YTDLP_COMMON = {
     "quiet": True,
     "no_warnings": True,
     "noprogress": True,
-    "socket_timeout": 20,
-    "retries": 2,
+    "socket_timeout": 60,
+    "retries": 10,
+    "fragment_retries": 10,
+    "extractor_retries": 3,
     "noplaylist": True,
     "cachedir": False,
 }
@@ -527,7 +595,8 @@ def _fetch_via_api(video_id: str) -> tuple[list[dict], str, str, float]:
 
     api = YouTubeTranscriptApi(http_client=_TimeoutSession())
     last_exc: Exception | None = None
-    for attempt in range(2):
+    attempts = 3
+    for attempt in range(attempts):
         try:
             tlist = api.list(video_id)
             chosen = _pick_transcript(tlist)
@@ -540,8 +609,8 @@ def _fetch_via_api(video_id: str) -> tuple[list[dict], str, str, float]:
         except Exception as e:
             last_exc = e
             fail = _classify_api_exception(e)
-            if fail.kind == "other" and attempt == 0:
-                time.sleep(1.5)  # one retry for transient failures
+            if fail.kind == "other" and attempt < attempts - 1:
+                time.sleep(_backoff(attempt))  # retry transient failures
                 continue
             raise fail from None
     else:  # pragma: no cover - loop always breaks or raises
@@ -648,21 +717,19 @@ def _fetch_via_ytdlp(video_id: str, cache: dict) -> tuple[list[dict], str, str, 
     host = (urlparse(url).hostname or "").lower()
     if not (host.endswith(".youtube.com") or host == "youtube.com" or host.endswith(".googlevideo.com")):
         raise _Fail("other", "unexpected subtitle host")
+    tmp = tempfile.mkdtemp(prefix="lna_subs_")
     try:
-        r = requests.get(url, timeout=_HTTP_TIMEOUT)
-    except requests.RequestException as e:
-        raise _Fail("other", f"subtitle download: {type(e).__name__}") from None
-    if r.status_code == 429:
-        raise _Fail("blocked", "subtitle 429")
-    if r.status_code != 200:
-        raise _Fail("other", f"subtitle HTTP {r.status_code}")
-    try:
-        if chosen.get("ext") == "json3":
-            cues = _parse_json3(r.json())
-        else:
-            cues = _parse_vtt(r.content.decode("utf-8", "replace"))
-    except ValueError:
-        raise _Fail("other", "subtitle parse error") from None
+        path = _download_to_file(url, os.path.join(tmp, "subs." + str(chosen.get("ext"))))
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                if chosen.get("ext") == "json3":
+                    cues = _parse_json3(json.load(fh))
+                else:
+                    cues = _parse_vtt(fh.read())
+        except ValueError:
+            raise _Fail("other", "subtitle parse error") from None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     segments = _build_segments(cues)
     if not segments:
         raise _Fail("nocaps", "subtitles empty after cleaning")
@@ -673,25 +740,69 @@ def _fetch_via_ytdlp(video_id: str, cache: dict) -> tuple[list[dict], str, str, 
 
 
 # --------------------------------------------------------------------------- #
-# Stage 3: Groq Whisper
+# Stage 3: speech-to-text (local faster-whisper or Groq), chunked + checkpointed
 # --------------------------------------------------------------------------- #
+#
+# Layout of the checkpoint dir  <work_dir>/<video_id>/stt/ :
+#   audio.<ext>             yt-dlp download (resumable .part; deleted after the split)
+#   chunks/chunk_NNNN.mp3   10-min 16 kHz mono segments made by ffmpeg
+#   chunks/segments.csv     ffmpeg's segment list (exact start/end of every chunk)
+#   split.done              marker: the split finished, chunks are complete
+#   done/chunk_NNNN.json    checkpoint per finished chunk (absolute timestamps)
+#   transcript.json         final result; a re-run returns it without any work
+# Every file is written atomically (tmp + os.replace), so a kill at any moment
+# leaves either a complete checkpoint or none.
 
 
 def _find_ffmpeg() -> str | None:
+    """FFMPEG_PATH, then ffmpeg on PATH, then the repo-local imageio-ffmpeg binary."""
     env = (os.environ.get("FFMPEG_PATH") or "").strip()
     if env and os.path.isfile(env):
         return env
-    return shutil.which("ffmpeg")
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:  # pip install -e .[whisper] ships a static ffmpeg inside the venv
+        import imageio_ffmpeg  # type: ignore
+
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        return exe if exe and os.path.isfile(exe) else None
+    except Exception:
+        return None
+
+
+def _atomic_write_json(path: str, data) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def _read_json(path: str):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+_PARTIAL_SUFFIXES = (".part", ".ytdl", ".tmp")
 
 
 def _download_audio(video_id: str, out_dir: str, cache: dict) -> str:
     import yt_dlp
 
+    done = [f for f in glob.glob(os.path.join(out_dir, "audio.*")) if not f.endswith(_PARTIAL_SUFFIXES)]
+    if done:  # finished in an earlier run
+        return done[0]
     opts = dict(
         _YTDLP_COMMON,
-        format="bestaudio[abr<=160]/bestaudio/best",
+        # low-bitrate audio: speech only, keeps 24 h near 0.5 GB
+        format="bestaudio[abr<=64]/worstaudio[acodec!=none]/bestaudio/best",
         outtmpl=os.path.join(out_dir, "audio.%(ext)s"),
         max_filesize=MAX_AUDIO_BYTES,
+        continuedl=True,          # resume a .part file after a restart
+        http_chunk_size=10 * 1024 * 1024,
         skip_download=False,
     )
     try:
@@ -701,30 +812,55 @@ def _download_audio(video_id: str, out_dir: str, cache: dict) -> str:
             cache["info"] = info
     except Exception as e:
         raise _Fail(_ytdlp_error_kind(str(e)), str(e)[:300]) from None
-    files = [f for f in glob.glob(os.path.join(out_dir, "audio.*")) if not f.endswith(".part")]
+    files = [f for f in glob.glob(os.path.join(out_dir, "audio.*")) if not f.endswith(_PARTIAL_SUFFIXES)]
     if not files:
         raise _Fail("other", "audio download produced no file (maybe too large)")
     return files[0]
 
 
-def _split_audio(ffmpeg: str, src: str, out_dir: str) -> list[str]:
+def _read_segment_list(chunk_dir: str) -> list[tuple[str, float]]:
+    """[(chunk_path, start_sec)] from ffmpeg's segments.csv (falls back to i * chunk length)."""
+    chunks = sorted(glob.glob(os.path.join(chunk_dir, "chunk_*.mp3")))
+    starts: dict[str, float] = {}
+    try:
+        with open(os.path.join(chunk_dir, "segments.csv"), "r", encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.strip().split(",")
+                if len(parts) >= 2:
+                    try:
+                        starts[os.path.basename(parts[0])] = float(parts[1])
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    return [(c, starts.get(os.path.basename(c), i * float(WHISPER_CHUNK_SECONDS)))
+            for i, c in enumerate(chunks)]
+
+
+def _split_audio(ffmpeg: str, src: str, out_dir: str) -> list[tuple[str, float]]:
+    """Split src into WHISPER_CHUNK_SECONDS mp3 chunks; returns [(path, start_sec)]."""
+    os.makedirs(out_dir, exist_ok=True)
+    for old in glob.glob(os.path.join(out_dir, "chunk_*.mp3")):  # half-finished earlier split
+        os.remove(old)
     pattern = os.path.join(out_dir, "chunk_%04d.mp3")
     cmd = [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", src,
         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k",
         "-f", "segment", "-segment_time", str(WHISPER_CHUNK_SECONDS),
+        "-segment_list", os.path.join(out_dir, "segments.csv"), "-segment_list_type", "csv",
         "-reset_timestamps", "1", pattern,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, timeout=1800)
+        # 24 h of audio re-encodes in a few minutes; allow plenty
+        proc = subprocess.run(cmd, capture_output=True, timeout=3 * 3600)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise _Fail("other", f"ffmpeg failed: {type(e).__name__}") from None
     if proc.returncode != 0:
         raise _Fail("other", "ffmpeg failed: " + proc.stderr.decode("utf-8", "replace")[-200:])
-    chunks = sorted(glob.glob(os.path.join(out_dir, "chunk_*.mp3")))
+    chunks = _read_segment_list(out_dir)
     if not chunks:
         raise _Fail("other", "ffmpeg produced no audio chunks")
-    for c in chunks:
+    for c, _ in chunks:
         if os.path.getsize(c) > WHISPER_MAX_UPLOAD_BYTES:
             raise _Fail("other", "audio chunk too large for Groq upload")
     return chunks
@@ -780,37 +916,151 @@ def _groq_transcribe_chunk(path: str, groq_key: str) -> tuple[list[dict], str]:
     raise _Fail("other", last)
 
 
-def _fetch_via_whisper(video_id: str, groq_key: str, cache: dict, progress) -> tuple[list[dict], str, str, float]:
-    ffmpeg = _find_ffmpeg()
-    if not ffmpeg:
-        raise _Fail("other", "ffmpeg was not found on this computer")
-    tmp = tempfile.mkdtemp(prefix="lna_audio_")
+class GroqTranscriber:
+    """Groq Whisper (cloud). Needs a key; used only when the local model is missing."""
+
+    name = "groq"
+
+    def __init__(self, key: str):
+        self._key = key
+
+    def transcribe(self, path: str) -> tuple[list[dict], str]:
+        return _groq_transcribe_chunk(path, self._key)
+
+
+class LocalWhisperTranscriber:
+    """faster-whisper on the CPU with int8 weights (Apple Silicon friendly, no GPU).
+
+    Runs on the CPU on purpose: the Metal GPU belongs to llama-server (one GPU job
+    at a time on the 16 GB M2). The model downloads on first use into
+    <repo>/.tools/whisper-models (gitignored, removed by scripts/nuke.sh)."""
+
+    name = "local"
+
+    def __init__(self, model: str | None = None, model_dir: str | None = None):
+        self.model_name = (model or os.environ.get("LNAI_WHISPER_MODEL") or LOCAL_WHISPER_MODEL).strip()
+        self.model_dir = model_dir or os.environ.get("LNAI_WHISPER_DIR") or WHISPER_MODEL_DIR
+        self._model = None
+
+    def _load(self):
+        if self._model is None:
+            from faster_whisper import WhisperModel  # type: ignore
+
+            os.makedirs(self.model_dir, exist_ok=True)
+            threads = max(1, (os.cpu_count() or 4) - 1)
+            self._model = WhisperModel(self.model_name, device="cpu", compute_type="int8",
+                                       cpu_threads=threads, download_root=self.model_dir)
+        return self._model
+
+    def transcribe(self, path: str) -> tuple[list[dict], str]:
+        try:
+            model = self._load()
+            segs, info = model.transcribe(path, beam_size=1, vad_filter=True,
+                                          condition_on_previous_text=False)
+            out = [{"start": float(s.start), "end": float(s.end), "text": str(s.text),
+                    "no_speech_prob": float(getattr(s, "no_speech_prob", 0.0) or 0.0)} for s in segs]
+        except _Fail:
+            raise
+        except Exception as e:  # model download / decode problems
+            raise _Fail("other", f"local Whisper failed ({type(e).__name__})") from None
+        return out, str(getattr(info, "language", "") or "")
+
+
+def _local_whisper_available() -> bool:
     try:
+        import importlib.util
+
+        return importlib.util.find_spec("faster_whisper") is not None
+    except Exception:
+        return False
+
+
+def _pick_transcriber(groq_key: str | None):
+    """LNAI_WHISPER = auto (default) | local | groq | off.
+
+    auto: local faster-whisper when installed, else Groq when a key is given, else None."""
+    mode = (os.environ.get("LNAI_WHISPER") or "auto").strip().lower()
+    if mode == "off":
+        return None
+    if mode in ("auto", "local") and _local_whisper_available():
+        return LocalWhisperTranscriber()
+    if mode in ("auto", "groq") and groq_key:
+        return GroqTranscriber(groq_key)
+    return None
+
+
+def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
+                       work_dir: str | None = None) -> tuple[list[dict], str, str, float]:
+    base = os.path.join(work_dir or DEFAULT_WORK_DIR, video_id, "stt")
+    final = os.path.join(base, "transcript.json")
+    cached = _read_json(final)
+    if isinstance(cached, dict) and cached.get("segments"):
+        _progress(progress, "transcript", 95, "Using the speech-to-text result saved earlier...")
+        return cached["segments"], cached.get("language") or "en", "whisper", float(cached.get("est") or 0.0)
+
+    chunk_dir = os.path.join(base, "chunks")
+    done_dir = os.path.join(base, "done")
+    marker = os.path.join(base, "split.done")
+    os.makedirs(done_dir, exist_ok=True)
+
+    if os.path.isfile(marker):
+        chunks = _read_segment_list(chunk_dir)
+    else:
+        info = cache.get("info") or {}
+        d = info.get("duration") if isinstance(info, dict) else None
+        if isinstance(d, (int, float)) and d > MAX_VIDEO_SECONDS:
+            raise _Fail("other", "the video is longer than 24 hours")
+        ffmpeg = _find_ffmpeg()
+        if not ffmpeg:
+            raise _Fail("other", "ffmpeg was not found (run 'pip install -e .[whisper]' in lecture-notes-ai)")
         _progress(progress, "transcript", 40, "No captions found - downloading audio for speech-to-text...")
-        audio = _download_audio(video_id, tmp, cache)
-        _progress(progress, "transcript", 55, "Preparing audio...")
-        chunks = _split_audio(ffmpeg, audio, tmp)
-        cues: list[tuple[float, float, list[str]]] = []
-        language = ""
-        n = len(chunks)
-        for i, ch in enumerate(chunks):
-            _progress(progress, "transcript", 60 + int(35 * i / n), f"Transcribing audio {i + 1}/{n}...")
-            offset = i * WHISPER_CHUNK_SECONDS
-            segs, lang = _groq_transcribe_chunk(ch, groq_key)
-            language = language or lang
+        audio = _download_audio(video_id, base, cache)
+        _progress(progress, "transcript", 50, "Preparing audio...")
+        chunks = _split_audio(ffmpeg, audio, chunk_dir)
+        with open(marker, "w", encoding="utf-8") as fh:
+            fh.write(str(len(chunks)))
+        try:  # the chunks hold everything now; free the disk space
+            os.remove(audio)
+        except OSError:
+            pass
+    if not chunks:
+        raise _Fail("other", "no audio chunks to transcribe")
+
+    cues: list[tuple[float, float, list[str]]] = []
+    language = ""
+    n = len(chunks)
+    for i, (path, offset) in enumerate(chunks):
+        ck = os.path.join(done_dir, os.path.splitext(os.path.basename(path))[0] + ".json")
+        rec = _read_json(ck)
+        if not (isinstance(rec, dict) and isinstance(rec.get("segments"), list)):
+            _progress(progress, "transcript", 55 + int(40 * i / n),
+                      f"Transcribing audio {i + 1}/{n} ({format_timestamp(offset)})...")
+            segs, lang = transcriber.transcribe(path)
+            kept = []
             for seg in segs:
                 if float(seg.get("no_speech_prob", 0) or 0) > 0.9:
                     continue
                 s = float(seg.get("start", 0)) + offset
                 e = float(seg.get("end", 0)) + offset
-                cues.append((s, max(0.0, e - s), [str(seg.get("text", ""))]))
-        segments = _build_segments(cues)
-        if not segments:
-            raise _Fail("other", "no speech was detected in the audio")
-        est = max((c[0] + c[1] for c in cues), default=0.0)
-        return segments, language or "en", "whisper", est
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+                text = str(seg.get("text", "")).strip()
+                if text:
+                    kept.append({"start": round(s, 2), "end": round(max(s, e), 2), "text": text})
+            rec = {"offset": offset, "language": lang, "segments": kept}
+            _atomic_write_json(ck, rec)
+        language = language or str(rec.get("language") or "")
+        for seg in rec["segments"]:
+            s, e = float(seg["start"]), float(seg["end"])
+            cues.append((s, max(0.0, e - s), [str(seg["text"])]))
+
+    segments = _build_segments(cues)
+    if not segments:
+        raise _Fail("other", "no speech was detected in the audio")
+    est = max((c[0] + c[1] for c in cues), default=0.0)
+    language = _WHISPER_LANGS.get(language.lower(), language.lower()) or "en"
+    _atomic_write_json(final, {"segments": segments, "language": language, "est": est,
+                               "engine": getattr(transcriber, "name", "")})
+    shutil.rmtree(chunk_dir, ignore_errors=True)  # transcript.json is the resume point now
+    return segments, language, "whisper", est
 
 
 # --------------------------------------------------------------------------- #
@@ -818,8 +1068,12 @@ def _fetch_via_whisper(video_id: str, groq_key: str, cache: dict, progress) -> t
 # --------------------------------------------------------------------------- #
 
 
-def get_transcript(url: str, *, groq_key: str | None = None, progress=None) -> dict:
-    """Fetch and clean the transcript for a YouTube video. Raises IngestError."""
+def get_transcript(url: str, *, groq_key: str | None = None, progress=None,
+                   work_dir: str | None = None) -> dict:
+    """Fetch and clean the transcript for a YouTube video. Raises IngestError.
+
+    ``work_dir`` holds the speech-to-text checkpoints (``<work_dir>/<video_id>/stt``);
+    default $LNAI_WORK_DIR or lecture-notes-ai/backend/output/_cache."""
     video_id = parse_video_id(url)
     _progress(progress, "transcript", 3, "Checking the video link...")
     cache: dict = {}
@@ -850,16 +1104,18 @@ def get_transcript(url: str, *, groq_key: str | None = None, progress=None) -> d
 
     whisper_fail: _Fail | None = None
     hard = any(f.kind in ("unavailable", "invalid", "live") for f in failures)
-    if result is None and groq_key and not hard:
+    transcriber = _pick_transcriber(groq_key) if result is None and not hard else None
+    work_dir = work_dir or os.environ.get("LNAI_WORK_DIR") or DEFAULT_WORK_DIR
+    if transcriber is not None:
         try:
-            result = _fetch_via_whisper(video_id, groq_key, cache, progress)
+            result = _fetch_via_whisper(video_id, transcriber, cache, progress, work_dir)
         except _Fail as f:
             whisper_fail = f
         except Exception as e:
             whisper_fail = _Fail("other", f"{type(e).__name__}")
 
     if result is None:
-        raise IngestError(_final_message(failures, whisper_fail, bool(groq_key)))
+        raise IngestError(_final_message(failures, whisper_fail, transcriber is not None))
 
     segments, language, source, est_end = result
     if duration is None:

@@ -3,6 +3,7 @@
 Run:   python -m pytest tests/test_ingest.py -q
 Live:  LNA_LIVE=1 python -m pytest tests/test_ingest.py -q -k live
 """
+import json
 import os
 import sys
 from types import SimpleNamespace
@@ -338,7 +339,8 @@ OK_RESULT = ([{"start": 0.0, "text": "hello world"}], "en", "captions", 30.0)
 def patched():
     """Patch metadata + all stages; returns call-order list."""
     order = []
-    with mock.patch.object(ingest, "_get_metadata", return_value=("T", "C", None)):
+    with mock.patch.object(ingest, "_get_metadata", return_value=("T", "C", None)), \
+         mock.patch.object(ingest, "_local_whisper_available", return_value=False):
         yield order
 
 
@@ -564,7 +566,21 @@ def test_ytdlp_stage_parses_json3_from_mock_http():
         },
     }
     payload = {"events": [{"tStartMs": 0, "dDurationMs": 2000, "segs": [{"utf8": "hi there"}]}]}
-    resp = SimpleNamespace(status_code=200, json=lambda: payload, content=b"")
+    body = json.dumps(payload).encode()
+
+    class _Resp:  # streamed response (the stage streams subtitles to disk)
+        status_code = 200
+
+        def iter_content(self, chunk_size=1):
+            return [body[i:i + 7] for i in range(0, len(body), 7)]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    resp = _Resp()
     cache = {}
     with mock.patch.object(ingest, "_ytdlp_info", return_value=info), \
          mock.patch.object(ingest.requests, "get", return_value=resp) as g:
