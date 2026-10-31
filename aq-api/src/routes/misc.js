@@ -2,6 +2,15 @@ import express, { Router } from "express";
 import { HttpError } from "../http.js";
 import { LIST_ID_RE } from "../validate.js";
 
+/** Python's /api/providers lists {id: "local", online: bool, ...}; "ok" only when Python says llama-server answers.
+    aq-api never calls llama-server (8081) itself. */
+export function localModelState(json) {
+  const list = json && Array.isArray(json.providers) ? json.providers : [];
+  const p = list.find((x) => x && x.id === "local");
+  if (!p) return "offline";
+  return p.online === true || p.available === true || p.ok === true || p.status === "ok" ? "ok" : "offline";
+}
+
 export function healthRoutes({ db, py, version }) {
   const r = Router();
   r.get("/health", async (req, res) => {
@@ -9,8 +18,12 @@ export function healthRoutes({ db, py, version }) {
     try { db.prepare("SELECT 1").get(); } catch { dbOk = false; }
     const out = { ok: dbOk, service: "aq-api", version, uptimeSec: Math.round(process.uptime()), db: dbOk ? "ok" : "error" };
     if (req.query.deep === "1") {
-      try { const p = await py.json("/api/providers", { timeout: 2000 }); out.notesService = p.status === 200 ? "ok" : "error"; }
-      catch { out.notesService = "offline"; }
+      out.localModel = "offline";
+      try {
+        const p = await py.json("/api/providers", { timeout: 2000 });
+        out.notesService = p.status === 200 ? "ok" : "error";
+        if (p.status === 200) out.localModel = localModelState(p.json);
+      } catch { out.notesService = "offline"; }
     }
     res.status(dbOk ? 200 : 503).json(out);
   });
