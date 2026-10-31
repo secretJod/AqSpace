@@ -54,7 +54,8 @@ _YOUTUBE_HOSTS = {
     "www.youtube-nocookie.com",
 }
 _SHORT_HOSTS = {"youtu.be", "www.youtu.be"}
-_PATH_PREFIXES = ("shorts", "embed", "live", "v", "e")
+_PATH_PREFIXES = ("shorts", "embed", "live", "v", "e", "watch")
+_CHANNEL_PREFIXES = ("channel", "c", "user")
 
 _HTTP_TIMEOUT = 20
 GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
@@ -76,6 +77,18 @@ class IngestError(Exception):
 
 MSG_INVALID = (
     "That doesn't look like a valid YouTube link. Paste a video URL such as "
+    "https://www.youtube.com/watch?v=XXXXXXXXXXX or https://youtu.be/XXXXXXXXXXX."
+)
+MSG_CHANNEL = (
+    "That is a YouTube channel link, not a video. Open one of the channel's "
+    "videos and paste that video's link instead."
+)
+MSG_PLAYLIST = (
+    "That is a YouTube playlist link without a specific video. Open a video "
+    "from the playlist and paste its link, or use the playlist import instead."
+)
+MSG_NOT_VIDEO = (
+    "That YouTube link doesn't point to a single video. Paste a video URL such as "
     "https://www.youtube.com/watch?v=XXXXXXXXXXX or https://youtu.be/XXXXXXXXXXX."
 )
 MSG_UNAVAILABLE = (
@@ -167,10 +180,20 @@ def parse_video_id(url: str) -> str:
         if segments:
             candidate = segments[0]
     elif host in _YOUTUBE_HOSTS:
-        if segments and segments[0] == "watch":
-            candidate = (parse_qs(parsed.query).get("v") or [None])[0]
-        elif len(segments) >= 2 and segments[0] in _PATH_PREFIXES:
+        first = segments[0] if segments else ""
+        query = parse_qs(parsed.query)
+        if first == "watch" and len(segments) == 1:
+            candidate = (query.get("v") or [None])[0]
+            if candidate is None and query.get("list"):
+                raise IngestError(MSG_PLAYLIST)
+        elif len(segments) >= 2 and first in _PATH_PREFIXES:
             candidate = segments[1]
+        elif first == "playlist":
+            raise IngestError(MSG_PLAYLIST)
+        elif first.startswith("@") or first in _CHANNEL_PREFIXES:
+            raise IngestError(MSG_CHANNEL)
+        elif segments:
+            raise IngestError(MSG_NOT_VIDEO)
     else:
         raise IngestError(
             "Only YouTube links are supported (youtube.com or youtu.be). "
