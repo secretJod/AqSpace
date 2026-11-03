@@ -202,3 +202,69 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** I wrote `docs/client/local-model.md`: what changed, setup, daily use, time estimates, fallback, how to stop it, and where notes are saved. Steps that depend on #37 are marked.
 **What it solved:** One page for the user to follow once #37 is approved.
 **Notes for the next agent:** Update it with real llm.sh output and measured times after #37.
+
+## [2026-11-03] Team lead (orchestrator): R6, upstream import + whole team on docs and hardening
+**Before:** Upstream had pushed smart playlist, dev tools, the Nemotron/Colab providers and a notes cache (Nov 2–3). Our docs were stale: ARCHITECTURE was upstream's original and the README was outdated.
+**What I did:** I added R6, created #47–#51 and #57–#65, and ran 13 agent tasks in two phases (import and docs first, then each owner hardening its own area). I relayed cross-agent contracts and caught that tunnel traffic looks like loopback, so `/dev` had to be guarded by proxy headers.
+**What it solved:** Upstream's features now sit on top of R5, every area has been reviewed by its owner, and the docs match the app.
+**Notes for the next agent:** Merge order: #45 → #58 → its stacked PRs (#66–#72) and #52–#56. #37 (llama.cpp) still needs the user's approval.
+
+## [2026-11-03] web-dev-3: Upstream import (#47, PR #58) and e2e tests (#62, PR #71)
+**Before:** None of upstream's Nov 2–3 work was in AQspace, and nothing tested the cache, the tunnel or the smart playlist end to end.
+**What I did:** I imported 75 files, three-way merged 23 (5 conflicts, keeping both sides), skipped 4 .ps1 files, renamed migration 002_smart_runs to 003, and added the `localOnly` `/dev` guard. Then I added e2e tests: resume with the cache on, a smart run through the tunnel, `/dev` 404 through the tunnel. I also fixed run_demo's import side effect.
+**What it solved:** Upstream's features run on top of R5 with all suites green (Python 489, aq-api 67), and `/dev` can't leak through the tunnel.
+**Notes for the next agent:** The rate limiter keys on the socket address (loopback behind the tunnel). Per-visitor limits are PR #19.
+
+## [2026-11-03] scaling-lead: ARCHITECTURE.md + ADR-0004 (#48, PR #56)
+**Before:** ARCHITECTURE.md was upstream's original, and there was no decision on how upstream's work overlaps ours.
+**What I did:** I rewrote ARCHITECTURE.md for AQspace. ADR-0004 folds colab into local with nvidia as the long-video fallback, puts the cache under checkpoints, keeps smart_runs in SQLite as 003, and makes `/dev` local-only by proxy headers.
+**What it solved:** The system has an accurate map, and each overlap has a decision.
+**Notes for the next agent:** F8: update ADR-0003's fallback section (Groq ≤1h, NVIDIA beyond) and close #39.
+
+## [2026-11-03] client-presenter: README + v0.2 release notes (#49, PR #52)
+**Before:** The README was outdated and there were no notes after v0.1.
+**What I did:** I wrote a new root README and `docs/client/release-notes-v0.2.md`.
+**What it solved:** A newcomer can start and understand the app from one page.
+**Notes for the next agent:** It links local-model.md (#46). Check it against llm.sh after #37.
+
+## [2026-11-03] qa-guide: QA plan for the upstream import (#50, PR #55)
+**Before:** There was no test plan for the imported features.
+**What I did:** I wrote `docs/qa/47-upstream-import.md`: 26 steps, including tunnel security checks and an R5 regression section.
+**What it solved:** The user can test #47 step by step.
+**Notes for the next agent:** Step 10 needs the provider route: `/api/v1/health` (localModel) or `/dev/api/overview`.
+
+## [2026-11-03] web-dev-2: Whisper cache (#51, PR #53) and compose/nuke cleanup (#61, PR #67)
+**Before:** The Whisper model downloaded again after every rebuild, and nuke.sh never removed `.data/`.
+**What I did:** I bind-mounted `.tools/whisper-models` (LNAI_WHISPER_DIR). nuke.sh now removes `.data` (wiped through a throwaway db container first). The cache is at `/app/backend/output/cache`, and the new env keys are documented in compose and the .env examples.
+**What it solved:** Storage rule kept: deleting the repo after nuke leaves nothing behind.
+**Notes for the next agent:** Run `docker compose config` once Docker is up.
+
+## [2026-11-03] web-dev-1: SQLite backups (#16, PR #54) and ordered migrations (#57, PR #68)
+**Before:** There was no safe backup, no contention signal, and an old database without a migrations table would fail to upgrade.
+**What I did:** I added `scripts/backup-db.sh` (VACUUM INTO, keeps the last 7) and a `dbBusy` counter in deep health. Old databases are baselined by probing their tables, migrations sort numerically, and the `/dev` guard blocks more proxy headers and any non-loopback Origin.
+**What it solved:** Hot backups work, and upgrading any database is safe.
+**Notes for the next agent:** Only `tx()` writes are counted.
+
+## [2026-11-03] ai-dev-1: colab folded into local, nvidia fallback, cache rules (#59 #60, PR #72)
+**Before:** colab was its own provider, long videos had no fallback, and cache keys ignored the profile and prompt version.
+**What I did:** `local` now accepts https plus LNAI_LOCAL_KEY, there's a local-small profile, and colab is a deprecated alias. Fallback: Groq ≤1h, then NVIDIA. Cache keys include the profile hash and PROMPT_VERSION, and the cache never stores degraded or fallback answers. smart.analyze gets groq_key and work_dir. 469 tests pass.
+**What it solved:** One self-hosted provider covers the Mac or Colab, and no stale answers are replayed.
+**Notes for the next agent:** Remove the colab alias next release.
+
+## [2026-11-03] ai-dev-2: smart playlist uses the one transcript path (#63, PR #66)
+**Before:** The smart playlist didn't pass groq_key or work_dir, so videos without captions were analysed from their title only.
+**What I did:** It now passes both to ingest.get_transcript. 3 tests added.
+**What it solved:** Notes and smart playlists share one transcript path.
+**Notes for the next agent:** run_demo.py is still a standalone copy.
+
+## [2026-11-03] ui-dev-1: smart playlist screens review (#64, PR #69)
+**Before:** smart.js made its own fetch calls, there was no 401 state, the closed drawer took focus, and one innerHTML remained.
+**What I did:** I added `AQ.api.request`, a 401/403 message, an inert drawer, textContent instead of innerHTML, and AQspace headers.
+**What it solved:** There's one API path, and keyboard and error handling are clean.
+**Notes for the next agent:** smartmagic.js should skip its canvas loop when reduced motion is on.
+
+## [2026-11-03] ui-dev-2: styles and motion review (#65 #21, PR #70)
+**Before:** water.js read reduced-motion only once, spinners froze, the forced-colors ring was missing, there was a contrast failure, sideways scroll on phones, and an empty eslint config.
+**What I did:** I fixed all of those, ported #20's rules and wrote the eslint config.
+**What it solved:** Accessibility holds across the imported UI.
+**Notes for the next agent:** Not yet checked in a browser; QA should take screenshots.
