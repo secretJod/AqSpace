@@ -1,4 +1,4 @@
-/* AQ Learning - center notes panel content.
+/* AQspace - center notes panel content.
    AQ.notesView.mount(container, video, { onClose }) -> { destroy() }
    Renders a header (title, channel, Download PDF, Open in new tab, Close) and a body that shows the generated notebook
    (notes.html from the notes server) in an iframe once ready, or the progressive AQ.noteButton while it is not.
@@ -73,7 +73,7 @@
     var closeBtn = el("button", "iconbtn nview__close");
     closeBtn.type = "button";
     closeBtn.setAttribute("aria-label", "Close notes");
-    closeBtn.innerHTML = "&times;";
+    closeBtn.textContent = "\u00d7";
     closeBtn.addEventListener("click", function () { if (typeof opts.onClose === "function") opts.onClose(); });
     actions.appendChild(pdfLink); actions.appendChild(tabLink); actions.appendChild(closeBtn);
     head.appendChild(titles); head.appendChild(actions);
