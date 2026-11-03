@@ -12,3 +12,6 @@ lecture-notes-ai/backend/output
 lecture-notes-ui/screenshots
 docs/*.pdf
 models
+lecture-notes-ai/backend/.cache
+lecture-notes-ai/backend/.tmp
+**/output
