@@ -11,7 +11,7 @@ else
 fi
 
 # Repo-local runtime state, caches, dependencies and generated output
-rm -rf .run .pip-cache .npm-cache .tools .gh-config models aq-api/data \
+rm -rf .run .pip-cache .npm-cache .tools .gh-config models aq-api/data .data/backups \
        aq-api/node_modules backend/node_modules frontend/node_modules \
        lecture-notes-ai/.venv lecture-notes-ai/backend/output
 find . -path ./.git -prune -o \( -name '__pycache__' -o -name '*.egg-info' -o -name '.pytest_cache' \) -type d -prune -exec rm -rf {} + 2>/dev/null || true
