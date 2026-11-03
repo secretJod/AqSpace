@@ -126,3 +126,9 @@ The built-in local user can be migrated by setting `external_id` on row 1 to the
 - `notes.js` uses `/api/v1/notes/*` when the API is available (server-side cache, one job per video), else talks to `:5055` directly. `importpl.js` uses `/api/v1/import/youtube` in the same way.
 
 Conflict policy: the server wins on start when nothing is pending; local wins when there are unsent (offline) edits.
+
+## Docker
+
+`docker compose up --build` (repo root) runs aq-api inside the `notes-ai` network namespace (`network_mode: service:notes-ai`), so it talks to the Python worker at `PY_NOTES_URL=http://127.0.0.1:5055` and port 5055 is never exposed. The UI/API is published on `127.0.0.1:5180` only. SQLite lives in `./aq-api/data` (bind mount, gitignored).
+
+The notes-ai side uses `PY_NOTES_PROVIDER=local`: the local model at `LNAI_LOCAL_URL=http://host.docker.internal:8081/v1` (`scripts/llm.sh`), with `LNA_PROVIDER_FALLBACK=1` falling back to Groq for videos up to 1 h. The Whisper speech-to-text model is cached in `./.tools/whisper-models` (bind mount via `LNAI_WHISPER_DIR`), so it is not downloaded again after a rebuild. `scripts/nuke.sh` removes it. Optional public link: `docker compose --profile tunnel up`.
