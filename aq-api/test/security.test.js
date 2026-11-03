@@ -128,7 +128,7 @@ test("migrations are idempotent and create the expected tables", async () => {
   const cfg = loadConfig({}, {});
   const db = openDb(":memory:", cfg.sqlDir);
   const names = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
-  for (const n of ["users", "videos", "playlists", "playlist_videos", "watch_progress", "notes_jobs", "schema_migrations"]) assert.ok(names.includes(n), n);
+  for (const n of ["users", "videos", "playlists", "playlist_videos", "watch_progress", "notes_jobs", "smart_runs", "schema_migrations"]) assert.ok(names.includes(n), n);
   assert.equal(db.prepare("SELECT name FROM users WHERE id = 1").get().name, "local");
   const { migrate } = await import("../src/db.js");
   migrate(db, cfg.sqlDir);

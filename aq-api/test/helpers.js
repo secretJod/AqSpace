@@ -63,7 +63,7 @@ export async function startMockPython() {
 }
 
 /** Starts the real app on a random port with an in-memory database. */
-export async function startApp({ py, overrides = {}, authenticate, clock, withUi = false } = {}) {
+export async function startApp({ py, overrides = {}, authenticate, clock, fetchImpl, withUi = false } = {}) {
   let uiDir = "";
   if (withUi) {
     uiDir = fs.mkdtempSync(path.join(os.tmpdir(), "aq-ui-"));
@@ -75,12 +75,12 @@ export async function startApp({ py, overrides = {}, authenticate, clock, withUi
     fs.writeFileSync(path.join(uiDir, "_landing-backup", "index.html"), "old");
   }
   const config = loadConfig({}, {
-    dbFile: ":memory:", log: false, uiDir, pyUrl: py ? py.url : "http://127.0.0.1:9",
+    dbFile: ":memory:", log: false, uiDir, devLogDir: "", runDir: "", pyUrl: py ? py.url : "http://127.0.0.1:9",
     notes: { pollMinMs: 0, verifyMs: 0, pyTimeoutMs: 2000, importTimeoutMs: 2000 },
     rate: { general: { max: 100000, windowMs: 60000 }, heavy: { max: 100000, windowMs: 60000 } },
     ...overrides
   });
-  const app = createApp(config, { authenticate, clock });
+  const app = createApp(config, { authenticate, clock, fetchImpl });
   const server = http.createServer(app);
   const port = await listen(server);
   const base = `http://127.0.0.1:${port}`;

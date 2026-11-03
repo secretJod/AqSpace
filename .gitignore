@@ -45,3 +45,6 @@ __pycache__/
 
 # Local LLM weights (GGUF), several GB, never committed
 models/
+.run/
+**/.cache/
+**/.tmp/

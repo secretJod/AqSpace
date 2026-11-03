@@ -154,14 +154,14 @@ def test_providers_lists_all_and_server_key_flag(make_client, monkeypatch):
     client, _, _ = make_client()
     data = client.get("/api/providers").get_json()
     ids = [p["id"] for p in data["providers"]]
-    assert ids == ["local", "gemini", "groq", "xai", "huggingface"]
+    assert ids == ["local", "gemini", "groq", "xai", "huggingface", "nvidia", "colab"]
     assert all(p["server_key"] is False for p in data["providers"])
     local = data["providers"][0]
     assert local["needs_key"] is False and local["online"] in (True, False)
     monkeypatch.setenv("GROQ_API_KEY", SECRET)
     data = client.get("/api/providers").get_json()
     flags = {p["id"]: p["server_key"] for p in data["providers"]}
-    assert flags == {"local": False, "gemini": False, "groq": True, "xai": False, "huggingface": False}
+    assert flags == {"local": False, "gemini": False, "groq": True, "xai": False, "huggingface": False, "nvidia": False, "colab": False}
     assert SECRET not in json.dumps(data)
     for p in data["providers"]:
         assert {"id", "label", "default_model", "key_hint", "server_key"} <= set(p)

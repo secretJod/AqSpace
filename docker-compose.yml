@@ -57,6 +57,8 @@ services:
       - "127.0.0.1:5180:5180"             # aq-api (notes app UI + API)
     volumes:
       - ./lecture-notes-ai/backend/output:/app/backend/output   # generated notes stay in the repo
+      - ./lecture-notes-ai/backend/.cache:/app/backend/.cache   # #47: transcript + LLM answer cache (LNA_CACHE_DIR)
+      - ./lecture-notes-ai/backend/.tmp:/app/backend/.tmp       # #47: scratch audio / PDF browser profiles (LNA_TMP_DIR)
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5055/api/providers', timeout=3)"]
       interval: 5s
@@ -74,6 +76,9 @@ services:
       PY_NOTES_URL: http://127.0.0.1:5055
       PY_NOTES_PROVIDER: local
       TUNNEL_ORIGINS: https://*.trycloudflare.com   # pages served through the tunnel may write
+      PY_SMART_PROVIDER: ${PY_SMART_PROVIDER:-gemini}   # #47: provider for "Smart arrange" (needs its key in backend/.env)
+      AQ_DEV_TOOLS: ${AQ_DEV_TOOLS:-1}                  # #47: /dev tracker; never served through the tunnel; 0 = off
+      AQ_RUN_DIR: ""                                    # no service console logs inside the container
     volumes:
       - ./aq-api/data:/app/aq-api/data    # SQLite aq.db stays in the repo (gitignored)
     depends_on:

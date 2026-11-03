@@ -40,7 +40,7 @@ from typing import Any, Callable
 
 import requests
 
-from . import prompts
+from . import cache, prompts
 from .notes_schema import format_duration, validate_notes
 
 # ------------------------------------------------------------ public API ----
@@ -53,7 +53,7 @@ PROVIDERS: dict[str, dict] = {
     },
     "gemini": {
         "label": "Google Gemini",
-        "default_model": "gemini-2.5-flash",
+        "default_model": "gemini-3.5-flash-lite",
         "needs_key": True,
         "key_hint": "Free key from aistudio.google.com/apikey (starts with AIza...)",
     },
@@ -75,15 +75,36 @@ PROVIDERS: dict[str, dict] = {
         "needs_key": True,
         "key_hint": "Access token from huggingface.co/settings/tokens with 'Inference Providers' permission (hf_...)",
     },
+    "nvidia": {
+        "label": "NVIDIA Nemotron",
+        "default_model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "needs_key": True,
+        "key_hint": "Free key from build.nvidia.com (starts with nvapi-...)",
+    },
+    "colab": {
+        "label": "Colab Qwen3-8B",
+        "default_model": "qwen3-8b",
+        "needs_key": True,
+        "key_hint": "The key printed by the Colab server cell (set COLAB_LLM_URL and COLAB_LLM_KEY in backend/.env)",
+    },
 }
 
 _ENDPOINTS = {
     "groq": "https://api.groq.com/openai/v1/chat/completions",
     "xai": "https://api.x.ai/v1/chat/completions",
     "huggingface": "https://router.huggingface.co/v1/chat/completions",
+    "nvidia": "https://integrate.api.nvidia.com/v1/chat/completions",
 }
 LOCAL_URL_DEFAULT = "http://127.0.0.1:8081/v1"
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+def _colab_url() -> str:
+    """The Colab server's base URL (a cloudflared link) comes from COLAB_LLM_URL; it changes every session."""
+    base = (os.environ.get("COLAB_LLM_URL") or "").strip().rstrip("/")
+    if not re.fullmatch(r"https://[A-Za-z0-9.\-]+(:\d+)?", base):
+        raise LLMError("COLAB_LLM_URL is not set to the https link printed by the Colab server cell.")
+    return base + "/v1/chat/completions"
 
 Progress = Callable[[str, int, str], None]
 
@@ -147,6 +168,13 @@ _BASE_PROFILES: dict[str, dict] = {
                 digest_out=3000, out_single=16000, out_batch=12000, tpm=None),
     "huggingface": dict(single_chars=20000, chunk_chars=10000, batch_chars=14000, digest_cap=3500,
                         digest_out=2000, out_single=8000, out_batch=5000, tpm=None),
+    # NVIDIA NIM free tier: ~40 requests/minute, no daily token cap; large-context Nemotron models
+    "nvidia": dict(single_chars=40000, chunk_chars=20000, batch_chars=20000, digest_cap=4000,
+                   digest_out=2500, out_single=12000, out_batch=8000, tpm=None),
+    # self-hosted Qwen3-8B (llama.cpp on a Colab T4, 16k context, ~33 tok/s): small slices keep every
+    # call well inside the context window and each call short
+    "colab": dict(single_chars=6000, chunk_chars=8000, batch_chars=8000, digest_cap=2500,
+                  digest_out=1500, out_single=5000, out_batch=4000, tpm=None),
 }
 
 
@@ -428,7 +456,7 @@ class _Client:
             if not think and "qwen3" in self.model.lower():
                 user = user + "\n/no_think"
         else:
-            url = _ENDPOINTS[self.provider]
+            url = _ENDPOINTS.get(self.provider) or _colab_url()
             headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
         body = {
             "model": self.model,
@@ -782,24 +810,36 @@ def _digest_chunks(client: _Client, chunks: list[dict], meta: dict, report: _Rep
     for i, ch in enumerate(chunks):
         name = f"map-{i:04d}"
         d = ckpt.get(name) if ckpt else None
+        from_model = False
+        ck = None
         if not isinstance(d, str):
             report(5 + int(35 * i / max(1, n)), f"Extracting key knowledge (chunk {i}/{n})...")
             text = ch["text"]
             msgs = prompts.digest_messages(text, i, n, meta, prompts.digest_word_budget(len(text)))
-            try:
+            # the prompt text is part of the key, so editing a prompt or switching model never reuses old digests
+            ck = cache.make_key("digest", 1, client.provider, client.model, msgs, prof["digest_out"], prof["digest_cap"])
+            hit = cache.get("digest", ck)
+            if isinstance(hit, dict) and str(hit.get("d", "")).strip():
+                d = str(hit["d"])
+            else:
+                from_model = True
                 try:
-                    obj = client.ask_json(msgs, prof["digest_out"], 0.2)
-                except _OutputTruncated as e:
-                    # keep what was produced before the cut-off rather than failing the whole job
-                    obj = salvage_truncated_json(e.text)
-                d = prompts.digest_to_text(obj, prof["digest_cap"]) if isinstance(obj, dict) else ""
-            except (_BadJSON, _OutputTruncated, ValueError):
-                d = text[: prof["digest_cap"]]  # degrade: feed raw slice head instead of aborting
+                    try:
+                        obj = client.ask_json(msgs, prof["digest_out"], 0.2)
+                    except _OutputTruncated as e:
+                        # keep what was produced before the cut-off rather than failing the whole job
+                        obj = salvage_truncated_json(e.text)
+                    d = prompts.digest_to_text(obj, prof["digest_cap"]) if isinstance(obj, dict) else ""
+                except (_BadJSON, _OutputTruncated, ValueError):
+                    d = text[: prof["digest_cap"]]  # degrade: feed raw slice head instead of aborting
+                    from_model = False
             if ckpt:
                 ckpt.put(name, d)
         report(5 + int(35 * (i + 1) / max(1, n)), f"Extracting key knowledge (chunk {i + 1}/{n})...")
         if d.strip():
             digests.append(d)
+            if from_model:  # never cache the degraded fallback: a retry should get another chance
+                cache.put("digest", ck, {"d": d})
     return digests
 
 
@@ -881,6 +921,12 @@ def _compose_covered(client: _Client, meta: dict, digs: list[str], n: int, cap: 
     with a stricter instruction (one section per consecutive time group) and keep the better result."""
     n = max(1, min(n, cap))
     n_max = min(cap, n + 1)
+    first = prompts.compose_batch_messages(meta, "\n\n".join(digs), n, n_max, prior, no, total, "")
+    ck = cache.make_key("compose", 1, client.provider, client.model, first, client.profile["out_batch"])
+    hit = cache.get("compose", ck)
+    if isinstance(hit, dict) and isinstance(hit.get("sections"), list) \
+            and _usable_count(hit["sections"]) >= _coverage_needed(n):
+        return hit["sections"]
     got = _compose_batch(client, meta, digs, n, n_max, prior, no, total)
     have = _usable_count(got)
     if have < _coverage_needed(n):
@@ -891,6 +937,8 @@ def _compose_covered(client: _Client, meta: dict, digs: list[str], n: int, cap: 
         again = _compose_batch(client, meta, digs, n, n_max, prior, no, total, strict)
         if _usable_count(again) > have:
             got = again
+    if _usable_count(got) >= _coverage_needed(n):  # only an accepted answer is remembered
+        cache.put("compose", ck, {"sections": got})
     return got
 
 

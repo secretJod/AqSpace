@@ -96,6 +96,10 @@ Run it with Docker. See **Run everything with Docker (one command)** above: put 
 | `docs/` | `ARCHITECTURE.md`, dev notebook, `PLAN.md`, `AGENT_JOURNAL.md` |
 | `scripts/` | `nuke.sh` (remove all app data), `secret-scan.sh` (key scanner), `gh.sh` (repo-local GitHub CLI) |
 
+### Where files go (disk space)
+
+Everything that grows stays inside the project folder, on the project's drive: `.cache/` (pip, npm, model downloads), `.tmp/` (scratch files) and `lecture-notes-ai\backend\.cache` (saved transcripts and LLM answers, capped at 300 MB). All are git-ignored. `start-all.ps1` sets this up; in your own terminal run `. .\scripts\dev-env.ps1` before `npm install`, `pip install` or tests.
+
 ### Development
 
 - Python tests: `cd lecture-notes-ai && LNA_OFFLINE=1 .venv/bin/python -m pytest tests -q`
