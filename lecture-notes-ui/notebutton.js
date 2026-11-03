@@ -1,4 +1,4 @@
-/* AQ Learning - the "Get notes" button.
+/* AQspace - the "Get notes" button.
 
    AQ.noteButton(video, { onView(video) }) -> <button class="nbtn">
    Renders from AQ.notesJobs.status(video.id) and updates live:

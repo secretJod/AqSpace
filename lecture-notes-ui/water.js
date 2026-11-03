@@ -1,4 +1,4 @@
-/* AQ Learning - "liquid glass" button (Apple iOS 26 style).
+/* AQspace - "liquid glass" button (Apple iOS 26 style).
 
    Material: a thick clear lens over the dark page. The page behind it is refracted through an SVG
    feDisplacementMap that is driven by a displacement map generated at runtime (canvas -> data URL, sized to the
@@ -16,7 +16,8 @@
 (function () {
   "use strict";
   var u = AQ.util, el = u.el;
-  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var reduceMq = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
+  function reduced() { return reduceMq.matches; }   // read per button, so a changed OS setting applies without a reload
   var SVGNS = "http://www.w3.org/2000/svg";
   var ua = navigator.userAgent || "";
   var CAN_REFRACT = /\b(Chrome|Chromium|Edg)\//.test(ua) && !/Firefox\//.test(ua);   // SVG url() in backdrop-filter
@@ -154,7 +155,7 @@
       }).observe(btn);
     }
 
-    if (reduced) {   // static glass, no motion, immediate action
+    if (reduced()) {   // static glass, no motion, immediate action
       btn.addEventListener("click", activate);
       return btn;
     }
