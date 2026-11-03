@@ -37,7 +37,7 @@ PORT = int(os.environ.get("LNA_PORT", "5055"))
 def main() -> None:
     # transcripts + accepted LLM answers are kept here (git-ignored, size-capped) so a retry or a second
     # request for the same video skips the slow steps; set LNA_CACHE_DIR yourself to move it
-    os.environ.setdefault("LNA_CACHE_DIR", os.path.join(_HERE, ".cache"))
+    os.environ.setdefault("LNA_CACHE_DIR", os.path.join(_HERE, "output", "cache"))  # = cache.DEFAULT_DIR
     _use_local_temp()
     app = create_app()
     print(f"Lecture Notes AI running at http://{HOST}:{PORT}  (Ctrl+C to stop)")

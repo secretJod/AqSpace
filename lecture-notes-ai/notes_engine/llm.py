@@ -49,7 +49,8 @@ PROVIDERS: dict[str, dict] = {
         "label": "Local model (Qwen3-8B)",
         "default_model": "qwen3-8b",
         "needs_key": False,
-        "key_hint": "No key needed: runs on your own llama-server (LNAI_LOCAL_URL, default http://127.0.0.1:8081/v1)",
+        "key_hint": "No key needed: runs on your own llama-server (LNAI_LOCAL_URL, default http://127.0.0.1:8081/v1; "
+                    "an https URL plus LNAI_LOCAL_KEY for a remote/Colab server)",
     },
     "gemini": {
         "label": "Google Gemini",
@@ -81,11 +82,16 @@ PROVIDERS: dict[str, dict] = {
         "needs_key": True,
         "key_hint": "Free key from build.nvidia.com (starts with nvapi-...)",
     },
+    # DEPRECATED alias of "local" (ADR-0004, kept for one release): runs the local provider against
+    # COLAB_LLM_URL with COLAB_LLM_KEY and the local-small profile. Prefer LNAI_LOCAL_URL + LNAI_LOCAL_KEY.
     "colab": {
-        "label": "Colab Qwen3-8B",
+        "label": "Colab Qwen3-8B (deprecated: use Local)",
         "default_model": "qwen3-8b",
         "needs_key": True,
-        "key_hint": "The key printed by the Colab server cell (set COLAB_LLM_URL and COLAB_LLM_KEY in backend/.env)",
+        "deprecated": True,
+        "alias_of": "local",
+        "key_hint": "Deprecated: set LNAI_LOCAL_URL (https) and LNAI_LOCAL_KEY and choose Local. "
+                    "Still reads COLAB_LLM_URL and COLAB_LLM_KEY from backend/.env for one release.",
     },
 }
 
@@ -99,12 +105,13 @@ LOCAL_URL_DEFAULT = "http://127.0.0.1:8081/v1"
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-def _colab_url() -> str:
-    """The Colab server's base URL (a cloudflared link) comes from COLAB_LLM_URL; it changes every session."""
-    base = (os.environ.get("COLAB_LLM_URL") or "").strip().rstrip("/")
+def _colab_base_url() -> str:
+    """Deprecated alias: the Colab server's base URL (a cloudflared link) from COLAB_LLM_URL, as an
+    OpenAI-compatible ``.../v1`` base for the local provider."""
+    base = (os.environ.get("COLAB_LLM_URL") or "").strip().rstrip("/").removesuffix("/v1")
     if not re.fullmatch(r"https://[A-Za-z0-9.\-]+(:\d+)?", base):
         raise LLMError("COLAB_LLM_URL is not set to the https link printed by the Colab server cell.")
-    return base + "/v1/chat/completions"
+    return base + "/v1"
 
 Progress = Callable[[str, int, str], None]
 
@@ -173,12 +180,19 @@ _BASE_PROFILES: dict[str, dict] = {
                    digest_out=2500, out_single=12000, out_batch=8000, tpm=None),
     # self-hosted Qwen3-8B (llama.cpp on a Colab T4, 16k context, ~33 tok/s): small slices keep every
     # call well inside the context window and each call short
-    "colab": dict(single_chars=6000, chunk_chars=8000, batch_chars=8000, digest_cap=2500,
-                  digest_out=1500, out_single=5000, out_batch=4000, tpm=None),
+    # local-small: the same Qwen3-8B on a llama-server with <= 8K context (upstream's Colab T4 sizes).
+    # Chosen when the server reports n_ctx <= SMALL_CTX_MAX (or LNAI_LOCAL_CTX says so), and always
+    # for the deprecated "colab" alias. Small slices keep every call inside the window.
+    "local-small": dict(single_chars=6000, chunk_chars=8000, batch_chars=8000, digest_cap=2500,
+                        digest_out=1500, out_single=5000, out_batch=4000, tpm=None, final_out=3000,
+                        final_reasoning_reserve=0, max_total_sections=200, merge_budget_chars=40000,
+                        merge_fanout=8, read_timeout=LOCAL_READ_TIMEOUT, ctx_tokens=8192),
 }
+SMALL_CTX_MAX = 8192
 
 
 def _profile(provider: str, model: str) -> dict:
+    """Tunables for a provider id or a profile name ("local-small")."""
     p = dict(_BASE_PROFILES[provider])
     ml = model.lower()
     if provider == "gemini":
@@ -221,8 +235,50 @@ def _profile(provider: str, model: str) -> dict:
     return p
 
 
+def local_key() -> str:
+    """Optional Bearer key for a remote local server (LNAI_LOCAL_KEY); empty for a plain local llama-server."""
+    key = (os.environ.get("LNAI_LOCAL_KEY") or "").strip()
+    if key and (not key.isascii() or re.search(r"\s", key)):
+        raise LLMError("LNAI_LOCAL_KEY contains spaces or unusual characters.")
+    return key
+
+
+_CTX_SEEN: dict[str, int | None] = {}
+
+
+def local_server_ctx(base: str | None = None, key: str | None = None, timeout: float = 2.0) -> int | None:
+    """Context size of the local server: LNAI_LOCAL_CTX if set, else llama-server's ``/props`` n_ctx
+    (asked once per URL; skipped when LNA_OFFLINE=1). None when unknown."""
+    env = (os.environ.get("LNAI_LOCAL_CTX") or "").strip()
+    if env:
+        try:
+            return int(env)
+        except ValueError:
+            return None
+    if (os.environ.get("LNA_OFFLINE") or "").strip().lower() in ("1", "true", "yes"):
+        return None
+    base = base or local_base_url()
+    if base in _CTX_SEEN:
+        return _CTX_SEEN[base]
+    n = None
+    try:
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        r = requests.get(base.removesuffix("/v1") + "/props", headers=headers, timeout=timeout)
+        if r.status_code == 200:
+            d = r.json()
+            n = int((d.get("default_generation_settings") or {}).get("n_ctx") or d.get("n_ctx") or 0) or None
+    except Exception:  # noqa: BLE001 - unknown ctx just means the default profile
+        n = None
+    _CTX_SEEN[base] = n
+    return n
+
+
+def local_profile_name(ctx: int | None, force_small: bool = False) -> str:
+    return "local-small" if force_small or (ctx is not None and ctx <= SMALL_CTX_MAX) else "local"
+
+
 def local_base_url() -> str:
-    """OpenAI-compatible base URL of the local llama-server (LNAI_LOCAL_URL)."""
+    """OpenAI-compatible base URL of the local llama-server (LNAI_LOCAL_URL; http or https)."""
     url = (os.environ.get("LNAI_LOCAL_URL") or "").strip() or LOCAL_URL_DEFAULT
     if not re.match(r"^https?://[^\s/]+", url):
         raise LLMError("LNAI_LOCAL_URL must be an http(s) URL such as http://127.0.0.1:8081/v1.")
@@ -232,7 +288,9 @@ def local_base_url() -> str:
 def local_online(timeout: float = 1.0) -> bool:
     """True if the local llama-server answers GET <LNAI_LOCAL_URL>/models."""
     try:
-        return requests.get(local_base_url() + "/models", timeout=timeout).status_code == 200
+        key = local_key()
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        return requests.get(local_base_url() + "/models", headers=headers, timeout=timeout).status_code == 200
     except Exception:  # noqa: BLE001
         return False
 
@@ -428,10 +486,15 @@ def salvage_truncated_json(text: str) -> Any:
 
 # ------------------------------------------------------------------ client --
 class _Client:
-    def __init__(self, provider: str, api_key: str, model: str):
+    def __init__(self, provider: str, api_key: str, model: str, *, base_url: str | None = None,
+                 profile_name: str | None = None, cache_writes: bool = True):
         self.provider, self.key, self.model = provider, api_key, model
         self.label = PROVIDERS[provider]["label"]
-        self.profile = _profile(provider, model)
+        self.base_url = base_url  # local only: overrides LNAI_LOCAL_URL (deprecated colab alias)
+        self.profile_name = profile_name or provider
+        self.profile = _profile(self.profile_name, model)
+        # False on a fallback run: answers from a stand-in provider never go into the shared cache
+        self.cache_writes = cache_writes
         self.pacer = _Pacer(self.profile["tpm"])
         self.json_mode = True  # flips to False if an OpenAI-compatible provider rejects it
         self.reasoning_effort = self.profile["reasoning_effort"]  # flips to None if rejected
@@ -451,12 +514,14 @@ class _Client:
             return url, headers, body
         local = self.provider == "local"
         if local:
-            url = local_base_url() + "/chat/completions"
-            headers = {"Content-Type": "application/json"}  # no key: never send one
+            url = (self.base_url or local_base_url()) + "/chat/completions"
+            headers = {"Content-Type": "application/json"}
+            if self.key:  # only the server-side LNAI_LOCAL_KEY (or COLAB_LLM_KEY); never a typed key
+                headers["Authorization"] = f"Bearer {self.key}"
             if not think and "qwen3" in self.model.lower():
                 user = user + "\n/no_think"
         else:
-            url = _ENDPOINTS.get(self.provider) or _colab_url()
+            url = _ENDPOINTS[self.provider]
             headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
         body = {
             "model": self.model,
@@ -489,7 +554,7 @@ class _Client:
                     if local:
                         raise _TransientError(
                             "The local model server is not reachable at LNAI_LOCAL_URL "
-                            f"({_scrub(local_base_url(), None, 80)}). Start llama-server and try again.") from None
+                            f"({_scrub(self.base_url or local_base_url(), self.key, 80)}). Start llama-server and try again.") from None
                     raise _TransientError(f"Could not reach {self.label} (network error or timeout) after "
                                    f"{MAX_ATTEMPTS} tries. Check your connection and try again.") from None
                 _sleep(self._backoff(attempt))
@@ -733,13 +798,10 @@ class _Checkpoints:
         vid = re.sub(r"[^A-Za-z0-9_-]", "", str(transcript.get("video_id") or ""))[:32]
         if not vid:
             vid = "t" + hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:16]
-        prof = {k: v for k, v in sorted(client.profile.items()) if k != "read_timeout"}
         self.manifest = {
             "video_id": vid,
             "transcript_hash": hashlib.sha256(text.encode("utf-8", "replace")).hexdigest(),
-            "profile_hash": hashlib.sha256(json.dumps(
-                [client.provider, client.model, prompts.PROMPT_VERSION, prof], sort_keys=True, default=str
-            ).encode()).hexdigest(),
+            "profile_hash": profile_hash(client),
         }
         d = Path(base) / vid
         try:
@@ -791,6 +853,20 @@ class _Checkpoints:
                 pass
 
 
+def profile_hash(client: "_Client") -> str:
+    """Hash of everything that shapes an answer: provider, model, profile name and tunables, prompt
+    version. Shared by checkpoints and the cache, so a change to any of them never reuses old work."""
+    prof = {k: v for k, v in sorted(client.profile.items()) if k != "read_timeout"}
+    return hashlib.sha256(json.dumps(
+        [client.provider, client.model, client.profile_name, prompts.PROMPT_VERSION, prof],
+        sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _cache_key(client: "_Client", stage: str, *parts: Any) -> str:
+    """Cache key: stage + key format + profile hash + prompt version + the exact prompt messages."""
+    return cache.make_key(stage, cache.KEY_VERSION, profile_hash(client), prompts.PROMPT_VERSION, *parts)
+
+
 def _single_pass(client: _Client, transcript: dict, text: str, meta: dict, report: _Reporter) -> dict:
     prof = client.profile
     n = prompts.target_section_count(transcript.get("duration_sec"), len(text), prof["max_total_sections"])
@@ -817,7 +893,7 @@ def _digest_chunks(client: _Client, chunks: list[dict], meta: dict, report: _Rep
             text = ch["text"]
             msgs = prompts.digest_messages(text, i, n, meta, prompts.digest_word_budget(len(text)))
             # the prompt text is part of the key, so editing a prompt or switching model never reuses old digests
-            ck = cache.make_key("digest", 1, client.provider, client.model, msgs, prof["digest_out"], prof["digest_cap"])
+            ck = _cache_key(client, "digest", msgs)
             hit = cache.get("digest", ck)
             if isinstance(hit, dict) and str(hit.get("d", "")).strip():
                 d = str(hit["d"])
@@ -838,7 +914,8 @@ def _digest_chunks(client: _Client, chunks: list[dict], meta: dict, report: _Rep
         report(5 + int(35 * (i + 1) / max(1, n)), f"Extracting key knowledge (chunk {i + 1}/{n})...")
         if d.strip():
             digests.append(d)
-            if from_model:  # never cache the degraded fallback: a retry should get another chance
+            # never cache the degraded fallback (a retry should get another chance), nor a stand-in provider
+            if from_model and client.cache_writes:
                 cache.put("digest", ck, {"d": d})
     return digests
 
@@ -922,7 +999,7 @@ def _compose_covered(client: _Client, meta: dict, digs: list[str], n: int, cap: 
     n = max(1, min(n, cap))
     n_max = min(cap, n + 1)
     first = prompts.compose_batch_messages(meta, "\n\n".join(digs), n, n_max, prior, no, total, "")
-    ck = cache.make_key("compose", 1, client.provider, client.model, first, client.profile["out_batch"])
+    ck = _cache_key(client, "compose", first)
     hit = cache.get("compose", ck)
     if isinstance(hit, dict) and isinstance(hit.get("sections"), list) \
             and _usable_count(hit["sections"]) >= _coverage_needed(n):
@@ -937,7 +1014,7 @@ def _compose_covered(client: _Client, meta: dict, digs: list[str], n: int, cap: 
         again = _compose_batch(client, meta, digs, n, n_max, prior, no, total, strict)
         if _usable_count(again) > have:
             got = again
-    if _usable_count(got) >= _coverage_needed(n):  # only an accepted answer is remembered
+    if client.cache_writes and _usable_count(got) >= _coverage_needed(n):  # only accepted answers are kept
         cache.put("compose", ck, {"sections": got})
     return got
 
@@ -1080,6 +1157,7 @@ SERVER_KEY_ENV = {
     "groq": "GROQ_API_KEY",
     "xai": "XAI_API_KEY",
     "huggingface": "HF_TOKEN",
+    "nvidia": "NVIDIA_API_KEY",
 }
 GROQ_FALLBACK_MAX_SEC_DEFAULT = 3600  # local -> Groq only for videos up to ~1 h (ADR-0003)
 _log = logging.getLogger(__name__)
@@ -1099,19 +1177,24 @@ def _groq_fallback_max_sec() -> int:
 def _fallback_target(primary: str, transcript: dict | None = None) -> tuple[str, str] | None:
     """Provider to retry with after a transient failure. Never uses a key the user typed.
 
-    * primary ``local``: only Groq (server key), and only for videos up to LNAI_GROQ_FALLBACK_MAX_SEC
-      (default 1 h). Longer videos wait for the local server instead.
+    * primary ``local`` (or the deprecated ``colab`` alias): Groq (server key) for videos up to
+      LNAI_GROQ_FALLBACK_MAX_SEC (default 1 h); longer videos, which Groq's per-minute budget cannot
+      take, go to NVIDIA Nemotron (NVIDIA_API_KEY); without that key they wait for the local server.
     * any other primary: ``local`` first when its server is online, then the first provider with a
       server-side key.
+    One fallback means one whole new run: providers are never mixed within one video.
     """
-    if primary == "local":
+    if primary in ("local", "colab"):
         dur = (transcript or {}).get("duration_sec") or 0
-        key = (os.environ.get("GROQ_API_KEY") or "").strip()
-        if key and 0 < dur <= _groq_fallback_max_sec():
-            return "groq", key
-        return None
+        if dur <= 0:
+            return None
+        if dur <= _groq_fallback_max_sec():
+            key = (os.environ.get("GROQ_API_KEY") or "").strip()
+            return ("groq", key) if key else None
+        nv = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+        return ("nvidia", nv) if nv else None
     for pid in PROVIDERS:
-        if pid == primary:
+        if pid == primary or PROVIDERS[pid].get("deprecated"):
             continue
         if not PROVIDERS[pid].get("needs_key", True):
             if local_online():
@@ -1161,7 +1244,7 @@ def generate_notes(transcript: dict, *, provider: str, api_key: str | None = Non
                 pass
         try:
             notes = _generate_notes(transcript, provider=fb, api_key=fb_key, model=None, progress=progress,
-                                    checkpoint_dir=ckdir)
+                                    checkpoint_dir=ckdir, cache_writes=False)
         except LLMError as e2:
             raise LLMError(f"{e} Fallback to {PROVIDERS[fb]['label']} also failed: {_scrub(e2, fb_key, 300)}") from None
         meta = notes.setdefault("meta", {})
@@ -1171,10 +1254,21 @@ def generate_notes(transcript: dict, *, provider: str, api_key: str | None = Non
 
 
 def _generate_notes(transcript: dict, *, provider: str, api_key: str | None, model: str | None,
-                    progress: Progress | None, checkpoint_dir: str | Path | None = None) -> dict:
+                    progress: Progress | None, checkpoint_dir: str | Path | None = None,
+                    cache_writes: bool = True) -> dict:
     if provider not in PROVIDERS:
         raise LLMError(f"Unknown provider '{_scrub(provider, None, 40)}'. Choose one of: {', '.join(PROVIDERS)}.")
-    key = _clean_key(api_key) if PROVIDERS[provider].get("needs_key", True) else ""
+    alias_of = provider
+    base_url = None
+    if provider == "colab":  # deprecated alias: the local provider on COLAB_LLM_URL / COLAB_LLM_KEY
+        _log.warning("provider 'colab' is deprecated; use 'local' with LNAI_LOCAL_URL and LNAI_LOCAL_KEY")
+        base_url = _colab_base_url()
+        key = _clean_key(api_key or os.environ.get("COLAB_LLM_KEY"))
+        provider = "local"
+    elif provider == "local":
+        key = local_key()  # server-side only: a key typed in the app is never sent to a local server
+    else:
+        key = _clean_key(api_key) if PROVIDERS[provider].get("needs_key", True) else ""
     model = (model or "").strip() or PROVIDERS[provider]["default_model"]
     if provider == "gemini":
         model = model.removeprefix("models/")
@@ -1184,10 +1278,13 @@ def _generate_notes(transcript: dict, *, provider: str, api_key: str | None, mod
         raise LLMError("Invalid model name.")
     if not isinstance(transcript, dict) or not transcript.get("segments"):
         raise LLMError("The transcript is empty, so there is nothing to summarise.")
+    profile_name = None
     if provider == "local":
-        local_base_url()  # fail fast on a bad LNAI_LOCAL_URL
+        base = base_url or local_base_url()  # fail fast on a bad LNAI_LOCAL_URL
+        profile_name = local_profile_name(local_server_ctx(base, key), force_small=alias_of == "colab")
 
-    client = _Client(provider, key, model)
+    client = _Client(provider, key, model, base_url=base_url, profile_name=profile_name,
+                     cache_writes=cache_writes)
     report = _Reporter(progress)
     meta = _meta_for_prompt(transcript)
     model_tag = f"{provider}/{model}"

@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Any
 
 ENV_DIR = "LNA_CACHE_DIR"
+# where backend/run.py points LNA_CACHE_DIR by default (git-ignored; Docker: /app/backend/output/cache)
+DEFAULT_DIR = Path(__file__).resolve().parents[1] / "backend" / "output" / "cache"
+# bump when the key layout changes; keys also carry the LLM profile hash and prompts.PROMPT_VERSION
+KEY_VERSION = 2
 ENV_MAX_MB = "LNA_CACHE_MAX_MB"
 DEFAULT_MAX_MB = 300.0
 _SAFE = re.compile(r"[A-Za-z0-9_-]{1,128}")
