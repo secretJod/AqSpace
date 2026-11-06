@@ -80,7 +80,7 @@ services:
     network_mode: "service:notes-ai"
     environment:
       PY_NOTES_URL: http://127.0.0.1:5055
-      PY_NOTES_PROVIDER: local
+      PY_NOTES_PROVIDER: ${PY_NOTES_PROVIDER:-gemini}   # gemini (fast, cloud) | local (Qwen3-8B, scripts/llm.sh) | groq
       TUNNEL_ORIGINS: https://*.trycloudflare.com   # pages served through the tunnel may write
       PY_SMART_PROVIDER: ${PY_SMART_PROVIDER:-gemini}   # #47: provider for "Smart arrange" (needs its key in backend/.env)
       # #47: /dev tracker (request/event logs in aq-api/data/devlogs). Defaults ON for local dev because
