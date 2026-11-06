@@ -71,8 +71,6 @@ window.AQ = window.AQ || {};
       var b = el(isClone ? "span" : "button", "nb-tab");
       if (!isClone) {
         b.type = "button";
-        b.setAttribute("role", "tab");
-        b.id = "nb-tab-" + it.id + "-" + Math.random().toString(36).slice(2, 7);
         b.setAttribute("aria-label", it.label);
       }
       b.appendChild(makeIcon(it.icon));
@@ -97,8 +95,6 @@ window.AQ = window.AQ || {};
     root.setAttribute("aria-label", "Main");
     var pill = el("div", "nb-pill");
     var real = buildRow(items, false);
-    real.row.setAttribute("role", "tablist");
-    real.row.setAttribute("aria-orientation", "horizontal");
     pill.appendChild(real.row);
 
     var lens = el("div", "nb-lens");
@@ -183,7 +179,7 @@ window.AQ = window.AQ || {};
       real.nodes.forEach(function (n, i) {
         var on = i === index;
         n.classList.toggle("nb-active", on);
-        n.setAttribute("aria-selected", on ? "true" : "false");
+        if (on) n.setAttribute("aria-current", "page"); else n.removeAttribute("aria-current");
         n.tabIndex = on || (index < 0 && i === 0) ? 0 : -1;
       });
       root.classList.toggle("nb-none", index < 0);
@@ -203,14 +199,22 @@ window.AQ = window.AQ || {};
     real.nodes.forEach(function (n, i) {
       n.addEventListener("click", function () { if (!suppressClick) go(i, true); });
     });
+    // Arrow / Home / End move focus between the buttons (roving tabindex); Enter / Space (native click) navigates.
     real.row.addEventListener("keydown", function (e) {
-      var i = index, k = e.key;
-      if (k === "ArrowRight") i = (index + 1) % items.length;
-      else if (k === "ArrowLeft") i = (index - 1 + items.length) % items.length;
+      var cur = real.nodes.indexOf(document.activeElement);
+      if (cur < 0) cur = Math.max(0, index);
+      var i, k = e.key, n = items.length;
+      if (k === "ArrowRight" || k === "ArrowDown") i = (cur + 1) % n;
+      else if (k === "ArrowLeft" || k === "ArrowUp") i = (cur - 1 + n) % n;
       else if (k === "Home") i = 0;
-      else if (k === "End") i = items.length - 1;
+      else if (k === "End") i = n - 1;
       else return;
-      e.preventDefault(); go(i, true, true);
+      e.preventDefault();
+      real.nodes.forEach(function (b, j) { b.tabIndex = j === i ? 0 : -1; });
+      real.nodes[i].focus();
+    });
+    real.row.addEventListener("focusout", function (e) {
+      if (!real.row.contains(e.relatedTarget)) paint();   // restore the roving tab stop to the active item
     });
 
     // pointer drag (start on the lens area)
