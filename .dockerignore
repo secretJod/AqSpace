@@ -14,3 +14,6 @@ docs/*.pdf
 models
 .tools
 **/.tools
+lecture-notes-ai/backend/.cache
+lecture-notes-ai/backend/.tmp
+**/output
