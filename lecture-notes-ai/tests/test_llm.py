@@ -1404,3 +1404,121 @@ def test_deprecated_colab_is_never_a_fallback_target(f3_env):
     f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
     f3_env.setattr(llm, "local_online", lambda timeout=1.0: False)
     assert llm._fallback_target("gemini", {"duration_sec": 60}) is None
+
+
+# ------------------------------------------------- Gemini pacing (card #74) --
+class _Clock:
+    """Fake monotonic clock that only moves when the code sleeps."""
+
+    def __init__(self, mp, sleeps):
+        self.t = 1000.0
+        mp.setattr(llm.time, "monotonic", lambda: self.t)
+
+        def sleep(s):
+            sleeps.append(s)
+            self.t += max(0.0, s)
+        mp.setattr(llm, "_sleep", sleep)
+
+
+def test_gemini_rpm_env(monkeypatch):
+    monkeypatch.delenv("LNAI_GEMINI_RPM", raising=False)
+    assert llm._gemini_rpm() == llm.GEMINI_RPM_DEFAULT
+    assert llm._Client("gemini", KEYS["gemini"], "gemini-3.5-flash-lite").pacer.rpm == llm.GEMINI_RPM_DEFAULT
+    assert llm._Client("groq", KEYS["groq"], "llama-3.3-70b-versatile").pacer.rpm is None
+    monkeypatch.setenv("LNAI_GEMINI_RPM", "0")
+    assert llm._gemini_rpm() == 0
+    monkeypatch.setenv("LNAI_GEMINI_RPM", "junk")
+    assert llm._gemini_rpm() == llm.GEMINI_RPM_DEFAULT
+
+
+def test_rpm_pacer_waits_and_notifies(monkeypatch, sleeps):
+    _Clock(monkeypatch, sleeps)
+    told = []
+    p = llm._Pacer(None, rpm=3, notify=told.append)
+    for _ in range(3):
+        p.before(10)
+        p.after(10)
+    assert not sleeps  # 3 requests fit in one minute
+    p.before(10)
+    assert sleeps and 59 <= sleeps[0] <= 61 and told == sleeps
+
+
+def test_rpm_zero_turns_pacer_off(monkeypatch, sleeps):
+    _Clock(monkeypatch, sleeps)
+    p = llm._Pacer(None, rpm=0)
+    for _ in range(50):
+        p.before(10)
+        p.after(10)
+    assert not sleeps and not p.log
+
+
+def test_gemini_long_video_is_paced_with_progress(monkeypatch, sleeps):
+    clock = _Clock(monkeypatch, sleeps)
+    monkeypatch.setenv("LNAI_GEMINI_RPM", "2")
+    stamps = []
+    inner = pipeline_script("gemini", 5)
+    rec = install(monkeypatch, lambda c, i: stamps.append(clock.t) or inner(c, i))
+    msgs = []
+    notes = llm.generate_notes(make_transcript(400, 60), provider="gemini", api_key=KEYS["gemini"],
+                               progress=lambda st, pct, m: msgs.append(m))
+    assert notes["sections"] and len(rec.calls) > 2
+    waits = [m for m in msgs if m.startswith("Waiting for Google Gemini rate limit")]
+    assert waits and re.search(r", \d+s\.\.\.$", waits[0])
+    for k in range(2, len(stamps)):  # never more than 2 requests in any 60 s window
+        assert stamps[k] - stamps[k - 2] >= 60
+
+
+def test_gemini_429_retry_reports_wait(monkeypatch, sleeps):
+    good = FakeResp(200, ok_payload("gemini", json.dumps(full_notes())))
+    install(monkeypatch, [FakeResp(429, {"error": {"message": "slow down"}}, headers={"Retry-After": "20"}), good])
+    msgs = []
+    run("gemini", progress=lambda st, pct, m: msgs.append(m))
+    assert "Waiting for Google Gemini rate limit, 20s..." in msgs, msgs
+
+
+GEMINI_DAILY = {"error": {"code": 429, "message": "You exceeded your current quota. Quota exceeded for metric: "
+                          "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+                          "limit: 0, model: gemini-3.5-flash-lite (GenerateRequestsPerDayPerProjectPerModel-FreeTier)"}}
+
+
+def test_gemini_daily_quota_message_without_fallback(fb_env, sleeps):
+    fb_env.delenv("LNA_PROVIDER_FALLBACK")
+    rec = install(fb_env, [FakeResp(429, GEMINI_DAILY)])
+    with pytest.raises(LLMError, match="daily quota reached") as ei:
+        run("gemini")
+    assert "24 hours" in str(ei.value) and len(rec.calls) == 1 and not sleeps
+
+
+def test_gemini_daily_quota_falls_back_whole_video_to_groq(fb_env):
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    gem = pipeline_script("gemini")
+    groq = pipeline_script("groq")
+    n = {"gem": 0}
+
+    def script(call, i):
+        if "googleapis" in call["url"]:
+            n["gem"] += 1
+            return gem(call, i) if n["gem"] < 3 else FakeResp(429, GEMINI_DAILY)
+        return groq(call, i)
+    rec = install(fb_env, script)
+    msgs = []
+    notes = run("gemini", transcript=make_transcript(60, 60), progress=lambda st, pct, m: msgs.append(m))
+    assert notes["meta"]["provider"] == "groq" and notes["meta"]["fallback_from"] == "gemini"
+    assert any("daily quota reached" in m and "Groq" in m for m in msgs)
+    first_groq = next(i for i, c in enumerate(rec.calls) if "groq" in c["url"])
+    assert all("googleapis" not in c["url"] for c in rec.calls[first_groq:])  # no mixing
+
+
+def test_gemini_fallback_chain(fb_env):
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    fb_env.delenv("LNAI_GROQ_FALLBACK_MAX_SEC", raising=False)
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: True)
+    assert llm._fallback_target("gemini", {"duration_sec": 600}) == ("local", "")
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    assert llm._fallback_target("gemini", {"duration_sec": 1800}) == ("groq", SERVER_GROQ)
+    assert llm._fallback_target("gemini", {"duration_sec": 24 * 3600}) == ("nvidia", SERVER_NV)
+    fb_env.delenv("NVIDIA_API_KEY")
+    assert llm._fallback_target("gemini", {"duration_sec": 24 * 3600}) is None

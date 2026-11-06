@@ -135,6 +135,10 @@ class _OutputTruncated(LLMError):
 class _TransientError(LLMError):
     """Rate limit (429), server error (5xx) or timeout - another provider may still work."""
 
+    def __init__(self, message: str, daily_quota: bool = False):
+        super().__init__(message)
+        self.daily_quota = daily_quota
+
 
 class _HTTPStatusError(LLMError):
     def __init__(self, message: str, status: int, detail: str = "", payload: Any = None):
@@ -349,27 +353,59 @@ def _daily_quota_hit(body: str) -> bool:
                                 "(rpd)", "daily limit", "daily quota", '"limit": 0', "limit: 0"))
 
 
-class _Pacer:
-    """Keeps estimated tokens in the trailing 60 s under ``tpm * 0.85`` (Groq free tier)."""
+GEMINI_RPM_DEFAULT = 10  # free-tier Flash / Flash-Lite allow ~10-15 requests per minute
 
-    def __init__(self, tpm: int | None):
+
+def _gemini_rpm() -> int:
+    """LNAI_GEMINI_RPM (requests per minute for the Gemini pacer); 0 turns the pacer off."""
+    raw = (os.environ.get("LNAI_GEMINI_RPM") or "").strip()
+    if not raw:
+        return GEMINI_RPM_DEFAULT
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return GEMINI_RPM_DEFAULT
+
+
+class _Pacer:
+    """Client-side rate limiter over a trailing 60 s window.
+
+    * ``tpm``: keeps estimated tokens under ``tpm * 0.85`` (Groq free tier).
+    * ``rpm``: keeps the number of requests at most ``rpm`` (Gemini free tier).
+    ``notify(seconds)`` is called before each wait so the UI can say why the job is paused.
+    """
+
+    def __init__(self, tpm: int | None, rpm: int | None = None,
+                 notify: Callable[[float], None] | None = None):
         self.budget = int(tpm * 0.85) if tpm else None
+        self.rpm = int(rpm) if rpm else None
+        self.notify = notify
         self.log: list[tuple[float, int]] = []
 
+    def _over(self, est_tokens: int) -> bool:
+        if self.budget and sum(n for _, n in self.log) + est_tokens > self.budget:
+            return True
+        return bool(self.rpm) and len(self.log) + 1 > self.rpm
+
     def before(self, est_tokens: int) -> None:
-        if not self.budget:
+        if not self.budget and not self.rpm:
             return
         now = time.monotonic()
         self.log = [(t, n) for t, n in self.log if now - t < 60]
-        while self.log and sum(n for _, n in self.log) + est_tokens > self.budget:
+        while self.log and self._over(est_tokens):
             t0, _n = self.log[0]
             wait = t0 + 60 - time.monotonic()
             if wait > 0:
+                if self.notify:
+                    try:
+                        self.notify(wait + 0.5)
+                    except Exception:  # noqa: BLE001 - progress must never kill the job
+                        pass
                 _sleep(wait + 0.5)
             self.log.pop(0)  # explicit pop: terminates even when sleep is mocked
 
     def after(self, est_tokens: int) -> None:
-        if self.budget:
+        if self.budget or self.rpm:
             self.log.append((time.monotonic(), est_tokens))
 
 
@@ -495,7 +531,10 @@ class _Client:
         self.profile = _profile(self.profile_name, model)
         # False on a fallback run: answers from a stand-in provider never go into the shared cache
         self.cache_writes = cache_writes
-        self.pacer = _Pacer(self.profile["tpm"])
+        # set by _generate_notes: notify(msg) shows "waiting for rate limit" progress lines
+        self.notify: Callable[[str], None] | None = None
+        rpm = _gemini_rpm() if provider == "gemini" else None
+        self.pacer = _Pacer(self.profile["tpm"], rpm, notify=lambda sec: self._waiting(sec))
         self.json_mode = True  # flips to False if an OpenAI-compatible provider rejects it
         self.reasoning_effort = self.profile["reasoning_effort"]  # flips to None if rejected
 
@@ -574,7 +613,7 @@ class _Client:
             except Exception:  # noqa: BLE001
                 pass
             if sc == 429 and _daily_quota_hit(body_text):
-                raise _TransientError(self._quota_message("daily quota"))
+                raise _TransientError(self._quota_message("daily quota"), daily_quota=True)
             if sc in (408, 429, 500, 502, 503, 504, 529):
                 last_status = sc
                 wait = _parse_retry_delay(resp)
@@ -583,7 +622,10 @@ class _Client:
                         _TransientError(f"{self.label} is overloaded (HTTP {sc}); try again later.")
                 if attempt + 1 >= attempts:
                     break
-                _sleep(min(MAX_RETRY_WAIT, (wait + 0.5) if wait is not None else self._backoff(attempt)))
+                delay = min(MAX_RETRY_WAIT, (wait + 0.5) if wait is not None else self._backoff(attempt))
+                if sc == 429:
+                    self._waiting(delay)
+                _sleep(delay)
                 continue
             raise self._http_error(sc, resp, body_text)
         if last_status == 429:
@@ -591,11 +633,23 @@ class _Client:
         raise _TransientError(f"{self.label} is temporarily unavailable (HTTP {last_status}) after "
                        f"{attempts} tries. Please try again in a few minutes.")
 
+    def _waiting(self, sec: float) -> None:
+        if self.notify:
+            try:
+                self.notify(f"Waiting for {self.label} rate limit, {max(1, int(round(sec)))}s...")
+            except Exception:  # noqa: BLE001
+                pass
+
     @staticmethod
     def _backoff(attempt: int) -> float:
         return min(MAX_RETRY_WAIT, BACKOFF_BASE * (2 ** attempt)) + random.uniform(0, 1)
 
     def _quota_message(self, what: str) -> str:
+        if what == "daily quota":
+            extra = ("the free daily request quota is used up" if self.provider == "gemini"
+                     else "the daily usage cap is used up")
+            return (f"{self.label} daily quota reached: {extra}. It resets within 24 hours; "
+                    "until then use another provider or a paid key.")
         extra = {
             "gemini": "Free-tier Gemini keys allow only a few requests per minute and a limited number per day.",
             "groq": "Groq's free tier caps tokens per minute and per day.",
@@ -736,8 +790,10 @@ def _get_chunker() -> Callable[..., list[dict]]:
 class _Reporter:
     def __init__(self, cb: Progress | None):
         self.cb = cb
+        self.last = 0  # last percentage, reused by "waiting for rate limit" messages
 
     def __call__(self, pct: int, msg: str) -> None:
+        self.last = pct
         if self.cb:
             try:
                 self.cb("notes", max(0, min(100, int(pct))), msg)
@@ -1193,6 +1249,16 @@ def _fallback_target(primary: str, transcript: dict | None = None) -> tuple[str,
             return ("groq", key) if key else None
         nv = (os.environ.get("NVIDIA_API_KEY") or "").strip()
         return ("nvidia", nv) if nv else None
+    if primary == "gemini":
+        # same chain as local, with local itself first: local (online) -> Groq (<= 1 h) -> NVIDIA
+        if local_online():
+            return "local", ""
+        dur = (transcript or {}).get("duration_sec") or 0
+        groq = (os.environ.get("GROQ_API_KEY") or "").strip()
+        if groq and 0 < dur <= _groq_fallback_max_sec():
+            return "groq", groq
+        nv = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+        return ("nvidia", nv) if nv else None
     for pid in PROVIDERS:
         if pid == primary or PROVIDERS[pid].get("deprecated"):
             continue
@@ -1239,7 +1305,9 @@ def generate_notes(transcript: dict, *, provider: str, api_key: str | None = Non
                      provider, _scrub(e, api_key, 160), fb)
         if progress:
             try:
-                progress("notes", 3, f"{PROVIDERS[provider]['label']} is busy; retrying with {PROVIDERS[fb]['label']}...")
+                why = "daily quota reached" if getattr(e, "daily_quota", False) else "is busy"
+                progress("notes", 3, f"{PROVIDERS[provider]['label']} {why}; retrying the whole video "
+                                     f"with {PROVIDERS[fb]['label']}...")
             except Exception:  # noqa: BLE001
                 pass
         try:
@@ -1286,6 +1354,7 @@ def _generate_notes(transcript: dict, *, provider: str, api_key: str | None, mod
     client = _Client(provider, key, model, base_url=base_url, profile_name=profile_name,
                      cache_writes=cache_writes)
     report = _Reporter(progress)
+    client.notify = lambda msg: report(report.last, msg)
     meta = _meta_for_prompt(transcript)
     model_tag = f"{provider}/{model}"
     max_sec = client.profile["max_total_sections"]
