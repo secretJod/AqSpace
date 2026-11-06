@@ -61,7 +61,7 @@ The notes worker talks to a llama.cpp `llama-server` running natively on the Mac
 scripts/llm.sh start     # pending card #37 (llama.cpp install)
 ```
 
-Until #37 lands, the local model is not available and notes use Gemini (or the fallback chain above). `curl -s 'localhost:5180/api/health?deep=1'` shows `localModel: ok` or `offline`. Plain-language guide: [docs/client/local-model.md](docs/client/local-model.md).
+Until #37 lands, the local model is not available and notes use Gemini (or the fallback chain above). `curl -s 'localhost:5180/api/v1/health?deep=1'` shows `localModel: ok` or `offline`. Plain-language guide: [docs/client/local-model.md](docs/client/local-model.md).
 
 ## Public link (Cloudflare tunnel, optional)
 
