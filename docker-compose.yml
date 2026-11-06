@@ -51,6 +51,9 @@ services:
       # R5: local Qwen3-8B on llama-server, running natively on the Mac at 127.0.0.1:8081 (scripts/llm.sh).
       LNAI_LOCAL_URL: http://host.docker.internal:8081/v1
       LNA_PROVIDER_FALLBACK: "1"              # Groq fallback for videos up to 1 h when local is down
+      # The image pip-installs notes_engine into site-packages, so its repo-relative default
+      # (.tools/whisper-models) would land outside any mount; point it at the bind mount below.
+      LNAI_WHISPER_DIR: /app/.tools/whisper-models
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -59,6 +62,7 @@ services:
       - ./lecture-notes-ai/backend/output:/app/backend/output   # generated notes stay in the repo
       - ./lecture-notes-ai/backend/.cache:/app/backend/.cache   # #47: transcript + LLM answer cache (LNA_CACHE_DIR)
       - ./lecture-notes-ai/backend/.tmp:/app/backend/.tmp       # #47: scratch audio / PDF browser profiles (LNA_TMP_DIR)
+      - ./.tools/whisper-models:/app/.tools/whisper-models      # Whisper model survives rebuilds (gitignored, nuked)
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5055/api/providers', timeout=3)"]
       interval: 5s

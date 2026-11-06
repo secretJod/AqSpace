@@ -167,3 +167,8 @@ flushed asynchronously once per second (and synchronously on exit); files older 
   `key=` / `token=` / `api_key:` style values become `***`. `run=prev` reads `*.prev.log`, the previous run kept by start-all.ps1.
 
 The tracker page has matching **History**, **Stats** (hourly SVG chart + per-path table) and **Service logs** (auto-refresh every 3 s, pause, level colouring) tabs.
+## Docker
+
+`docker compose up --build` (repo root) runs aq-api inside the `notes-ai` network namespace (`network_mode: service:notes-ai`), so it talks to the Python worker at `PY_NOTES_URL=http://127.0.0.1:5055` and port 5055 is never exposed. The UI/API is published on `127.0.0.1:5180` only. SQLite lives in `./aq-api/data` (bind mount, gitignored).
+
+The notes-ai side uses `PY_NOTES_PROVIDER=local`: the local model at `LNAI_LOCAL_URL=http://host.docker.internal:8081/v1` (`scripts/llm.sh`), with `LNA_PROVIDER_FALLBACK=1` falling back to Groq for videos up to 1 h. The Whisper speech-to-text model is cached in `./.tools/whisper-models` (bind mount via `LNAI_WHISPER_DIR`), so it is not downloaded again after a rebuild. `scripts/nuke.sh` removes it. Optional public link: `docker compose --profile tunnel up`.
