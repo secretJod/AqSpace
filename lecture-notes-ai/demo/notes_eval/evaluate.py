@@ -1,4 +1,4 @@
-"""Judging (Gemini as LLM-as-a-judge), code checks and aggregation -> out/evaluation.json.
+"""Judging (LLM-as-a-judge; Gemini by default, see run_eval --judge), code checks and aggregation -> out/evaluation.json.
 
 Judge calls (all cached to out/, so reruns only do missing work):
   gold      once per video : 12-15 key facts from the transcript       -> out/gold/<video>.json (auto-generated, editable)
@@ -19,7 +19,10 @@ import statistics as st
 import time
 from typing import Any, Callable
 
-import common as C
+try:  # python -m demo.notes_eval.<module> (package) or python demo/notes_eval/<module>.py
+    from . import common as C
+except ImportError:  # pragma: no cover
+    import common as C  # type: ignore[no-redef]
 
 JUDGE_PACE_SEC = 6.0           # min gap between judge calls (free-tier RPM)
 HALLUCINATION_GATE = 0.10      # max hallucination rate to pass the gate
@@ -35,11 +38,17 @@ class JudgeQuota(Exception):
 
 def _judge(system: str, user: str, max_tokens: int = 8192) -> Any:
     from notes_engine import llm
-    k = C.key("GEMINI_API_KEY")
+    if C.JUDGE_PROVIDER == "local":
+        k = llm.local_key()
+    else:
+        k = C.key(C.KEY_ENV.get(C.JUDGE_PROVIDER))
+        if not k:
+            raise llm.LLMError(f"No API key for the judge ({C.KEY_ENV.get(C.JUDGE_PROVIDER)}).")
     gap = time.time() - _last_call[0]
-    if gap < JUDGE_PACE_SEC:
-        time.sleep(JUDGE_PACE_SEC - gap)
-    client = llm._Client(C.JUDGE_PROVIDER, k, C.judge_model())
+    pace = 0.0 if C.JUDGE_PROVIDER == "local" else JUDGE_PACE_SEC
+    if gap < pace:
+        time.sleep(pace - gap)
+    client = llm._Client(C.JUDGE_PROVIDER, k, C.judge_model(), base_url=C.JUDGE_URL)
     try:
         return client.ask_json((system, user), max_tokens, 0.0)
     except llm.LLMError as e:
@@ -253,7 +262,7 @@ def _bool(v: Any) -> bool:
 def aggregate() -> dict:
     from notes_engine.llm import PROVIDERS
     runs_out, per = [], {}
-    for cid in C.CONTESTANTS:
+    for cid in (C.SELECTED or list(C.CONTESTANTS)):
         for vid in C.VIDEOS:
             t = C.read_json(C.TRANSCRIPTS / f"{vid}.json")
             for p in sorted((C.RUNS / cid / vid).glob("*.json")) if (C.RUNS / cid / vid).exists() else []:
@@ -315,7 +324,8 @@ def aggregate() -> dict:
             pairs.append(j)
 
     contestants = []
-    for cid, c in C.CONTESTANTS.items():
+    for cid in (C.SELECTED or list(C.CONTESTANTS)):
+        c = C.CONTESTANTS[cid]
         rs = [r for r in runs_out if r["contestant"] == cid]
         att = [r for r in rs if r["status"] in ("success", "error")]
         ok = [r for r in rs if r["status"] == "success"]
@@ -405,6 +415,9 @@ def aggregate() -> dict:
         c["rank"] = i + 1
     ev = {"generated": time.strftime("%Y-%m-%d %H:%M:%S"),
           "judge": f"{C.JUDGE_PROVIDER}/{C.judge_model()}",
+          "judge_bias": {"self_judged_contestants": C.judge_is_contestant(C.SELECTED or list(C.CONTESTANTS)),
+                         "note": "The judge scores its own provider's notes; expect self-preference bias. "
+                                 "Rerun with --judge <other provider> or rely on the blind human sheet."},
           "judge_quota": C.read_json(C.OUT / "judge_quota.json"),
           "constants": {"success_gate": SUCCESS_GATE, "hallucination_gate": HALLUCINATION_GATE,
                         "w_quality": W_QUALITY, "w_speed": W_SPEED, "w_headroom": W_HEADROOM,

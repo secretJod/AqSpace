@@ -4,6 +4,8 @@ API keys are read from backend/.env into memory only. They are never printed, lo
 """
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
 import os
 import re
@@ -19,8 +21,10 @@ TRANSCRIPTS = OUT / "transcripts"
 GOLD = OUT / "gold"
 RUNS = OUT / "runs"
 JUDGE = OUT / "judgements"
-DEV_UI = Path(r"D:\AQspace\aq-api\dev-ui")
-sys.path.insert(0, str(ROOT))
+DEV_UI = Path(os.environ.get("LNAI_EVAL_DEV_UI") or (ROOT.parent / "aq-api" / "dev-ui"))
+BLIND_SHEET = ROOT.parent / "docs" / "qa" / "r5-eval-blind.md"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 VIDEOS = {
     "WUvTyaaNkzM": "3Blue1Brown - Essence of calculus (17m)",
@@ -29,18 +33,80 @@ VIDEOS = {
     "zjkBMFhNj_g": "Andrej Karpathy - Intro to LLMs (60m)",
 }
 
-# id -> provider, model (None = engine default), env var holding the key
+# id -> provider, model (None = engine default), env var holding the key (None = keyless),
+# url (local only: overrides LNAI_LOCAL_URL for this contestant)
 CONTESTANTS = {
     "gemini": {"provider": "gemini", "model": None, "env": "GEMINI_API_KEY"},
     "groq": {"provider": "groq", "model": None, "env": "GROQ_API_KEY"},
     "nvidia-super": {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "env": "NVIDIA_API_KEY"},
     "nvidia-lightning": {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "env": "NVIDIA_API_KEY"},
+    "local": {"provider": "local", "model": None, "env": None, "url": None},
 }
 UNAVAILABLE = {
-    "colab": "Colab Qwen3-8B: not available (no GPU session running)",
     "huggingface": "Hugging Face Inference: not available (no credits)",
 }
+KEY_ENV = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY", "nvidia": "NVIDIA_API_KEY",
+           "xai": "XAI_API_KEY", "huggingface": "HF_TOKEN", "local": None}
+
+# The judge. Default Gemini, which is ALSO a contestant: expect self-preference bias in its favour.
+# Change with run_eval --judge groq | nvidia | local[:alias][@url] (see README "Judge bias").
+SELECTED: list[str] = []   # contestants of the current run (aggregate only reports these)
 JUDGE_PROVIDER = "gemini"
+JUDGE_MODEL: str | None = None
+JUDGE_URL: str | None = None
+
+
+def _slug(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", s).strip("-").lower()
+
+
+def parse_spec(spec: str) -> dict:
+    """``provider[:model][@url]`` -> {provider, model, env, url}. ``@url`` is only allowed for local."""
+    from notes_engine.llm import PROVIDERS
+    spec = spec.strip()
+    url = None
+    if "@" in spec:
+        spec, url = spec.split("@", 1)
+        if not re.match(r"^https?://", url):
+            raise ValueError(f"bad URL in contestant spec: {url!r}")
+    prov, _, model = spec.partition(":")
+    if prov not in PROVIDERS or prov == "colab":
+        raise ValueError(f"unknown provider {prov!r}")
+    if url and prov != "local":
+        raise ValueError("@url is only allowed for the local provider")
+    return {"provider": prov, "model": model or None, "env": KEY_ENV.get(prov), "url": url}
+
+
+def register_contestant(spec: str) -> str:
+    """A known id (gemini, groq, local, ...) or a spec such as ``local:qwen3.5-9b`` or
+    ``local:gpt-oss-20b@http://127.0.0.1:8082/v1``; returns the contestant id used for out/ paths."""
+    spec = spec.strip()
+    if spec in CONTESTANTS:
+        return spec
+    cfg = parse_spec(spec)
+    cid = _slug("-".join(x for x in (cfg["provider"], cfg["model"]) if x))
+    if cfg["url"]:
+        cid += "-" + hashlib.sha1(cfg["url"].encode()).hexdigest()[:6]
+    CONTESTANTS[cid] = cfg
+    return cid
+
+
+def set_judge(spec: str) -> None:
+    global JUDGE_PROVIDER, JUDGE_MODEL, JUDGE_URL
+    cfg = CONTESTANTS[spec] if spec in CONTESTANTS else parse_spec(spec)
+    JUDGE_PROVIDER, JUDGE_MODEL, JUDGE_URL = cfg["provider"], cfg["model"], cfg.get("url")
+
+
+def judge_is_contestant(contestants: list[str]) -> list[str]:
+    """Contestant ids that use the judge's provider (their scores are suspect: self-preference)."""
+    return [c for c in contestants if CONTESTANTS[c]["provider"] == JUDGE_PROVIDER]
+
+
+def set_out(path: Path) -> None:
+    """Point every output path somewhere else (dry runs and tests never touch the real out/)."""
+    global OUT, TRANSCRIPTS, GOLD, RUNS, JUDGE
+    OUT = Path(path)
+    TRANSCRIPTS, GOLD, RUNS, JUDGE = OUT / "transcripts", OUT / "gold", OUT / "runs", OUT / "judgements"
 
 
 def model_of(cid: str) -> str:
@@ -51,14 +117,39 @@ def model_of(cid: str) -> str:
 
 def judge_model() -> str:
     from notes_engine.llm import PROVIDERS
-    return PROVIDERS[JUDGE_PROVIDER]["default_model"]
+    return JUDGE_MODEL or PROVIDERS[JUDGE_PROVIDER]["default_model"]
+
+
+# Env vars that would make an eval run differ from a clean app run, or leak state between runs.
+_APP_ONLY_ENV = ("LNA_CACHE_DIR", "LNAI_CHECKPOINT_DIR", "LNA_PROVIDER_FALLBACK")
+
+
+@contextlib.contextmanager
+def clean_run_env(local_url: str | None = None):
+    """Same engine path as the app, minus cache, checkpoints and provider fallback (a fallback would
+    silently score another provider). ``local_url`` overrides LNAI_LOCAL_URL for the block."""
+    saved = {k: os.environ.get(k) for k in (*_APP_ONLY_ENV, "LNAI_LOCAL_URL")}
+    for k in _APP_ONLY_ENV:
+        os.environ.pop(k, None)
+    if local_url:
+        os.environ["LNAI_LOCAL_URL"] = local_url
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 _KEYS: dict[str, str] = {}
 
 
-def key(env: str) -> str:
+def key(env: str | None) -> str:
     """Key from the process env or backend/.env (key names are whitespace-stripped). Never printed."""
+    if not env:
+        return ""
     if not _KEYS:
         try:
             from dotenv import dotenv_values
