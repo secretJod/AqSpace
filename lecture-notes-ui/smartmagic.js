@@ -303,6 +303,7 @@
     paintAll(s);
     if (fx) drawFx(s, now, dt, r);
     if (s.phase === "burst" && s.revealed && s.ch <= 0.001 && s.bf <= 0 && !anyAlive()) { end(s); return; }
+    if (reduced() && s.phase === "charge") { s.raf = 0; s.ch = 1; paintAll(s); return; }   // motion turned off mid-run: stop the loop, keep a static glow
     s.raf = requestAnimationFrame(s.step);
   }
 
