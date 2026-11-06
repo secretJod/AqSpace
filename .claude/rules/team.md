@@ -32,7 +32,10 @@ Columns: **Backlog → Todo → In Progress → In Review → QA → Done**
 
 ## Card and PR standards (keep the board professional)
 - **Issue title:** `<Area>: <outcome in plain words>`. Area is one of API, Notes engine, UI, Platform, Integration, QA, Docs, Decision, Release, Bug. No internal codes (R5, F2), file names or issue numbers in titles.
-- **Every card:** milestone (v0.x or Backlog), labels `role:` / `type:` / `priority:`, and the board fields **Priority** and **Area** set. The body has *Goal*, *Scope*, *How to test*.
+- **Every card:** created from a template in `.github/ISSUE_TEMPLATE/` (Feature: Summary, Why, Acceptance criteria, Out of scope, Notes; Bug: Summary, Steps, Expected, Actual, Impact, Environment). Milestone (v0.x or Backlog), labels `role:` / `type:` / `priority:`, board fields **Priority**, **Area** and **Size**, and linked as a sub-issue of its **epic**.
+- **Cards describe user outcomes**, at feature level. No internal codes, branch names, env-var lists or agent instructions in cards; those belong in agent prompts and PRs.
+- **Comments are for people:** "Ready for QA: how to test", "QA failed: …", decisions. No progress chatter.
+- **Work-in-progress limits:** at most 3 cards In Progress and 5 in QA. When QA is full, nobody starts new work.
 - **Titles stay true:** when the plan changes, rename the card; never leave stale titles.
 - **PRs:** title `#<issue> <outcome>`. A PR that is folded into a release branch is closed with a comment linking the release PR, so only live PRs stay open.
 - **Releases:** one release PR per milestone (e.g. "Release v0.3: ..."), merged to main only after the QA tester approves.
