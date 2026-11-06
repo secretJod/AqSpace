@@ -68,12 +68,14 @@ Generation dominates: 1500 digest tokens take ~125 s, prompt processing ~55 s pe
 ### Checkpoint / resume
 Every finished call writes into `<job output dir>/checkpoints/<video_id>/`: `meta.json` (model, profile hash, chunk boundaries, transcript sha256), `map/0007.json`, `merge/01.json`, `compose/03.json`, `final.json`, each written to a temp file and renamed (atomic). On start the job loads checkpoints whose transcript and profile hashes match and skips that work, so a crash or reboot loses at most one call (~3-9 min). A changed model or profile invalidates them. The folder is deleted once notes are saved; it lives under the gitignored job output, so `scripts/nuke.sh` removes it.
 
-**Fallback:** if `local` is unreachable, videos that fit Groq's short path (up to ~1 h) fall back to Groq; longer videos stay **queued** until local is back. Never mix providers inside one video.
+~~**Fallback:** if `local` is unreachable, videos that fit Groq's short path (up to ~1 h) fall back to Groq; longer videos stay **queued** until local is back.~~ (superseded 2026-11-06, F8, see ADR-0005)
+
+**Fallback (updated 2026-11-06, F8, PR #72):** with `LNA_PROVIDER_FALLBACK=1`, if `local` is unreachable, videos up to `LNAI_GROQ_FALLBACK_MAX_SEC` (default 1 h) fall back to Groq; longer videos fall back to NVIDIA Nemotron when `NVIDIA_API_KEY` is set, and otherwise stay **queued** until local is back. A fallback is one whole new run: never mix providers inside one video. The default provider is now Gemini (ADR-0005).
 
 ### Drive backup (card #38)
 Use the **Drive API with the `drive.file` scope** on the existing Google OAuth client. The app only sees files it created (non-sensitive scope, no Google verification), uploads notes JSON + PDF to `AQspace Notes/<playlist>/` after each finished job, and works the same from Docker, the Mac or Colab. A Drive-for-desktop synced folder is rejected: it needs a global app install, depends on desktop sync being up, needs a bind mount outside the repo to reach Docker, and does not exist on Colab. Checkpoints stay local (too chatty); only finished notes go to Drive.
 
-### Colab (card #39, Backlog)
+### Colab (card #39; covered by the https `local` provider, see ADR-0005)
 Optional runner of the **same** `llama-server` (CUDA build, same GGUF or a larger Qwen3 on L4/A100) behind a tunnel, selected through `LNAI_LOCAL_URL`. Move there when any of these holds: measured 24h runs exceed ~10 h on the Mac; the user needs the Mac during long jobs; more than one long video a day is queued; or we want a bigger model (Qwen3-30B-A3B / 32B) for quality.
 
 ## Consequences
