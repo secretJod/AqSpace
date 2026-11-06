@@ -1236,8 +1236,8 @@ def _fallback_target(primary: str, transcript: dict | None = None) -> tuple[str,
     * primary ``local`` (or the deprecated ``colab`` alias): Groq (server key) for videos up to
       LNAI_GROQ_FALLBACK_MAX_SEC (default 1 h); longer videos, which Groq's per-minute budget cannot
       take, go to NVIDIA Nemotron (NVIDIA_API_KEY); without that key they wait for the local server.
-    * any other primary: ``local`` first when its server is online, then the first provider with a
-      server-side key.
+    * any other primary (e.g. ``gemini``): ``local`` when its server is online, then Groq for videos
+      up to LNAI_GROQ_FALLBACK_MAX_SEC, then NVIDIA; otherwise None (the original error is raised).
     One fallback means one whole new run: providers are never mixed within one video.
     """
     if primary in ("local", "colab"):
@@ -1249,26 +1249,16 @@ def _fallback_target(primary: str, transcript: dict | None = None) -> tuple[str,
             return ("groq", key) if key else None
         nv = (os.environ.get("NVIDIA_API_KEY") or "").strip()
         return ("nvidia", nv) if nv else None
-    if primary == "gemini":
-        # same chain as local, with local itself first: local (online) -> Groq (<= 1 h) -> NVIDIA
-        if local_online():
-            return "local", ""
-        dur = (transcript or {}).get("duration_sec") or 0
-        groq = (os.environ.get("GROQ_API_KEY") or "").strip()
-        if groq and 0 < dur <= _groq_fallback_max_sec():
-            return "groq", groq
-        nv = (os.environ.get("NVIDIA_API_KEY") or "").strip()
-        return ("nvidia", nv) if nv else None
-    for pid in PROVIDERS:
-        if pid == primary or PROVIDERS[pid].get("deprecated"):
-            continue
-        if not PROVIDERS[pid].get("needs_key", True):
-            if local_online():
-                return pid, ""
-            continue
-        key = (os.environ.get(SERVER_KEY_ENV.get(pid, "")) or "").strip()
-        if key:
-            return pid, key
+    # every other primary follows the same chain (ADR-0005): local (online) -> Groq (<= cap) -> NVIDIA
+    if local_online():
+        return "local", ""
+    dur = (transcript or {}).get("duration_sec") or 0
+    groq = (os.environ.get("GROQ_API_KEY") or "").strip()
+    if primary != "groq" and groq and 0 < dur <= _groq_fallback_max_sec():
+        return "groq", groq
+    nv = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+    if primary != "nvidia" and nv:
+        return "nvidia", nv
     return None
 
 

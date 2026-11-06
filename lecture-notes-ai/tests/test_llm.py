@@ -1522,3 +1522,30 @@ def test_gemini_fallback_chain(fb_env):
     assert llm._fallback_target("gemini", {"duration_sec": 24 * 3600}) == ("nvidia", SERVER_NV)
     fb_env.delenv("NVIDIA_API_KEY")
     assert llm._fallback_target("gemini", {"duration_sec": 24 * 3600}) is None
+
+
+def test_non_local_primaries_follow_one_chain(fb_env):
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.delenv("LNAI_GROQ_FALLBACK_MAX_SEC", raising=False)
+    assert llm._fallback_target("gemini", {"duration_sec": 3 * 3600}) is None  # no Groq for long videos
+    assert llm._fallback_target("gemini", {}) is None  # unknown length: no Groq
+    fb_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    assert llm._fallback_target("groq", {"duration_sec": 600}) == ("nvidia", SERVER_NV)
+    assert llm._fallback_target("nvidia", {"duration_sec": 600}) == ("groq", SERVER_GROQ)
+    assert llm._fallback_target("nvidia", {"duration_sec": 3 * 3600}) is None
+    fb_env.setenv("LNAI_GROQ_FALLBACK_MAX_SEC", "600")
+    assert llm._fallback_target("gemini", {"duration_sec": 900}) == ("nvidia", SERVER_NV)
+
+
+def test_gemini_long_video_falls_back_to_nvidia_only(fb_env):
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    nv = pipeline_script("nvidia")
+    rec = install(fb_env, lambda c, i: FakeResp(429, GEMINI_DAILY) if "googleapis" in c["url"] else nv(c, i))
+    notes = run("gemini", transcript=make_transcript(120, 60))
+    assert notes["meta"]["provider"] == "nvidia" and notes["meta"]["fallback_from"] == "gemini"
+    assert not any("groq" in c["url"] for c in rec.calls)
+    after = rec.calls[1:]
+    assert after and all("nvidia" in c["url"] for c in after)
