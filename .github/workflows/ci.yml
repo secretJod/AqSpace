@@ -21,6 +21,17 @@ jobs:
           npm ci
           npm test
 
+  lecture-notes-ui:
+    name: lecture-notes-ui (syntax check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: node --check
+        run: for f in lecture-notes-ui/*.js; do node --check "$f"; done
+
   lecture-notes-ai:
     name: lecture-notes-ai (Python 3.12)
     runs-on: ubuntu-latest
@@ -37,8 +48,9 @@ jobs:
       # which breaks Chrome's sandbox (used by the PDF tests). Re-allow them.
       - name: Allow Chrome sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # tests/ = notes_engine + Flask API; demo/ = smart_playlist demo tests.
       - name: Test
         working-directory: lecture-notes-ai
         env:
           LNA_OFFLINE: "1"
-        run: python -m pytest tests -q
+        run: python -m pytest tests demo -q
