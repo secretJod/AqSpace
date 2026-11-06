@@ -4,8 +4,14 @@ from __future__ import annotations
 import json
 import re
 
-import common as C
-import evaluate
+try:  # python -m demo.notes_eval.<module> (package) or python demo/notes_eval/<module>.py
+    from . import common as C
+except ImportError:  # pragma: no cover
+    import common as C  # type: ignore[no-redef]
+try:
+    from . import evaluate
+except ImportError:  # pragma: no cover
+    import evaluate  # type: ignore[no-redef]
 
 
 def main() -> None:

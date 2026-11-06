@@ -2,22 +2,49 @@
 
 Compares LLM providers for the AQ Learning notes pipeline (`notes_engine.llm.generate_notes`, unchanged)
 on 4 real library videos, 2 runs each, and publishes the results to the dev page
-`http://127.0.0.1:5180/dev/eval.html` (`D:\AQspace\aq-api\dev-ui\eval.html` + `eval.js`, `eval.css`, `eval-data.json`).
+`http://127.0.0.1:5180/dev/eval.html` (`aq-api/dev-ui/eval.html`, override with `LNAI_EVAL_DEV_UI`; + `eval.js`, `eval.css`, `eval-data.json`).
 
-## Run (from `lecture-notes-ai/`)
+## Run (from `lecture-notes-ai/`, card #75)
 
 ```
-.venv\Scripts\python demo\notes_eval\run_eval.py --dry-run        # what would run / be skipped
-.venv\Scripts\python demo\notes_eval\run_eval.py                  # generate + judge + aggregate + page data
-.venv\Scripts\python demo\notes_eval\run_eval.py --judge-only     # only judging/aggregation
-.venv\Scripts\python demo\notes_eval\run_eval.py --contestants groq --videos zjkBMFhNj_g --runs 2
-.venv\Scripts\python demo\notes_eval\run_eval.py --retry-failed   # redo runs that errored
-.venv\Scripts\python demo\notes_eval\evaluate.py                  # re-aggregate only (no API calls)
-.venv\Scripts\python demo\notes_eval\build_data.py                # rewrite dev-ui/eval-data.json
+.venv/bin/python -m demo.notes_eval.run_eval --contestants gemini,groq,local --videos default --dry-run   # fakes only
+.venv/bin/python -m demo.notes_eval.run_eval --contestants gemini,groq,local --videos default             # real run
+.venv/bin/python -m demo.notes_eval.run_eval --contestants local:qwen3.5-9b,local:gpt-oss-20b@http://127.0.0.1:8082/v1
+.venv/bin/python -m demo.notes_eval.run_eval --judge groq          # judge that is not Gemini
+.venv/bin/python -m demo.notes_eval.run_eval --judge-only          # only judging/aggregation
+.venv/bin/python -m demo.notes_eval.run_eval --retry-failed        # redo runs that errored
+.venv/bin/python -m demo.notes_eval.blind --reveal                 # unblind AFTER scoring
 ```
 
-Keys come from `backend/.env` (`GEMINI_API_KEY`, `GROQ_API_KEY`, `NVIDIA_API_KEY`) and are never printed or written.
-`build_data.py` refuses to write the page data if it finds anything key-like.
+- **Contestants**: `gemini`, `groq`, `nvidia-super`, `nvidia-lightning`, `local`, or any spec
+  `provider[:model][@url]`. `local` uses `LNAI_LOCAL_URL` (default `http://127.0.0.1:8081/v1`) and the
+  engine's default alias; `local:<alias>` picks the model alias the server serves (Qwen3-8B, Qwen3.5-9B,
+  gpt-oss-20b, ...); `@url` points one contestant at its own server, so two local models can run side by side.
+  Local runs need no key (`LNAI_LOCAL_KEY` is read by the engine for a remote server, as in the app).
+- **Same pipeline as the app**: every run calls `notes_engine.llm.generate_notes` with the same provider
+  profiles, prompts and validation. The response cache (`LNA_CACHE_DIR`), checkpoints (`LNAI_CHECKPOINT_DIR`)
+  and provider fallback (`LNA_PROVIDER_FALLBACK`) are switched off for the run, and a run whose notes were
+  answered by another provider is recorded as an error.
+- **`--dry-run`** swaps only the network for `fakes.py` (synthetic transcripts, canned model and judge answers)
+  and writes to `out/dry-run/`. No keys, no API calls, no downloads. Use it to check the wiring.
+- `--videos default` = the 4 fixed videos below; any other YouTube id is accepted too.
+
+## Blind human scoring
+
+Each run writes `docs/qa/r5-eval-blind.md` (dry run: `out/dry-run/r5-eval-blind.md`): per video, the run-1
+notes of every contestant behind shuffled letters A, B, C..., with the `docs/qa/r5-eval.md` Part B rubric
+(Accuracy, Coverage, Structure, Readability, 1-5). Model names are stripped from the notes text. The key is
+`out/blind-key.json` (git-ignored). Score first, then `python -m demo.notes_eval.blind --reveal`.
+
+## Judge bias
+
+The default judge is Gemini, and Gemini is also a contestant. LLM judges prefer answers written by their
+own model family (self-preference bias), so Gemini's judge scores are likely optimistic. The run log prints
+a warning and `evaluation.json` lists the affected contestants under `judge_bias`. To reduce it:
+1. `--judge groq` (or `--judge nvidia`, or `--judge local:<alias>`) to use a judge that is not a contestant;
+2. treat the blind human sheet as the deciding score, and the judge as a second opinion;
+3. compare two judges: rerun with a different `--out` and `--judge` and check the ranking agrees.
+Judge keys come from the judge provider's env var (`GEMINI_API_KEY`, `GROQ_API_KEY`, `NVIDIA_API_KEY`).
 
 ## Resumable
 
@@ -37,10 +64,12 @@ Everything is cached under `out/`; a rerun skips completed work.
 - `common.py` - paths, contestants, key loading, notes-to-text, in-process meter (wraps the engine's `_sleep` and `requests.post` to count requests, statuses, sleep time and provider-reported token usage; engine files are not modified).
 - `run_eval.py` - CLI; fetch, generate (one at a time), then judge + aggregate + build.
 - `evaluate.py` - judge prompts (Gemini), code checks (grounding, noise leakage), aggregation and decision.
+- `fakes.py` - offline fakes for `--dry-run` and tests.
+- `blind.py` - blind sheet + key, `--reveal`.
 - `build_data.py` - writes `dev-ui/eval-data.json` (no transcripts, no notes bodies, no keys).
 
 ## Caveats
 
-Tiny sample (<= 8 runs per contestant); judge is Gemini and is also a contestant (self-preference bias);
+Tiny sample (<= 8 runs per contestant); judge is Gemini by default and is also a contestant (self-preference bias, see above);
 gold facts are machine-generated; latency includes free-tier pacing of this account. See the page's
 "Methodology and caveats" section.
