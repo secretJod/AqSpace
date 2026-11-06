@@ -1,5 +1,6 @@
 /* Google OAuth (authorization-code flow) for AUTH_MODE=google. No extra dependencies:
-   - sessions are stateless HttpOnly cookies signed with HMAC-SHA256 (node:crypto) over { uid, exp },
+   - sessions are server-side rows in the SQLite `sessions` table (migration 004, #14): the HttpOnly cookie holds an
+     opaque random token and only its sha256 is stored, so logout really revokes the session,
    - the anti-CSRF `state` lives in a short-lived signed cookie,
    - the code is exchanged at Google's token endpoint and the id_token is verified via Google's tokeninfo endpoint
      (audience, issuer, expiry and email_verified are checked here as well),
@@ -89,18 +90,18 @@ export function createGoogleAuth(g, { repo, fetchImpl = fetch, clock = Date.now 
 
       const name = String(info.name || info.email || "user").slice(0, 200);
       const uid = repo.upsertExternalUser(info.sub, name, info.email || null);
-      cookie(res, SESSION, s.sign({ uid, exp: clock() + g.sessionMaxAgeMs }), g.sessionMaxAgeMs);
+      cookie(res, SESSION, repo.createSession(uid, clock(), g.sessionMaxAgeMs), g.sessionMaxAgeMs);
       res.redirect(302, g.afterLogin);
     } catch (e) {
       next(e instanceof HttpError ? e : new HttpError(502, "Google sign-in failed."));
     }
   });
 
-  routes.post("/auth/logout", (_req, res) => { clear(res, SESSION); res.json({ ok: true }); });
+  routes.post("/auth/logout", (req, res) => { repo.deleteSession(readCookies(req)[SESSION]); clear(res, SESSION); res.json({ ok: true }); });
 
   function authenticate(req, _res, next) {
-    const sess = s.verify(readCookies(req)[SESSION], clock());
-    const u = sess && repo.getUser(sess.uid);
+    const uid = repo.sessionUser(readCookies(req)[SESSION], clock());
+    const u = uid && repo.getUser(uid);
     if (!u) return next(new HttpError(401, "Sign in required."));
     req.user = { id: u.id, name: u.name };
     next();

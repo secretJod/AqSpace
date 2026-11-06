@@ -119,6 +119,8 @@ test("clientKey(): CF-Connecting-IP only trusted from loopback, when enabled, an
   assert.equal(clientKey(r("127.0.0.1", "999.1.1.1"), true), "127.0.0.1");
   assert.equal(clientKey(r("127.0.0.1"), true), "127.0.0.1");
   assert.equal(clientKey({ socket: {} }, true), "?");
+  // a plain local request (no tunnel/proxy headers) always keys on the socket address
+  assert.equal(clientKey({ socket: { remoteAddress: "127.0.0.1" }, headers: { host: "localhost:5180" } }, true), "127.0.0.1");
 });
 
 test("rateLimit(): trustCf gives each tunnel visitor their own bucket", () => {

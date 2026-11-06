@@ -116,3 +116,22 @@ test("google mode refuses to start without credentials / secret", async () => {
   assert.throws(() => createApp(loadConfig({ AUTH_MODE: "google" }, { dbFile: ":memory:", uiDir: "" })), /SESSION_SECRET/);
   assert.equal(loadConfig({}).authMode, "local");
 });
+
+test("#14 sessions live in SQLite: only the token hash is stored, expiry is enforced, logout revokes", async () => {
+  const { session } = await login();
+  const token = session.split("=")[1];
+  const rows = t.db.prepare("SELECT id FROM sessions").all();
+  assert.equal(rows.length, 1);
+  assert.notEqual(rows[0].id, token);
+  assert.match(rows[0].id, /^[0-9a-f]{64}$/);
+  assert.equal((await t.get("/api/v1/me", { cookie: session })).status, 200);
+
+  t.db.prepare("UPDATE sessions SET expires_at = 1").run();               // expired -> 401
+  assert.equal((await t.get("/api/v1/me", { cookie: session })).status, 401);
+
+  const fresh = await login();
+  assert.equal(t.db.prepare("SELECT count(*) n FROM sessions").get().n, 1);   // expired row pruned on create
+  assert.equal((await raw("/api/v1/auth/logout", { cookie: fresh.session }, "POST")).status, 200);
+  assert.equal(t.db.prepare("SELECT count(*) n FROM sessions").get().n, 0);
+  assert.equal((await t.get("/api/v1/me", { cookie: fresh.session })).status, 401);   // replayed cookie is dead
+});
