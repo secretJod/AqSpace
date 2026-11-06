@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 /* Data access for playlists, playlist videos, watch progress and users.
    Every function takes the owning userId and only ever touches that user's rows. All SQL is parameterized. */
 import { tx } from "./db.js";
@@ -19,6 +20,23 @@ export function createRepo(db) {
     }
     return Number(db.prepare("INSERT INTO users (external_id, name, email) VALUES (?, ?, ?)").run(externalId, name, email ?? null).lastInsertRowid);
   }
+
+  /* ---------- sessions (AUTH_MODE=google, #14) ---------- */
+  const sha = (tok) => crypto.createHash("sha256").update(String(tok)).digest("hex");
+  /** Creates a session and returns the opaque token for the cookie (only its hash is stored). */
+  function createSession(userId, now, maxAgeMs) {
+    const token = crypto.randomBytes(32).toString("base64url");
+    db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
+    db.prepare("INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(sha(token), userId, now, now + maxAgeMs);
+    return token;
+  }
+  /** Returns the user id for a live session token, or null. */
+  function sessionUser(token, now) {
+    if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+    const row = db.prepare("SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?").get(sha(token), now);
+    return row ? row.user_id : null;
+  }
+  function deleteSession(token) { if (typeof token === "string") db.prepare("DELETE FROM sessions WHERE id = ?").run(sha(token)); }
 
   /* ---------- helpers ---------- */
   function ensureVideo(vid) {
@@ -320,7 +338,7 @@ export function createRepo(db) {
   }
 
   return {
-    getUser, upsertExternalUser, ensureVideo,
+    getUser, upsertExternalUser, createSession, sessionUser, deleteSession, ensureVideo,
     listPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist,
     addVideo, addVideos, reorder, editVideo, removeVideo, userHasVideo,
     getProgress, allProgress, putProgress, importState

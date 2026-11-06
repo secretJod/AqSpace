@@ -45,3 +45,10 @@ __pycache__/
 
 # Local LLM weights (GGUF), several GB, never committed
 models/
+.run/
+**/.cache/
+**/.tmp/
+
+# #61: notes cache (F4 LNA_CACHE_DIR) and devlogs, explicit
+lecture-notes-ai/backend/output/cache/
+aq-api/data/devlogs/

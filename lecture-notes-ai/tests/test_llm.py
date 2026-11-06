@@ -139,7 +139,7 @@ def test_gemini_request_shape(monkeypatch):
     rec = install(monkeypatch, [FakeResp(200, ok_payload("gemini", json.dumps(full_notes())))])
     notes = run("gemini")
     c = rec.calls[0]
-    assert c["url"] == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    assert c["url"] == "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
     assert KEYS["gemini"] not in c["url"] and "key=" not in c["url"]
     assert c["headers"]["x-goog-api-key"] == KEYS["gemini"]
     assert "Authorization" not in c["headers"]
@@ -149,7 +149,7 @@ def test_gemini_request_shape(monkeypatch):
     assert body["systemInstruction"]["parts"][0]["text"]
     assert body["contents"][0]["role"] == "user"
     assert c["timeout"][0] and c["timeout"][1]
-    assert notes["meta"]["model"] == "gemini/gemini-2.5-flash"
+    assert notes["meta"]["model"] == "gemini/gemini-3.5-flash-lite"
     assert len(rec.calls) == 1
 
 
@@ -1022,3 +1022,530 @@ def test_prompts_describe_all_eight_diagram_types():
     assert "topic overview" in low and "request/response" in low
     assert "mindmap" in prompts.DIGEST_SHAPE and "sequence" in prompts.DIGEST_SHAPE
     assert set(notes_schema.DIAGRAM_TYPES) == {"flow", "stack", "compare", "cycle", "tree", "timeline", "mindmap", "sequence"}
+
+
+# ------------------------------------------------- provider fallback (#8) ---
+SERVER_GROQ = "gsk_SERVERKEY0123456789abcdefghij"
+
+
+@pytest.fixture
+def fb_env(monkeypatch):
+    for v in llm.SERVER_KEY_ENV.values():
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("LNA_PROVIDER_FALLBACK", "1")
+    return monkeypatch
+
+
+def _by_host(primary_resp):
+    """Gemini calls get `primary_resp`; anything else (the fallback) gets good notes."""
+    groq = pipeline_script("groq")
+
+    def script(call, i):
+        if "googleapis" in call["url"]:
+            return primary_resp
+        return groq(call, i)
+    return script
+
+
+@pytest.mark.parametrize("bad", [FakeResp(429, {"error": {"message": "rate"}}), FakeResp(503, {}),
+                                 requests.Timeout("t")])
+def test_fallback_on_transient_uses_server_key(fb_env, bad, caplog):
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    rec = install(fb_env, _by_host(bad))
+    with caplog.at_level("WARNING"):
+        notes = run("gemini")
+    assert notes["meta"]["provider"] == "groq" and notes["meta"]["fallback_from"] == "gemini"
+    assert notes["meta"]["model"].startswith("groq/")
+    groq_calls = [c for c in rec.calls if "groq" in c["url"]]
+    assert groq_calls and groq_calls[0]["headers"]["Authorization"] == "Bearer " + SERVER_GROQ
+    assert "falling back to groq" in caplog.text
+    assert KEYS["gemini"] not in caplog.text and "SERVERKEY" not in caplog.text
+
+
+def test_fallback_off_by_default(fb_env):
+    fb_env.delenv("LNA_PROVIDER_FALLBACK")
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    rec = install(fb_env, _by_host(FakeResp(503, {})))
+    with pytest.raises(LLMError, match="(?i)unavailable"):
+        run("gemini")
+    assert all("googleapis" in c["url"] for c in rec.calls)
+
+
+def test_no_fallback_on_bad_key(fb_env):
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    rec = install(fb_env, _by_host(FakeResp(401, {"error": {"message": "bad key"}})))
+    with pytest.raises(LLMError, match="rejected the API key"):
+        run("gemini")
+    assert all("googleapis" in c["url"] for c in rec.calls)
+
+
+def test_no_fallback_without_server_key(fb_env):
+    # only the primary's own env key exists; nothing else to fall back to
+    fb_env.setenv("GEMINI_API_KEY", KEYS["gemini"])
+    rec = install(fb_env, _by_host(FakeResp(503, {})))
+    with pytest.raises(LLMError, match="(?i)unavailable"):
+        run("gemini")
+    assert all("googleapis" in c["url"] for c in rec.calls)
+
+
+def test_fallback_happens_only_once(fb_env):
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.setenv("XAI_API_KEY", "xai-SERVERKEY0123456789abcdefghij")
+    rec = install(fb_env, [FakeResp(503, {})])
+    with pytest.raises(LLMError, match="also failed") as ei:
+        run("gemini")
+    hosts = {c["url"].split("/")[2] for c in rec.calls}
+    assert hosts == {"generativelanguage.googleapis.com", "api.groq.com"}
+    assert "SERVERKEY" not in str(ei.value) and KEYS["gemini"] not in str(ei.value)
+
+
+# ------------------------------------------------- local provider (#31) ---
+@pytest.fixture
+def local_env(monkeypatch):
+    for v in ("LNAI_LOCAL_URL", "LNAI_CHECKPOINT_DIR", "LNA_PROVIDER_FALLBACK", *llm.SERVER_KEY_ENV.values()):
+        monkeypatch.delenv(v, raising=False)
+    return monkeypatch
+
+
+def run_local(transcript=None, **kw):
+    return llm.generate_notes(transcript or make_transcript(5), provider="local", **kw)
+
+
+def test_local_request_shape_no_key_no_think(local_env):
+    local_env.setenv("LNAI_LOCAL_URL", "http://127.0.0.1:9999/v1/")
+    rec = install(local_env, pipeline_script("local"))
+    notes = run_local(make_transcript(30))
+    c = rec.calls[0]
+    assert c["url"] == "http://127.0.0.1:9999/v1/chat/completions"
+    assert "Authorization" not in c["headers"]
+    assert c["json"]["model"] == "qwen3-8b"
+    assert c["json"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert c["json"]["messages"][1]["content"].endswith("/no_think")
+    assert c["json"]["response_format"] == {"type": "json_object"}
+    assert c["timeout"][1] == llm.LOCAL_READ_TIMEOUT
+    assert notes["meta"]["model"] == "local/qwen3-8b"
+    # the final (cover/glossary/recap) call thinks, with a reasoning budget and no JSON grammar
+    final = [x for x in rec.calls if kind_of(x) == "final"][0]
+    assert final["json"]["chat_template_kwargs"] == {"enable_thinking": True}
+    assert "response_format" not in final["json"]
+    assert not final["json"]["messages"][1]["content"].endswith("/no_think")
+    prof = llm._profile("local", "qwen3-8b")
+    assert final["json"]["max_tokens"] == prof["final_out"] + prof["final_reasoning_reserve"]
+
+
+def test_local_profile_fits_16k_context():
+    p = llm._profile("local", "qwen3-8b")
+    assert p["tpm"] is None and p["max_sections_per_call"] >= 4 and p["max_total_sections"] >= 100
+    rules = len(prompts.compose_batch_messages({"title": "x"}, "", 4, 5, [], 1, 1)[0]) + 2500
+    assert (p["batch_chars"] + rules) / 4.0 + p["out_batch"] <= 14500   # compose (Qwen ~4 chars/token)
+    assert (p["chunk_chars"] + 3000) / 4.0 + p["digest_out"] <= 14500   # digest
+
+
+def test_local_unclosed_think_is_dropped(local_env):
+    install(local_env, [FakeResp(200, ok_payload("local", "<think>still reasoning about"))])
+    client = llm._Client("local", "", "qwen3-8b")
+    assert client.complete("s", "u", 10) == ("", False)
+
+
+def test_local_server_down_is_friendly_and_fast(local_env, sleeps):
+    rec = install(local_env, [requests.ConnectionError("refused")])
+    with pytest.raises(LLMError, match="local model server is not reachable"):
+        run_local()
+    assert len(rec.calls) == llm.LOCAL_MAX_ATTEMPTS
+
+
+def test_local_falls_back_to_groq_only_for_short_videos(local_env):
+    local_env.setenv("LNA_PROVIDER_FALLBACK", "1")
+    local_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    groq = pipeline_script("groq")
+
+    def script(call, i):
+        if "127.0.0.1" in call["url"]:
+            raise requests.ConnectionError("refused")
+        return groq(call, i)
+    rec = install(local_env, script)
+    notes = run_local(make_transcript(20))
+    assert notes["meta"]["provider"] == "groq" and notes["meta"]["fallback_from"] == "local"
+    # a 2 h video waits for the local server instead of going to Groq
+    rec.calls.clear()
+    with pytest.raises(LLMError, match="not reachable"):
+        run_local(make_transcript(120))
+    assert all("127.0.0.1" in c["url"] for c in rec.calls)
+
+
+def test_cloud_falls_back_to_local_when_online(local_env):
+    local_env.setenv("LNA_PROVIDER_FALLBACK", "1")
+    local_env.setattr(llm, "local_online", lambda timeout=1.0: True)
+    loc = pipeline_script("local")
+
+    def script(call, i):
+        if "googleapis" in call["url"]:
+            return FakeResp(503, {})
+        return loc(call, i)
+    install(local_env, script)
+    notes = run("gemini")
+    assert notes["meta"]["provider"] == "local"
+
+
+def merge_script(counter):
+    base = pipeline_script("local", n_batch_sections=4)
+
+    def script(call, i):
+        system = call["json"]["messages"][0]["content"]
+        if system.startswith("You merge"):
+            counter["merge"] = counter.get("merge", 0) + 1
+            user = call["json"]["messages"][1]["content"]
+            starts = re.findall(r"## \[([0-9:?]+)\]", user)
+            d = {"topics": [{"heading": "merged", "start": starts[0] if starts else "?",
+                             "facts": ["merged fact " * 30]}]}
+            return FakeResp(200, ok_payload("local", json.dumps(d)))
+        k = kind_of(call)
+        counter[k] = counter.get(k, 0) + 1
+        return base(call, i)
+    return script
+
+
+def test_24h_transcript_hierarchical_merge_keeps_order(local_env):
+    tr = make_transcript(minutes=24 * 60, chars_per_seg=160)  # ~1.4M chars
+    counter: dict = {}
+    events = []
+    rec = install(local_env, merge_script(counter))
+    notes = run_local(tr, progress=lambda st, pct, msg: events.append(msg))
+    assert counter["merge"] >= 2 and counter["batch"] >= 2
+    n_chunks = counter["digest"]
+    assert n_chunks >= 50
+    # merged digests (not raw ones) feed the compose calls, and they stay under the batch budget
+    batch_users = [c["json"]["messages"][1]["content"] for c in rec.calls if kind_of(c) == "batch"]
+    assert all("merged fact" in u for u in batch_users)
+    prof = llm._profile("local", "qwen3-8b")
+    for c in rec.calls:
+        chars = sum(len(m["content"]) for m in c["json"]["messages"])
+        assert chars / 4.0 + c["json"]["max_tokens"] <= 16384, kind_of(c)
+    # merge preserved chronological markers: the first part starts at the lecture start
+    first = [c for c in rec.calls if c["json"]["messages"][0]["content"].startswith("You merge")][0]
+    assert "[00:10]" in first["json"]["messages"][1]["content"]
+    assert any(f"chunk {n_chunks}/{n_chunks}" in m for m in events)
+    assert len(notes["sections"]) > 18   # the 18-page cloud cap does not apply locally
+    assert prof["merge_budget_chars"]
+
+
+def test_checkpoint_resume_skips_finished_chunks(local_env, tmp_path):
+    tr = make_transcript(minutes=90, chars_per_seg=160)
+    calls = {"n": 0}
+    base = pipeline_script("local")
+
+    def crashing(call, i):
+        calls["n"] += 1
+        if kind_of(call) == "batch":   # die after all map digests were written
+            raise requests.ConnectionError("server killed")
+        return base(call, i)
+    install(local_env, crashing)
+    with pytest.raises(LLMError):
+        run_local(tr, checkpoint_dir=tmp_path)
+    vdir = tmp_path / tr["video_id"]
+    maps = sorted(vdir.glob("map-*.json"))
+    assert maps and (vdir / "manifest.json").is_file()
+    assert not list(vdir.glob("*.tmp"))
+
+    rec = install(local_env, pipeline_script("local"))
+    notes = run_local(tr, checkpoint_dir=tmp_path)
+    kinds = [kind_of(c) for c in rec.calls]
+    assert "digest" not in kinds and "batch" in kinds   # resumed: no map call repeated
+    assert notes["sections"]
+    assert not vdir.exists()                             # cleaned up after success
+
+
+def test_checkpoint_discarded_when_prompt_or_transcript_changes(local_env, tmp_path, monkeypatch):
+    tr = make_transcript(minutes=90, chars_per_seg=160)
+    install(local_env, pipeline_script("local"))
+    vdir = tmp_path / tr["video_id"]
+    vdir.mkdir(parents=True)
+    (vdir / "manifest.json").write_text(json.dumps({"video_id": tr["video_id"], "transcript_hash": "x",
+                                                    "profile_hash": "y"}))
+    (vdir / "map-0000.json").write_text(json.dumps({"value": "STALE DIGEST"}))
+    rec = install(local_env, pipeline_script("local"))
+    run_local(tr, checkpoint_dir=tmp_path)
+    assert all("STALE DIGEST" not in json.dumps(c["json"]) for c in rec.calls)
+    assert [kind_of(c) for c in rec.calls].count("digest") >= 1
+
+
+def test_local_listed_first_and_keyless():
+    assert list(llm.PROVIDERS)[0] == "local"
+    assert llm.PROVIDERS["local"]["needs_key"] is False
+    assert llm.PROVIDERS["local"]["default_model"] == "qwen3-8b"
+
+
+# ------------------------------- F3 (#59): colab folded into local; nvidia fallback ---
+SERVER_NV = "nvapi-SERVERKEY0123456789abcdefghij"
+LOCAL_KEY = "sk-LOCALKEY0123456789abcdefghijklmn"
+
+
+@pytest.fixture
+def f3_env(local_env):
+    for v in ("LNAI_LOCAL_KEY", "LNAI_LOCAL_CTX", "COLAB_LLM_URL", "COLAB_LLM_KEY", "LNAI_GROQ_FALLBACK_MAX_SEC"):
+        local_env.delenv(v, raising=False)
+    local_env.setenv("LNA_OFFLINE", "1")
+    return local_env
+
+
+def test_local_https_url_sends_bearer_from_env_only(f3_env):
+    f3_env.setenv("LNAI_LOCAL_URL", "https://abc.trycloudflare.com/v1")
+    f3_env.setenv("LNAI_LOCAL_KEY", LOCAL_KEY)
+    rec = install(f3_env, pipeline_script("local"))
+    run_local(api_key="typed-in-the-app-must-not-be-sent")
+    assert rec.calls and all(c["url"].startswith("https://abc.trycloudflare.com/v1/chat/completions")
+                             for c in rec.calls)
+    assert all(c["headers"]["Authorization"] == f"Bearer {LOCAL_KEY}" for c in rec.calls)
+
+
+def test_local_without_key_sends_no_auth(f3_env):
+    rec = install(f3_env, pipeline_script("local"))
+    run_local()
+    assert all("Authorization" not in c["headers"] for c in rec.calls)
+
+
+def test_local_small_profile_chosen_for_small_ctx(f3_env):
+    assert llm.local_profile_name(8192) == "local-small"
+    assert llm.local_profile_name(4096) == "local-small"
+    assert llm.local_profile_name(16384) == "local"
+    assert llm.local_profile_name(None) == "local"
+    assert llm.local_profile_name(None, force_small=True) == "local-small"
+    f3_env.setenv("LNAI_LOCAL_CTX", "8192")
+    assert llm.local_server_ctx() == 8192
+    small = llm._profile("local-small", "qwen3-8b")
+    assert small["chunk_chars"] < llm._profile("local", "qwen3-8b")["chunk_chars"]
+    # the biggest call stays inside 8K tokens (~4 chars/token for Qwen, ~3k chars of rules)
+    assert (small["batch_chars"] + 3000) / 4.0 + small["out_batch"] <= 8192
+    assert (small["chunk_chars"] + 3000) / 4.0 + small["digest_out"] <= 8192
+
+
+def test_local_ctx_probe_reads_props(f3_env):
+    f3_env.delenv("LNA_OFFLINE")
+    f3_env.setattr(llm, "_CTX_SEEN", {})
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"default_generation_settings": {"n_ctx": 8192}}
+    seen = []
+    f3_env.setattr(llm.requests, "get", lambda url, **kw: seen.append((url, kw)) or R())
+    assert llm.local_server_ctx("https://x.example/v1", LOCAL_KEY) == 8192
+    assert seen[0][0] == "https://x.example/props"
+    assert seen[0][1]["headers"]["Authorization"] == f"Bearer {LOCAL_KEY}"
+    llm.local_server_ctx("https://x.example/v1", LOCAL_KEY)
+    assert len(seen) == 1  # asked once per URL
+
+
+def test_colab_is_a_deprecated_alias_of_local(f3_env):
+    assert llm.PROVIDERS["colab"]["deprecated"] and llm.PROVIDERS["colab"]["alias_of"] == "local"
+    f3_env.setenv("COLAB_LLM_URL", "https://colab-x.trycloudflare.com")
+    f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
+    rec = install(f3_env, pipeline_script("local"))
+    notes = llm.generate_notes(make_transcript(5), provider="colab")
+    assert notes["meta"]["model"].startswith("local/")
+    assert all(c["url"] == "https://colab-x.trycloudflare.com/v1/chat/completions" for c in rec.calls)
+    assert all(c["headers"]["Authorization"] == f"Bearer {LOCAL_KEY}" for c in rec.calls)
+
+
+def test_colab_alias_uses_local_small(f3_env, monkeypatch):
+    f3_env.setenv("COLAB_LLM_URL", "https://colab-x.trycloudflare.com/v1")
+    f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
+    made = []
+    real = llm._Client
+
+    def spy(*a, **kw):
+        c = real(*a, **kw)
+        made.append(c)
+        return c
+    monkeypatch.setattr(llm, "_Client", spy)
+    install(f3_env, pipeline_script("local"))
+    llm.generate_notes(make_transcript(5), provider="colab")
+    assert made[0].provider == "local" and made[0].profile_name == "local-small"
+
+
+def test_colab_alias_needs_https_url(f3_env):
+    f3_env.setenv("COLAB_LLM_URL", "http://insecure.example")
+    f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
+    with pytest.raises(LLMError, match="COLAB_LLM_URL"):
+        llm.generate_notes(make_transcript(5), provider="colab")
+
+
+def test_long_local_video_falls_back_to_nvidia_not_groq(f3_env):
+    f3_env.setenv("LNA_PROVIDER_FALLBACK", "1")
+    f3_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    f3_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    assert llm._fallback_target("local", {"duration_sec": 1800}) == ("groq", SERVER_GROQ)
+    assert llm._fallback_target("local", {"duration_sec": 7200}) == ("nvidia", SERVER_NV)
+    assert llm._fallback_target("colab", {"duration_sec": 7200}) == ("nvidia", SERVER_NV)
+    f3_env.delenv("NVIDIA_API_KEY")
+    assert llm._fallback_target("local", {"duration_sec": 7200}) is None  # waits for the local server
+    assert llm._fallback_target("local", {"duration_sec": 0}) is None
+
+
+def test_nvidia_fallback_runs_whole_video_on_one_provider(f3_env):
+    f3_env.setenv("LNA_PROVIDER_FALLBACK", "1")
+    f3_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    nv = pipeline_script("nvidia")
+
+    def script(call, i):
+        if "127.0.0.1" in call["url"]:
+            raise requests.ConnectionError("refused")
+        return nv(call, i)
+    rec = install(f3_env, script)
+    notes = run_local(make_transcript(120))
+    assert notes["meta"]["provider"] == "nvidia" and notes["meta"]["fallback_from"] == "local"
+    after = [c for c in rec.calls if "127.0.0.1" not in c["url"]]
+    assert after and all(c["url"] == "https://integrate.api.nvidia.com/v1/chat/completions" for c in after)
+    assert all(c["headers"]["Authorization"] == f"Bearer {SERVER_NV}" for c in after)
+
+
+def test_deprecated_colab_is_never_a_fallback_target(f3_env):
+    f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
+    f3_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    assert llm._fallback_target("gemini", {"duration_sec": 60}) is None
+
+
+# ------------------------------------------------- Gemini pacing (card #74) --
+class _Clock:
+    """Fake monotonic clock that only moves when the code sleeps."""
+
+    def __init__(self, mp, sleeps):
+        self.t = 1000.0
+        mp.setattr(llm.time, "monotonic", lambda: self.t)
+
+        def sleep(s):
+            sleeps.append(s)
+            self.t += max(0.0, s)
+        mp.setattr(llm, "_sleep", sleep)
+
+
+def test_gemini_rpm_env(monkeypatch):
+    monkeypatch.delenv("LNAI_GEMINI_RPM", raising=False)
+    assert llm._gemini_rpm() == llm.GEMINI_RPM_DEFAULT
+    assert llm._Client("gemini", KEYS["gemini"], "gemini-3.5-flash-lite").pacer.rpm == llm.GEMINI_RPM_DEFAULT
+    assert llm._Client("groq", KEYS["groq"], "llama-3.3-70b-versatile").pacer.rpm is None
+    monkeypatch.setenv("LNAI_GEMINI_RPM", "0")
+    assert llm._gemini_rpm() == 0
+    monkeypatch.setenv("LNAI_GEMINI_RPM", "junk")
+    assert llm._gemini_rpm() == llm.GEMINI_RPM_DEFAULT
+
+
+def test_rpm_pacer_waits_and_notifies(monkeypatch, sleeps):
+    _Clock(monkeypatch, sleeps)
+    told = []
+    p = llm._Pacer(None, rpm=3, notify=told.append)
+    for _ in range(3):
+        p.before(10)
+        p.after(10)
+    assert not sleeps  # 3 requests fit in one minute
+    p.before(10)
+    assert sleeps and 59 <= sleeps[0] <= 61 and told == sleeps
+
+
+def test_rpm_zero_turns_pacer_off(monkeypatch, sleeps):
+    _Clock(monkeypatch, sleeps)
+    p = llm._Pacer(None, rpm=0)
+    for _ in range(50):
+        p.before(10)
+        p.after(10)
+    assert not sleeps and not p.log
+
+
+def test_gemini_long_video_is_paced_with_progress(monkeypatch, sleeps):
+    clock = _Clock(monkeypatch, sleeps)
+    monkeypatch.setenv("LNAI_GEMINI_RPM", "2")
+    stamps = []
+    inner = pipeline_script("gemini", 5)
+    rec = install(monkeypatch, lambda c, i: stamps.append(clock.t) or inner(c, i))
+    msgs = []
+    notes = llm.generate_notes(make_transcript(400, 60), provider="gemini", api_key=KEYS["gemini"],
+                               progress=lambda st, pct, m: msgs.append(m))
+    assert notes["sections"] and len(rec.calls) > 2
+    waits = [m for m in msgs if m.startswith("Waiting for Google Gemini rate limit")]
+    assert waits and re.search(r", \d+s\.\.\.$", waits[0])
+    for k in range(2, len(stamps)):  # never more than 2 requests in any 60 s window
+        assert stamps[k] - stamps[k - 2] >= 60
+
+
+def test_gemini_429_retry_reports_wait(monkeypatch, sleeps):
+    good = FakeResp(200, ok_payload("gemini", json.dumps(full_notes())))
+    install(monkeypatch, [FakeResp(429, {"error": {"message": "slow down"}}, headers={"Retry-After": "20"}), good])
+    msgs = []
+    run("gemini", progress=lambda st, pct, m: msgs.append(m))
+    assert "Waiting for Google Gemini rate limit, 20s..." in msgs, msgs
+
+
+GEMINI_DAILY = {"error": {"code": 429, "message": "You exceeded your current quota. Quota exceeded for metric: "
+                          "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+                          "limit: 0, model: gemini-3.5-flash-lite (GenerateRequestsPerDayPerProjectPerModel-FreeTier)"}}
+
+
+def test_gemini_daily_quota_message_without_fallback(fb_env, sleeps):
+    fb_env.delenv("LNA_PROVIDER_FALLBACK")
+    rec = install(fb_env, [FakeResp(429, GEMINI_DAILY)])
+    with pytest.raises(LLMError, match="daily quota reached") as ei:
+        run("gemini")
+    assert "24 hours" in str(ei.value) and len(rec.calls) == 1 and not sleeps
+
+
+def test_gemini_daily_quota_falls_back_whole_video_to_groq(fb_env):
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    gem = pipeline_script("gemini")
+    groq = pipeline_script("groq")
+    n = {"gem": 0}
+
+    def script(call, i):
+        if "googleapis" in call["url"]:
+            n["gem"] += 1
+            return gem(call, i) if n["gem"] < 3 else FakeResp(429, GEMINI_DAILY)
+        return groq(call, i)
+    rec = install(fb_env, script)
+    msgs = []
+    notes = run("gemini", transcript=make_transcript(60, 60), progress=lambda st, pct, m: msgs.append(m))
+    assert notes["meta"]["provider"] == "groq" and notes["meta"]["fallback_from"] == "gemini"
+    assert any("daily quota reached" in m and "Groq" in m for m in msgs)
+    first_groq = next(i for i, c in enumerate(rec.calls) if "groq" in c["url"])
+    assert all("googleapis" not in c["url"] for c in rec.calls[first_groq:])  # no mixing
+
+
+def test_gemini_fallback_chain(fb_env):
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    fb_env.delenv("LNAI_GROQ_FALLBACK_MAX_SEC", raising=False)
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: True)
+    assert llm._fallback_target("gemini", {"duration_sec": 600}) == ("local", "")
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    assert llm._fallback_target("gemini", {"duration_sec": 1800}) == ("groq", SERVER_GROQ)
+    assert llm._fallback_target("gemini", {"duration_sec": 24 * 3600}) == ("nvidia", SERVER_NV)
+    fb_env.delenv("NVIDIA_API_KEY")
+    assert llm._fallback_target("gemini", {"duration_sec": 24 * 3600}) is None
+
+
+def test_non_local_primaries_follow_one_chain(fb_env):
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.delenv("LNAI_GROQ_FALLBACK_MAX_SEC", raising=False)
+    assert llm._fallback_target("gemini", {"duration_sec": 3 * 3600}) is None  # no Groq for long videos
+    assert llm._fallback_target("gemini", {}) is None  # unknown length: no Groq
+    fb_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    assert llm._fallback_target("groq", {"duration_sec": 600}) == ("nvidia", SERVER_NV)
+    assert llm._fallback_target("nvidia", {"duration_sec": 600}) == ("groq", SERVER_GROQ)
+    assert llm._fallback_target("nvidia", {"duration_sec": 3 * 3600}) is None
+    fb_env.setenv("LNAI_GROQ_FALLBACK_MAX_SEC", "600")
+    assert llm._fallback_target("gemini", {"duration_sec": 900}) == ("nvidia", SERVER_NV)
+
+
+def test_gemini_long_video_falls_back_to_nvidia_only(fb_env):
+    fb_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    fb_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    nv = pipeline_script("nvidia")
+    rec = install(fb_env, lambda c, i: FakeResp(429, GEMINI_DAILY) if "googleapis" in c["url"] else nv(c, i))
+    notes = run("gemini", transcript=make_transcript(120, 60))
+    assert notes["meta"]["provider"] == "nvidia" and notes["meta"]["fallback_from"] == "gemini"
+    assert not any("groq" in c["url"] for c in rec.calls)
+    after = rec.calls[1:]
+    assert after and all("nvidia" in c["url"] for c in after)

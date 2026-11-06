@@ -240,6 +240,13 @@
         if (num >= lastNum) { lastNum = num; lastIdx = i + 1; }
       }
     });
+    // long notes: write each section's first page into the contents list ("p. 12")
+    var tocItems = pagesEl.querySelectorAll('.toc-list li[data-num]');
+    for (var ti = 0; ti < tocItems.length; ti++) {
+      var tn = parseInt(tocItems[ti].getAttribute('data-num'), 10);
+      var pgEl = tocItems[ti].querySelector('.pg');
+      if (pgEl && !isNaN(tn) && (tn in secFirst)) pgEl.textContent = 'p. ' + secFirst[tn];
+    }
     var afterSections = 0;
     for (var i = pages.length - 1; i >= 0; i--) {
       var kk = pages[i].unit && pages[i].unit.getAttribute('data-kind');

@@ -83,7 +83,7 @@ The building blocks are exported too: `parse_video_id`, `get_transcript`, `gener
 
 | Provider | Get a key | Default model | Notes |
 |---|---|---|---|
-| Google Gemini | <https://aistudio.google.com/apikey> | `gemini-2.5-flash` | Generous free tier; large context |
+| Google Gemini | <https://aistudio.google.com/apikey> | `gemini-3.5-flash-lite` | Generous free tier; large context |
 | Groq | <https://console.groq.com/keys> | `openai/gpt-oss-120b` | Free tier, very fast. The same key transcribes audio (Whisper) for videos without captions |
 | Hugging Face | <https://huggingface.co/settings/tokens> | `meta-llama/Llama-3.3-70B-Instruct` | Token needs permission to call *Inference Providers* |
 | xAI Grok | <https://console.x.ai> | `grok-4` | Paid API |
@@ -202,3 +202,13 @@ Set `LNA_OFFLINE=1` to skip the one live-network test. Set `FFMPEG_PATH` if `ffm
 ## License
 
 MIT - see [LICENSE](LICENSE). Bundled fonts (Kalam, Patrick Hand, Caveat, JetBrains Mono) are under the SIL Open Font License and Rough.js under the MIT license; their licence files sit next to them in `notes_engine/static/fonts/` and `notes_engine/templates/vendor/`.
+
+## Docker (AQspace stack)
+
+From the repo root, `docker compose up --build` runs this worker as the `notes-ai` service (the container runs as root):
+
+- Port 5055 binds to 127.0.0.1 inside the container and is never published; only aq-api's `127.0.0.1:5180` is.
+- Local LLM: `LNAI_LOCAL_URL=http://host.docker.internal:8081/v1` (Qwen3-8B on llama-server, started natively on the Mac with `scripts/llm.sh`).
+- Fallback: `LNA_PROVIDER_FALLBACK=1` falls back to Groq (key in `backend/.env`) for videos up to 1 h when the local model is down.
+- Whisper cache: `LNAI_WHISPER_DIR=/app/.tools/whisper-models`, bind-mounted from `./.tools/whisper-models` (the same path as the non-Docker default). The model downloads once and survives image rebuilds. The path is gitignored and dockerignored, and `scripts/nuke.sh` deletes it.
+- Generated notes: `./lecture-notes-ai/backend/output` is bind-mounted to `/app/backend/output`.

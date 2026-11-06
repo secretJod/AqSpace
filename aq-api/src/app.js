@@ -5,49 +5,67 @@ import { openDb } from "./db.js";
 import { createRepo } from "./repo.js";
 import { createPyClient, assertPyUrl } from "./pyclient.js";
 import { createNotesService } from "./notes-service.js";
+import { createSmartService } from "./smart-service.js";
 import { HttpError } from "./http.js";
 import { localAuth } from "./middleware/auth.js";
-import { securityHeaders, hostGuard, cors, rateLimit } from "./middleware/security.js";
+import { createGoogleAuth } from "./middleware/google-auth.js";
+import { securityHeaders, hostGuard, cors, rateLimit, localOnly } from "./middleware/security.js";
 import { playlistRoutes } from "./routes/playlists.js";
 import { progressRoutes } from "./routes/progress.js";
 import { notesRoutes, fontRoutes } from "./routes/notes.js";
+import { smartRoutes } from "./routes/smart.js";
+import { createTracker, devRoutes } from "./dev.js";
 import { healthRoutes, meRoutes, importRoutes, syncRoutes } from "./routes/misc.js";
 
 export const VERSION = "0.1.0";
 const STATIC_OK = /\.(html|js|css|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|json|txt)$/i;
 
-/** Builds the Express app. deps: { db?, authenticate?, fetchImpl?, clock? } (all optional; used for tests and the OAuth hook). */
+/** Builds the Express app. deps: { db?, authenticate?, fetchImpl?, googleFetch?, clock? } (all optional; used for tests and the OAuth hook). */
 export function createApp(config, deps = {}) {
   assertPyUrl(config.pyUrl, config.allowRemotePy);
   const db = deps.db || openDb(config.dbFile, config.sqlDir);
   const repo = createRepo(db);
-  const py = createPyClient({ baseUrl: config.pyUrl, timeoutMs: config.notes.pyTimeoutMs, fetchImpl: deps.fetchImpl || fetch });
-  const notes = createNotesService({ db, repo, py, config, clock: deps.clock || Date.now });
-  const authenticate = deps.authenticate || localAuth;
+  const tracker = config.devTools ? createTracker({ logDir: config.devLogDir, keepDays: config.devLogDays }) : null;
+  const fetchImpl = deps.fetchImpl || fetch;
+  const py = createPyClient({ baseUrl: config.pyUrl, timeoutMs: config.notes.pyTimeoutMs, fetchImpl: tracker ? tracker.wrapFetch(fetchImpl) : fetchImpl });
+  const onChange = tracker ? tracker.change : null;
+  const notes = createNotesService({ db, repo, py, config, clock: deps.clock || Date.now, onChange });
+  const smart = createSmartService({ db, repo, py, config, clock: deps.clock || Date.now, onChange });
+  const google = config.authMode === "google" && !deps.authenticate
+    ? createGoogleAuth(config.google, { repo, fetchImpl: deps.googleFetch || fetch, clock: deps.clock || Date.now })
+    : null;
+  const authenticate = deps.authenticate || (google ? google.authenticate : localAuth);
 
   const app = express();
   app.disable("x-powered-by");
   app.set("etag", false);
-  app.locals.db = db; app.locals.repo = repo;
+  app.locals.db = db; app.locals.repo = repo; app.locals.tracker = tracker;
 
   app.use(securityHeaders);
   if (config.log) {
     app.use((req, res, next) => {              // method, path (no query string, no headers, no bodies), status, time
       const t = Date.now();
+      if (req.path.startsWith("/dev/api/")) return next();   // tracker polling would flood the console
       res.on("finish", () => console.log(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - t}ms`));
       next();
     });
   }
   app.use(hostGuard);
   app.use(cors);
+  if (tracker) {
+    app.use(tracker.middleware);
+    // own (unrecorded) client: the tracker's health probe must not fill the request log
+    app.use("/dev", localOnly, devRoutes({ db, py: createPyClient({ baseUrl: config.pyUrl, timeoutMs: 1500, fetchImpl }), tracker, runDir: config.runDir }));
+  }
 
-  const general = rateLimit(config.rate.general, deps.clock);
-  const heavy = rateLimit(config.rate.heavy, deps.clock);
+  const general = rateLimit({ ...config.rate.general, trustCf: config.trustCfHeaders }, deps.clock);
+  const heavy = rateLimit({ ...config.rate.heavy, trustCf: config.trustCfHeaders }, deps.clock);
 
   // ---- API ----
   const api = express.Router();
   api.use(general);
   api.use(healthRoutes({ db, py, version: VERSION }));      // health needs no user
+  if (google) api.use(google.routes);                      // login/callback/logout need no user
   api.use(authenticate);
   api.use(meRoutes(repo));
   api.use(syncRoutes(repo));                                      // own (bigger) JSON parser, must come first
@@ -55,6 +73,7 @@ export function createApp(config, deps = {}) {
   api.use(playlistRoutes(repo));
   api.use(progressRoutes(repo));
   api.use(notesRoutes(notes, heavy));
+  api.use(smartRoutes(smart, heavy));
   api.use(importRoutes(py, config, heavy));
   api.use((_req, _res, next) => next(new HttpError(404, "Not found.")));
   app.use("/api/v1", api);

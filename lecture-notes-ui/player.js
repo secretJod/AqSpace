@@ -1,4 +1,4 @@
-/* AQ Learning - player dialog: a youtube-nocookie embed (validated 11-char id) with previous/next through a queue.
+/* AQspace - player dialog: a youtube-nocookie embed (validated 11-char id) with previous/next through a queue.
    The YouTube IFrame Player API (loaded once) reports the real playback position, which is saved per video in
    AQ.store (`aq.watch.v1`); opening a video that was left half-way resumes there.
 

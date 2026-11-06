@@ -69,13 +69,43 @@ export function cors(req, res, next) {
   next();
 }
 
-/** Tiny in-memory fixed-window limiter per client IP (no X-Forwarded-For: this service is not behind a proxy). */
-export function rateLimit({ max, windowMs }, now = Date.now) {
+/** Proxy headers that mark a request as having come through the Cloudflare tunnel (or any other reverse proxy). */
+const PROXY_HEADERS = ["cdn-loop", "cf-connecting-ip", "cf-ray", "cf-visitor", "cf-ipcountry", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded",
+  "x-forwarded-proto", "x-forwarded-port", "x-original-host", "true-client-ip", "via"];
+
+/** True when the request carries any reverse-proxy header, i.e. it came through the Cloudflare tunnel. Shared by localOnly and clientKey. */
+export function viaProxy(req) {
+  const h = req.headers || {};
+  return PROXY_HEADERS.some((k) => h[k] !== undefined);
+}
+
+const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+const IPV6_RE = /^[0-9a-f:.]{2,45}$/i;
+function looksLikeIp(v) { return IPV4_RE.test(v) || (v.includes(":") && IPV6_RE.test(v)); }
+
+/**
+ * Client key for rate limiting. With trustCf, a CF-Connecting-IP header is used only when the TCP peer is
+ * loopback (the local cloudflared), the request carries the tunnel proxy headers (viaProxy, same check as localOnly)
+ * and the header value is a plausible IP; otherwise the socket address.
+ */
+export function clientKey(req, trustCf = false) {
+  const sock = req.socket?.remoteAddress || "?";
+  if (trustCf && LOOPBACK.has(sock) && viaProxy(req)) {
+    const raw = req.headers?.["cf-connecting-ip"];
+    const v = typeof raw === "string" ? raw.trim() : "";
+    if (v && looksLikeIp(v)) return v.toLowerCase();
+  }
+  return sock;
+}
+
+/** Tiny in-memory fixed-window limiter per client IP. X-Forwarded-For is never trusted; CF-Connecting-IP only with trustCf (see clientKey). */
+export function rateLimit({ max, windowMs, trustCf = false }, now = Date.now) {
   const hits = new Map();
   const timer = setInterval(() => { const t = now(); for (const [k, h] of hits) if (h.reset <= t) hits.delete(k); }, windowMs);
   timer.unref();
   return function limiter(req, res, next) {
-    const key = req.socket.remoteAddress || "?";
+    const key = clientKey(req, trustCf);
     const t = now();
     let h = hits.get(key);
     if (!h || h.reset <= t) { h = { n: 0, reset: t + windowMs }; hits.set(key, h); }
@@ -87,4 +117,16 @@ export function rateLimit({ max, windowMs }, now = Date.now) {
     }
     next();
   };
+}
+
+/** /dev pages and APIs are for the developer's own machine: anything that arrived through the tunnel (or another proxy)
+    gets a plain 404, so the public link never reveals that the dev tools exist. The tunnel rewrites Host to
+    localhost:5180, so hostGuard alone cannot tell tunnel traffic from local traffic. */
+export function localOnly(req, _res, next) {
+  if (viaProxy(req)) return next(new HttpError(404, "Not found."));
+  // Node lower-cases header names, so "CF-Ray" / "X-Forwarded-For" are caught above. Any Origin present
+  // (including "null" or an empty string) must be a loopback page.
+  const origin = req.headers.origin;
+  if (origin !== undefined && !LOCAL_ORIGIN_RE.test(origin)) return next(new HttpError(404, "Not found."));
+  next();
 }

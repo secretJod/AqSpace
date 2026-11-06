@@ -1,4 +1,4 @@
-/* AQ Learning - playlists screen: routing + rendering (vanilla JS, no build step).
+/* AQspace - playlists screen: routing + rendering (vanilla JS, no build step).
    Routes:  #/  -> playlists home      #/playlist/<id>  -> playlist detail
    Sections: 1 setup + small UI helpers | 2 playlist form + delete | 3 home | 4 detail (add video, rows, drag) | 5 router
    All user text is written with textContent / DOM APIs (never innerHTML). */
@@ -31,6 +31,8 @@
     toastsEl.appendChild(t);
     toastTimer = setTimeout(function () { toastsEl.textContent = ""; }, 7000);
   }
+
+  if (AQ.smart) AQ.smart.init({ toast: toast, announce: announce });   // smart.js (Smart arrange) uses the page's toast + live region
 
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
 
@@ -483,9 +485,12 @@
     renBtn.addEventListener("click", function () { openPlaylistForm(p, renBtn); });
     var delBtn = button("Delete", { cls: "btn btn--ghost btn--danger", icon: "trash" });
     delBtn.addEventListener("click", function () { confirmDelete(p, delBtn); });
-    [addBtn, playBtn, renBtn, delBtn].forEach(function (b) { acts.appendChild(b); });
+    var smartBtn = AQ.smart ? AQ.smart.button(p) : null;     // "Smart arrange" (smart.js)
+    [addBtn, playBtn, smartBtn, renBtn, delBtn].forEach(function (b) { if (b) acts.appendChild(b); });
     head.appendChild(acts);
     view.appendChild(head);
+    var smartPanel = AQ.smart ? AQ.smart.panel(p) : null;    // learning path / progress, hidden by CSS while empty
+    if (smartPanel) view.appendChild(smartPanel);
 
     if (!p.videos.length) {
       var empty = el("div", "empty empty--inline");
@@ -499,7 +504,7 @@
       if (af) view.appendChild(af);
       var list = videoList(p);
       // split view: the list lives inside a shell that can morph it into a left nav (see split.js)
-      view.appendChild(AQ.split ? AQ.split.shell({ playlist: p, list: list, hide: [head, af], openId: route().notes }) : list);
+      view.appendChild(AQ.split ? AQ.split.shell({ playlist: p, list: list, hide: [head, af, smartPanel], openId: route().notes }) : list);
     }
   }
 
@@ -753,18 +758,96 @@
 
   /* ---------- 5. router ---------- */
   function route() {
-    var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?$/.exec(location.hash || "");
-    return m ? { name: "playlist", id: m[1], notes: m[2] || null } : { name: "home" };
+    var h = location.hash || "";
+    var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?$/.exec(h);
+    if (m) return { name: "playlist", id: m[1], notes: m[2] || null };
+    var t = /^#\/(dashboard|ai|goals)\/?$/.exec(h);
+    return t ? { name: t[1] } : { name: "home" };
+  }
+
+  /* ----- dashboard / AI / goals screens (dashboard.js) + bottom navbar (navbar.js) ----- */
+  var screen = null;               // {destroy()} of the mounted dashboard / coming-soon view
+  var SOON = {
+    ai: { title: "AI assistant", text: "Ask questions about your lectures. Coming soon.", doc: "AI" },
+    goals: { title: "Goals", text: "Set learning goals and track them. Coming soon.", doc: "Goals" }
+  };
+  function renderScreen(name) {
+    searchForm.hidden = true;
+    view.textContent = "";
+    if (name === "dashboard") {
+      document.title = "Dashboard - AQspace";
+      if (AQ.dashboardView) screen = AQ.dashboardView.mount(view);
+    } else {
+      document.title = SOON[name].doc + " - AQspace";
+      if (AQ.comingSoonView) screen = AQ.comingSoonView.mount(view, SOON[name]);
+    }
+  }
+
+  var navbar = null, navTimer = 0;
+  if (AQ.navbar && typeof AQ.navbar.mount === "function") {
+    try {
+      navbar = AQ.navbar.mount($("#navbar-root") || document.body, {
+        items: AQ.navbar.DEFAULT_ITEMS,
+        active: null,
+        onSelect: function (id) {
+          var h = id === "playlists" ? "#/" : /^(dashboard|ai|goals)$/.test(id) ? "#/" + id : null;
+          if (!h) return;
+          // let the lens glide first; rendering a page (playlist thumbnails) mid-animation causes jank
+          clearTimeout(navTimer);
+          navTimer = setTimeout(function () { location.hash = h; }, 300);
+        }
+      });
+      document.body.classList.add("has-navbar");
+    } catch (e) { navbar = null; }
+  }
+  function syncNav(r) {
+    if (!navbar || typeof navbar.setActive !== "function") return;
+    var id = r.name === "home" || r.name === "playlist" ? "playlists" : (SOON[r.name] || r.name === "dashboard" ? r.name : null);
+    try { navbar.setActive(id); } catch (e) { /* ignore */ }
+  }
+
+  /* ----- activity hooks for the streak (streak.js): wrap store writes so player.js / importpl.js stay untouched ----- */
+  function recordActivity(kind) {
+    if (AQ.streak && typeof AQ.streak.record === "function") { try { AQ.streak.record(kind); } catch (e) { /* ignore */ } }
+  }
+  var watchedToday = {};            // videoId -> "YYYY-M-D": one "watch" per video per day
+  var origWatchSave = S.watchSave;
+  S.watchSave = function (id, patch) {
+    if (patch && patch.pos > 0) {
+      var d = new Date(), day = d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+      if (watchedToday[id] !== day) { watchedToday[id] = day; recordActivity("watch"); }
+    }
+    return origWatchSave.apply(this, arguments);
+  };
+  ["create", "createWithVideos"].forEach(function (fn) {
+    var orig = S[fn];
+    S[fn] = function () {
+      var res = orig.apply(this, arguments);
+      if (res) recordActivity("playlist");
+      return res;
+    };
+  });
+  if (AQ.notesJobs && typeof AQ.notesJobs.subscribe === "function") {
+    var noteStates = {};            // videoId -> last seen state; count only a transition into "ready"
+    AQ.notesJobs.subscribe(function (id, st) {
+      var prev = noteStates[id], now = st && st.state;
+      noteStates[id] = now;
+      if (now === "ready" && (prev === "queued" || prev === "running")) recordActivity("notes");
+    });
   }
 
   function render() {
     closeMenu(false);
     if (AQ.split) AQ.split.reset();
+    if (screen) { try { screen.destroy(); } catch (e) { /* ignore */ } screen = null; }
+    activeChroma = null;
     var r = route();
+    syncNav(r);
     if (r.name === "playlist") {
       var p = S.get(r.id);
       if (p) renderDetail(p); else renderNotFound();
-    } else renderHome();
+    } else if (r.name === "dashboard" || SOON[r.name]) renderScreen(r.name);
+    else renderHome();
     $("#storage-warning").hidden = S.storageOk();
     if (pendingFocus) {
       var f = pendingFocus; pendingFocus = null;

@@ -47,10 +47,24 @@ services:
   notes-ai:
     build: ./lecture-notes-ai
     env_file: ./lecture-notes-ai/backend/.env   # GROQ_API_KEY etc. (never baked into the image)
+    environment:
+      # R5: local Qwen3-8B on llama-server, running natively on the Mac at 127.0.0.1:8081 (scripts/llm.sh).
+      LNAI_LOCAL_URL: http://host.docker.internal:8081/v1
+      LNA_PROVIDER_FALLBACK: "1"              # Groq fallback for videos up to 1 h when local is down
+      # The image pip-installs notes_engine into site-packages, so its repo-relative default
+      # (.tools/whisper-models) would land outside any mount; point it at the bind mount below.
+      LNAI_WHISPER_DIR: /app/.tools/whisper-models
+      LNA_CACHE_DIR: /app/backend/output/cache  # #61/F4: cache lives under the output bind mount
+      LNA_TMP_DIR: /app/backend/.tmp            # scratch audio / PDF browser profiles
+      # NVIDIA_API_KEY, COLAB_LLM_URL, COLAB_LLM_KEY: set only in lecture-notes-ai/backend/.env (env_file), never here
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5180:5180"             # aq-api (notes app UI + API)
     volumes:
       - ./lecture-notes-ai/backend/output:/app/backend/output   # generated notes stay in the repo
+      - ./lecture-notes-ai/backend/.tmp:/app/backend/.tmp       # #47: scratch audio / PDF browser profiles (LNA_TMP_DIR)
+      - ./.tools/whisper-models:/app/.tools/whisper-models      # Whisper model survives rebuilds (gitignored, nuked)
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5055/api/providers', timeout=3)"]
       interval: 5s
@@ -66,8 +80,14 @@ services:
     network_mode: "service:notes-ai"
     environment:
       PY_NOTES_URL: http://127.0.0.1:5055
-      PY_NOTES_PROVIDER: groq
+      PY_NOTES_PROVIDER: ${PY_NOTES_PROVIDER:-gemini}   # gemini (fast, cloud) | local (Qwen3-8B, scripts/llm.sh) | groq
       TUNNEL_ORIGINS: https://*.trycloudflare.com   # pages served through the tunnel may write
+      PY_SMART_PROVIDER: ${PY_SMART_PROVIDER:-gemini}   # #47: provider for "Smart arrange" (needs its key in backend/.env)
+      # #47: /dev tracker (request/event logs in aq-api/data/devlogs). Defaults ON for local dev because
+      # aq-api refuses /dev for requests arriving through the tunnel. Set AQ_DEV_TOOLS=0 in your shell to turn it off.
+      AQ_DEV_TOOLS: ${AQ_DEV_TOOLS:-1}
+      AQ_RUN_DIR: ""                                    # empty = /dev does not tail .run/ logs; no service console logs inside the container
+      TRUST_CF_HEADERS: "1"                         # rate-limit per visitor via CF-Connecting-IP (only from loopback cloudflared)
     volumes:
       - ./aq-api/data:/app/aq-api/data    # SQLite aq.db stays in the repo (gitignored)
     depends_on:

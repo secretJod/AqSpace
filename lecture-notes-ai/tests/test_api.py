@@ -39,7 +39,7 @@ def make_fakes(*, gate=None, transcript_exc=None, llm_exc=None, pdf_exc=None, ht
             raise FakeIngestError("That does not look like a YouTube link.")
         return "dQw4w9WgXcQ"
 
-    def get_transcript(url, *, groq_key=None, progress=None):
+    def get_transcript(url, *, groq_key=None, progress=None, work_dir=None):
         calls["groq_key"] = groq_key
         if progress:
             progress("transcript", 0, "starting")
@@ -64,8 +64,9 @@ def make_fakes(*, gate=None, transcript_exc=None, llm_exc=None, pdf_exc=None, ht
         "huggingface": {"label": "HF", "default_model": "hf-x", "needs_key": True, "key_hint": "hint h"},
     }
 
-    def generate_notes(transcript, *, provider, api_key, model=None, progress=None):
+    def generate_notes(transcript, *, provider, api_key, model=None, progress=None, checkpoint_dir=None):
         calls["llm"] = {"provider": provider, "api_key": api_key, "model": model}
+        calls["checkpoint_dir"] = checkpoint_dir
         if progress:
             progress("notes", 50, "chunk 1/2")
             progress("notes", 100, "final")
@@ -153,12 +154,14 @@ def test_providers_lists_all_and_server_key_flag(make_client, monkeypatch):
     client, _, _ = make_client()
     data = client.get("/api/providers").get_json()
     ids = [p["id"] for p in data["providers"]]
-    assert ids == ["gemini", "groq", "xai", "huggingface"]
+    assert ids == ["local", "gemini", "groq", "xai", "huggingface", "nvidia", "colab"]
     assert all(p["server_key"] is False for p in data["providers"])
+    local = data["providers"][0]
+    assert local["needs_key"] is False and local["online"] in (True, False)
     monkeypatch.setenv("GROQ_API_KEY", SECRET)
     data = client.get("/api/providers").get_json()
     flags = {p["id"]: p["server_key"] for p in data["providers"]}
-    assert flags == {"gemini": False, "groq": True, "xai": False, "huggingface": False}
+    assert flags == {"local": False, "gemini": False, "groq": True, "xai": False, "huggingface": False, "nvidia": False, "colab": False}
     assert SECRET not in json.dumps(data)
     for p in data["providers"]:
         assert {"id", "label", "default_model", "key_hint", "server_key"} <= set(p)
@@ -400,3 +403,21 @@ def test_missing_modules_gives_friendly_error(make_client, monkeypatch):
     monkeypatch.setattr(state, "load_ingest", boom)
     r = post(client)
     assert r.status_code == 503
+
+
+# ---- local provider (#31) ------------------------------------------------------
+def test_local_job_needs_no_key_and_reports_chunks(make_client):
+    client, state, calls = make_client()
+    r = client.post("/api/jobs", json={"url": GOOD_URL, "provider": "local", "api_key": SECRET})
+    assert r.status_code == 202
+    job_id = r.get_json()["job_id"]
+    data = wait_done(client, job_id)
+    assert data["status"] == "done", data
+    assert calls["llm"]["provider"] == "local" and calls["llm"]["api_key"] is None  # typed key never forwarded
+    assert data["chunk"] == 1 and data["chunks"] == 2
+    assert calls["checkpoint_dir"].endswith("checkpoints")
+    # same {url, provider} again -> a new job id (it resumes from the per-video checkpoints)
+    r2 = client.post("/api/jobs", json={"url": GOOD_URL, "provider": "local"})
+    assert r2.status_code == 202 and r2.get_json()["job_id"] != job_id
+    wait_done(client, r2.get_json()["job_id"])
+    assert client.get("/api/jobs/" + "0" * 32).status_code == 404
