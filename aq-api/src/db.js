@@ -31,9 +31,27 @@ export function migrate(db, sqlDir) {
   }
 }
 
-/** Runs fn inside BEGIN IMMEDIATE..COMMIT (not re-entrant). */
+/** Write-contention counter per connection (ADR-0002 Postgres trigger). Read with dbBusy(db). */
+const busyCounts = new WeakMap();
+export const SLOW_TX_MS = 100;
+export function dbBusy(db) { return busyCounts.get(db) || 0; }
+function isBusy(e) { return !!e && (e.errcode === 5 || e.errcode === 6 || /SQLITE_BUSY|database is (locked|busy)/i.test(String(e.message))); }
+function contention(db, what, ms) {
+  busyCounts.set(db, dbBusy(db) + 1);
+  console.warn(`[aq-api] db write contention: ${what} after ${Math.round(ms)} ms`);   // never logs data values
+}
+
+/** Runs fn inside BEGIN IMMEDIATE..COMMIT (not re-entrant). Logs + counts SQLITE_BUSY and lock waits > SLOW_TX_MS. */
 export function tx(db, fn) {
-  db.exec("BEGIN IMMEDIATE");
+  const t0 = performance.now();
+  try { db.exec("BEGIN IMMEDIATE"); }
+  catch (e) { if (isBusy(e)) contention(db, "SQLITE_BUSY on BEGIN", performance.now() - t0); throw e; }
+  const waited = performance.now() - t0;
+  if (waited > SLOW_TX_MS) contention(db, "slow lock wait", waited);
   try { const r = fn(); db.exec("COMMIT"); return r; }
-  catch (e) { try { db.exec("ROLLBACK"); } catch { /* already rolled back */ } throw e; }
+  catch (e) {
+    try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
+    if (isBusy(e)) contention(db, "SQLITE_BUSY in tx", performance.now() - t0);
+    throw e;
+  }
 }

@@ -11,7 +11,7 @@ else
 fi
 
 # Repo-local runtime state, caches, dependencies and generated output
-rm -rf .run .pip-cache .npm-cache .tools .gh-config models aq-api/data \
+rm -rf .run .pip-cache .npm-cache .tools .gh-config models aq-api/data .data/backups \
        aq-api/node_modules backend/node_modules frontend/node_modules \
        lecture-notes-ai/.venv lecture-notes-ai/backend/output \
        .cache .tmp lecture-notes-ai/backend/.cache lecture-notes-ai/backend/.tmp lecture-notes-ui/node_modules

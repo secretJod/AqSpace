@@ -1,6 +1,7 @@
 import express, { Router } from "express";
 import { HttpError } from "../http.js";
 import { LIST_ID_RE } from "../validate.js";
+import { dbBusy } from "../db.js";
 
 /** Python's /api/providers lists {id: "local", online: bool, ...}; "ok" only when Python says llama-server answers.
     aq-api never calls llama-server (8081) itself. */
@@ -18,6 +19,7 @@ export function healthRoutes({ db, py, version }) {
     try { db.prepare("SELECT 1").get(); } catch { dbOk = false; }
     const out = { ok: dbOk, service: "aq-api", version, uptimeSec: Math.round(process.uptime()), db: dbOk ? "ok" : "error" };
     if (req.query.deep === "1") {
+      out.dbBusy = dbBusy(db);
       out.localModel = "offline";
       try {
         const p = await py.json("/api/providers", { timeout: 2000 });
