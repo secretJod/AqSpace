@@ -1,4 +1,4 @@
-# AQ Learning - playlists screen
+# AQspace - playlists screen
 
 The in-app **Playlists** screen: an all-black app UI where you group YouTube lectures into playlists, watch them in order and request hand-drawn notes. Plain HTML/CSS/JS, no build step, no npm.
 
