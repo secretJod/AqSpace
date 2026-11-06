@@ -268,3 +268,21 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** I fixed all of those, ported #20's rules and wrote the eslint config.
 **What it solved:** Accessibility holds across the imported UI.
 **Notes for the next agent:** Not yet checked in a browser; QA should take screenshots.
+
+## [2026-11-06] Team lead (orchestrator): R7, upstream Nov 5 + Gemini default + whole team
+**Before:** Upstream had added a dashboard, streak tracker and bottom nav (Nov 5). Notes defaulted to the local model, which can't run yet. The release candidate lacked the older PRs.
+**What I did:** I imported upstream 1b4cca0 onto `preview/latest` (rebranded to AQspace) and made Gemini the default notes provider. I opened RC PR #82, created cards #73–#81, and ran all 10 agents. I relayed fixes between them (wrong README health URL, the Gemini fallback order bug). Then I merged their 10 PRs (#83–#92) into preview/latest, resolving the navbar-demo conflict by deleting the demo. aq-api 86/86, Python 531 passed, UI syntax OK.
+**What it solved:** One branch holds everything, runs with `docker compose up`, and every task is on the board.
+**Notes for the next agent:** The user's GEMINI_API_KEY looks malformed (no AIza prefix, contains whitespace). The new keycheck warns about it at startup. #37 (llama.cpp) still needs approval. The evaluation (#75) is ready but has never run for real.
+
+## [2026-11-06] R7 team results (from the agents' PR journals)
+- **web-dev-3 (#73, PR #89):** brought #17 #18 #20 #22 #23 #28 into the RC. CI covers Python tests+demo, aq-api and a UI syntax job.
+- **web-dev-1 (#73 #14, PR #91):** per-visitor tunnel rate limiting (TRUST_CF_HEADERS, set in compose), Google OAuth behind AUTH_MODE (off by default), and server-side SQLite sessions (migration 004) so logout revokes. 86 tests.
+- **ai-dev-1 (#74, PR #90):** Gemini RPM pacer (LNAI_GEMINI_RPM=10), wait messages, a clear daily-quota error, and one fallback chain for every primary (local → Groq ≤1h → NVIDIA).
+- **ai-dev-2 (#75, PR #92):** `python -m demo.notes_eval.run_eval` through the app's pipeline, with local contestants, `--judge`, `--dry-run` with fakes, and a blind sheet with a hidden key.
+- **ui-dev-1 (#76, PR #85):** nav ARIA (aria-current) and arrow-key focus, and the smartmagic loop stops under reduced motion.
+- **ui-dev-2 (#77, PR #86):** nav, streak and dashboard contrast, focus, safe areas, forced-colors; removed the publicly served navbar demo.
+- **scaling-lead (#78, PR #83):** ADR-0005 provider strategy; ADR-0003 fallback updated; #39 covered by the https local provider.
+- **qa-guide (#79, PR #84):** `docs/qa/first-run.md`, a first-run guide with a key check that never shows the key.
+- **client-presenter (#80, PR #87):** README (run from preview/latest, correct health URL, providers) and v0.3 notes.
+- **web-dev-2 (#81, PR #88):** compose reviewed; a startup key-format warning that never logs values, and keys stripped of whitespace and quotes.
