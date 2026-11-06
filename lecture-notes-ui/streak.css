@@ -124,7 +124,7 @@
 .stk-cal__d.join-l::before { left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .stk-cal__d.join-r::before { right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .stk-cal__d.is-today::after { content: ""; position: absolute; inset: 0 auto; width: 32px; height: 32px; left: 50%; margin-left: -16px; border-radius: 50%; border: 1.5px solid var(--white, #fff); }
-.stk-cal__d.is-future { color: var(--muted-dark, #555); }
+.stk-cal__d.is-future { color: var(--muted, #9a9a9a); opacity: .75; }
 
 /* ---------- badges ---------- */
 .stk-badges { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -135,7 +135,7 @@
   background: rgba(255,255,255,.07); color: var(--muted-dark, #555);
 }
 .stk-badge__t { font-size: 12px; font-weight: 600; color: var(--muted, #9a9a9a); }
-.stk-badge__s { font-size: 10px; color: var(--muted-dark, #555); letter-spacing: .04em; }
+.stk-badge__s { font-size: 10px; color: var(--muted, #9a9a9a); letter-spacing: .04em; }
 .stk-badge.is-on { border-style: solid; border-color: rgba(255,177,92,.35); background: rgba(255,138,61,.06); }
 .stk-badge.is-on .stk-badge__m { background: linear-gradient(135deg, var(--stk-gold), var(--stk-hot)); color: var(--ink, #0a0a0a); }
 .stk-badge.is-on .stk-badge__t { color: var(--text, #f4f4f4); }
@@ -169,4 +169,14 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .stk *, .stk *::before, .stk *::after { animation: none !important; transition: none !important; }
+}
+
+/* #77: forced colors - keep the heatmap scale and the selected tab readable; gradient-clipped text gets a real colour */
+@media (forced-colors: active) {
+  .stk { border-color: CanvasText; }
+  .stk-big__n { background: none; color: CanvasText; }
+  .stk-heat__grid, .stk-legend__lv, .stk-dot__b, .stk-cal__d.is-on::before, .stk-badge__m { forced-color-adjust: none; }
+  .stk-tab[aria-selected="true"] { background: Highlight; color: HighlightText; forced-color-adjust: none; }
+  .stk-cell.is-today, .stk-dot.is-today .stk-dot__b { outline-color: CanvasText; }
+  .stk :focus-visible { outline: 2px solid CanvasText; }
 }
