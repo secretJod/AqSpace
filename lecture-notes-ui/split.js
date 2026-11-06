@@ -1,4 +1,4 @@
-/* AQ Learning - split view on the playlist detail screen (Agent C2).
+/* AQspace - split view on the playlist detail screen (Agent C2).
 
    Route: #/playlist/<id>/notes/<videoId>. When a video's notes are opened, the notes panel slides in from the right while the
    video list shrinks to a compact left nav (a horizontal strip under 900px). Close / Esc / browser Back reverses it.

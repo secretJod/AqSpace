@@ -1,4 +1,4 @@
-/* AQ Learning - notes jobs manager for the Lecture Notes AI server (http://127.0.0.1:5055).
+/* AQspace - notes jobs manager for the Lecture Notes AI server (http://127.0.0.1:5055).
 
    AQ.notesJobs (the shared brain; rows, the player and the notes button all read it):
      status(videoId)      -> {state:'none'|'queued'|'running'|'ready'|'error', pct:0-100, stage, message, jobId, error}

@@ -1,4 +1,4 @@
-/* AQ Learning - "Import from YouTube" dialog (playlist link -> preview -> new local playlist).
+/* AQspace - "Import from YouTube" dialog (playlist link -> preview -> new local playlist).
 
    AQ.importPlaylist.open(opener)         opens the dialog (focus returns to `opener` when it closes)
    AQ.importPlaylist.uniqueName(title)    free playlist name for `title` ("Title", else "Title (2)", "Title (3)"...), <= LIMITS.name

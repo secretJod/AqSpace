@@ -1,4 +1,4 @@
-/* AQ Learning - playlist store (CRUD + persistence). No DOM code in here.
+/* AQspace - playlist store (CRUD + persistence). No DOM code in here.
 
    Data model (localStorage key `aq.playlists.v1`, JSON array):
    Playlist = { id, name, description, created, updated, videos: [Video], source?: { type:"youtube", listId, url, importedAt } }

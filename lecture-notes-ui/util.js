@@ -1,4 +1,4 @@
-/* AQ Learning - shared helpers (DOM builders, icons, YouTube id parsing, time formatting).
+/* AQspace - shared helpers (DOM builders, icons, YouTube id parsing, time formatting).
    Everything hangs off the single global `AQ` namespace: AQ.util, AQ.store, AQ.dialog, AQ.notes, AQ.player. */
 window.AQ = window.AQ || {};
 (function () {
