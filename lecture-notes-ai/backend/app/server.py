@@ -19,6 +19,7 @@ import base64
 import hashlib
 import json
 import logging
+import inspect
 import os
 import re
 import shutil
@@ -81,8 +82,8 @@ FALLBACK_PROVIDERS = {
                     "key_hint": "Token from huggingface.co/settings/tokens"},
     "nvidia": {"label": "NVIDIA Nemotron", "default_model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
                "key_hint": "Free key at build.nvidia.com"},
-    "colab": {"label": "Colab Qwen3-8B", "default_model": "qwen3-8b",
-              "key_hint": "Key printed by the Colab server cell"},
+    "colab": {"label": "Colab Qwen3-8B (deprecated: use Local)", "default_model": "qwen3-8b",
+              "key_hint": "Deprecated: set LNAI_LOCAL_URL + LNAI_LOCAL_KEY and choose Local"},
 }
 PROVIDER_ORDER = ["local", "gemini", "groq", "xai", "huggingface", "nvidia", "colab"]
 
@@ -362,9 +363,9 @@ def _run_job(state: State, job_id: str, url: str, provider: str, api_key: str,
 
 
 def _run_smart(state: State, job_id: str, goal: str, videos: list[dict], provider: str,
-               api_key: str, model: str | None):
+               api_key: str, model: str | None, groq_key: str | None = None):
     job = state.smart_jobs[job_id]
-    secrets = [api_key]
+    secrets = [api_key, groq_key]
 
     def progress(stage, pct, message):
         try:
@@ -386,7 +387,15 @@ def _run_smart(state: State, job_id: str, goal: str, videos: list[dict], provide
             state.update(job, status="error", error="The notes engine is not fully installed yet "
                          f"(missing module: {getattr(e, 'name', None) or 'unknown'}).")
             return
-        out = smart.analyze(goal, videos, provider, api_key, model, progress=progress)
+        # same transcript path as a notes job: Whisper fallback key and the shared speech-to-text cache
+        # (keyword-only args from PR #66; passed only when this smart_playlist accepts them)
+        extra = {"groq_key": groq_key, "work_dir": str(state.output_dir / "_cache")}
+        try:
+            accepted = inspect.signature(smart.analyze).parameters
+            extra = {k: v for k, v in extra.items() if k in accepted}
+        except (TypeError, ValueError):
+            extra = {}
+        out = smart.analyze(goal, videos, provider, api_key, model, progress=progress, **extra)
         state.update(job, status="done", pct=100, message="Your learning path is ready.",
                      result=out["result"], usage=out["usage"])
     except Exception as e:  # map every failure to a safe message
@@ -711,7 +720,8 @@ def create_app(config: dict | None = None) -> Flask:
             state.smart_jobs[job_id] = job
 
         t = threading.Thread(target=_run_smart, name=f"smart-{job_id[:8]}", daemon=True,
-                             args=(state, job_id, goal, videos, provider, api_key, model))
+                             args=(state, job_id, goal, videos, provider, api_key, model,
+                                   server_key("groq") or (api_key if provider == "groq" else None)))
         t.start()
         return jsonify(job_id=job_id), 202
 

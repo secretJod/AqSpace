@@ -234,3 +234,57 @@ def test_short_compose_answer_is_not_cached(cdir, monkeypatch):
     llm._compose_covered(*args)
     assert len(seen) > n
     assert not list(cdir.rglob("compose/*.json"))
+
+
+# ------------------------------------------- F4 (#60): cache under checkpoints ---
+def test_cache_key_carries_profile_hash_and_prompt_version(cdir, monkeypatch):
+    client, seen = _client(monkeypatch, [DIGEST])
+    chunks = [{"text": "[00:10] a cache stores recent results", "start": 10}]
+    llm._digest_chunks(client, chunks, META, lambda *a: None)
+    n = len(seen)
+    monkeypatch.setattr(llm.prompts, "PROMPT_VERSION", "test-bumped")
+    llm._digest_chunks(client, chunks, META, lambda *a: None)
+    assert len(seen) > n  # a new prompt version never replays old answers
+    n = len(seen)
+    client.profile = dict(client.profile, digest_cap=client.profile["digest_cap"] + 1)
+    llm._digest_chunks(client, chunks, META, lambda *a: None)
+    assert len(seen) > n  # nor does a changed profile
+
+
+def test_local_and_local_small_do_not_share_cache(cdir, monkeypatch):
+    a = llm._Client("local", "", "qwen3-8b", profile_name="local")
+    b = llm._Client("local", "", "qwen3-8b", profile_name="local-small")
+    assert llm.profile_hash(a) != llm.profile_hash(b)
+    assert llm._cache_key(a, "digest", "m") != llm._cache_key(b, "digest", "m")
+
+
+def test_fallback_provider_answers_are_never_cached(cdir, monkeypatch):
+    client, seen = _client(monkeypatch, [DIGEST])
+    client.cache_writes = False  # what generate_notes sets for a fallback run
+    chunks = [{"text": "[00:10] a cache stores recent results", "start": 10}]
+    llm._digest_chunks(client, chunks, META, lambda *a: None)
+    assert not list(cdir.rglob("*.json"))
+
+
+def test_fallback_compose_is_never_cached(cdir, monkeypatch):
+    sections = _sample_sections()
+    client, seen = _client(monkeypatch, [{"sections": sections}])
+    client.cache_writes = False
+    llm._compose_covered(client, META, ["## [00:10] topic\n- fact"], 3, 6, [], 1, 1)
+    assert not list(cdir.rglob("*.json"))
+
+
+def test_checkpoint_wins_over_cache(cdir, monkeypatch, tmp_path):
+    client, seen = _client(monkeypatch, [DIGEST])
+    chunks = [{"text": "[00:10] a cache stores recent results", "start": 10}]
+    ck = llm._Checkpoints(tmp_path / "ck", {"video_id": VIDEO}, "text", client)
+    ck.put("map-0000", "from the checkpoint")
+    out = llm._digest_chunks(client, chunks, META, lambda *a: None, ck)
+    assert out == ["from the checkpoint"] and not seen
+    assert not list(cdir.rglob("*.json"))  # a checkpoint replay is not re-cached
+
+
+def test_default_cache_dir_is_backend_output_cache():
+    assert cache.DEFAULT_DIR.parts[-3:] == ("backend", "output", "cache")
+    run_py = (Path(__file__).resolve().parents[1] / "backend" / "run.py").read_text(encoding="utf-8")
+    assert '"output", "cache"' in run_py

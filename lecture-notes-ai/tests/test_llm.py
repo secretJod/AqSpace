@@ -1273,3 +1273,134 @@ def test_local_listed_first_and_keyless():
     assert list(llm.PROVIDERS)[0] == "local"
     assert llm.PROVIDERS["local"]["needs_key"] is False
     assert llm.PROVIDERS["local"]["default_model"] == "qwen3-8b"
+
+
+# ------------------------------- F3 (#59): colab folded into local; nvidia fallback ---
+SERVER_NV = "nvapi-SERVERKEY0123456789abcdefghij"
+LOCAL_KEY = "sk-LOCALKEY0123456789abcdefghijklmn"
+
+
+@pytest.fixture
+def f3_env(local_env):
+    for v in ("LNAI_LOCAL_KEY", "LNAI_LOCAL_CTX", "COLAB_LLM_URL", "COLAB_LLM_KEY", "LNAI_GROQ_FALLBACK_MAX_SEC"):
+        local_env.delenv(v, raising=False)
+    local_env.setenv("LNA_OFFLINE", "1")
+    return local_env
+
+
+def test_local_https_url_sends_bearer_from_env_only(f3_env):
+    f3_env.setenv("LNAI_LOCAL_URL", "https://abc.trycloudflare.com/v1")
+    f3_env.setenv("LNAI_LOCAL_KEY", LOCAL_KEY)
+    rec = install(f3_env, pipeline_script("local"))
+    run_local(api_key="typed-in-the-app-must-not-be-sent")
+    assert rec.calls and all(c["url"].startswith("https://abc.trycloudflare.com/v1/chat/completions")
+                             for c in rec.calls)
+    assert all(c["headers"]["Authorization"] == f"Bearer {LOCAL_KEY}" for c in rec.calls)
+
+
+def test_local_without_key_sends_no_auth(f3_env):
+    rec = install(f3_env, pipeline_script("local"))
+    run_local()
+    assert all("Authorization" not in c["headers"] for c in rec.calls)
+
+
+def test_local_small_profile_chosen_for_small_ctx(f3_env):
+    assert llm.local_profile_name(8192) == "local-small"
+    assert llm.local_profile_name(4096) == "local-small"
+    assert llm.local_profile_name(16384) == "local"
+    assert llm.local_profile_name(None) == "local"
+    assert llm.local_profile_name(None, force_small=True) == "local-small"
+    f3_env.setenv("LNAI_LOCAL_CTX", "8192")
+    assert llm.local_server_ctx() == 8192
+    small = llm._profile("local-small", "qwen3-8b")
+    assert small["chunk_chars"] < llm._profile("local", "qwen3-8b")["chunk_chars"]
+    # the biggest call stays inside 8K tokens (~4 chars/token for Qwen, ~3k chars of rules)
+    assert (small["batch_chars"] + 3000) / 4.0 + small["out_batch"] <= 8192
+    assert (small["chunk_chars"] + 3000) / 4.0 + small["digest_out"] <= 8192
+
+
+def test_local_ctx_probe_reads_props(f3_env):
+    f3_env.delenv("LNA_OFFLINE")
+    f3_env.setattr(llm, "_CTX_SEEN", {})
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"default_generation_settings": {"n_ctx": 8192}}
+    seen = []
+    f3_env.setattr(llm.requests, "get", lambda url, **kw: seen.append((url, kw)) or R())
+    assert llm.local_server_ctx("https://x.example/v1", LOCAL_KEY) == 8192
+    assert seen[0][0] == "https://x.example/props"
+    assert seen[0][1]["headers"]["Authorization"] == f"Bearer {LOCAL_KEY}"
+    llm.local_server_ctx("https://x.example/v1", LOCAL_KEY)
+    assert len(seen) == 1  # asked once per URL
+
+
+def test_colab_is_a_deprecated_alias_of_local(f3_env):
+    assert llm.PROVIDERS["colab"]["deprecated"] and llm.PROVIDERS["colab"]["alias_of"] == "local"
+    f3_env.setenv("COLAB_LLM_URL", "https://colab-x.trycloudflare.com")
+    f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
+    rec = install(f3_env, pipeline_script("local"))
+    notes = llm.generate_notes(make_transcript(5), provider="colab")
+    assert notes["meta"]["model"].startswith("local/")
+    assert all(c["url"] == "https://colab-x.trycloudflare.com/v1/chat/completions" for c in rec.calls)
+    assert all(c["headers"]["Authorization"] == f"Bearer {LOCAL_KEY}" for c in rec.calls)
+
+
+def test_colab_alias_uses_local_small(f3_env, monkeypatch):
+    f3_env.setenv("COLAB_LLM_URL", "https://colab-x.trycloudflare.com/v1")
+    f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
+    made = []
+    real = llm._Client
+
+    def spy(*a, **kw):
+        c = real(*a, **kw)
+        made.append(c)
+        return c
+    monkeypatch.setattr(llm, "_Client", spy)
+    install(f3_env, pipeline_script("local"))
+    llm.generate_notes(make_transcript(5), provider="colab")
+    assert made[0].provider == "local" and made[0].profile_name == "local-small"
+
+
+def test_colab_alias_needs_https_url(f3_env):
+    f3_env.setenv("COLAB_LLM_URL", "http://insecure.example")
+    f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
+    with pytest.raises(LLMError, match="COLAB_LLM_URL"):
+        llm.generate_notes(make_transcript(5), provider="colab")
+
+
+def test_long_local_video_falls_back_to_nvidia_not_groq(f3_env):
+    f3_env.setenv("LNA_PROVIDER_FALLBACK", "1")
+    f3_env.setenv("GROQ_API_KEY", SERVER_GROQ)
+    f3_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    assert llm._fallback_target("local", {"duration_sec": 1800}) == ("groq", SERVER_GROQ)
+    assert llm._fallback_target("local", {"duration_sec": 7200}) == ("nvidia", SERVER_NV)
+    assert llm._fallback_target("colab", {"duration_sec": 7200}) == ("nvidia", SERVER_NV)
+    f3_env.delenv("NVIDIA_API_KEY")
+    assert llm._fallback_target("local", {"duration_sec": 7200}) is None  # waits for the local server
+    assert llm._fallback_target("local", {"duration_sec": 0}) is None
+
+
+def test_nvidia_fallback_runs_whole_video_on_one_provider(f3_env):
+    f3_env.setenv("LNA_PROVIDER_FALLBACK", "1")
+    f3_env.setenv("NVIDIA_API_KEY", SERVER_NV)
+    nv = pipeline_script("nvidia")
+
+    def script(call, i):
+        if "127.0.0.1" in call["url"]:
+            raise requests.ConnectionError("refused")
+        return nv(call, i)
+    rec = install(f3_env, script)
+    notes = run_local(make_transcript(120))
+    assert notes["meta"]["provider"] == "nvidia" and notes["meta"]["fallback_from"] == "local"
+    after = [c for c in rec.calls if "127.0.0.1" not in c["url"]]
+    assert after and all(c["url"] == "https://integrate.api.nvidia.com/v1/chat/completions" for c in after)
+    assert all(c["headers"]["Authorization"] == f"Bearer {SERVER_NV}" for c in after)
+
+
+def test_deprecated_colab_is_never_a_fallback_target(f3_env):
+    f3_env.setenv("COLAB_LLM_KEY", LOCAL_KEY)
+    f3_env.setattr(llm, "local_online", lambda timeout=1.0: False)
+    assert llm._fallback_target("gemini", {"duration_sec": 60}) is None
