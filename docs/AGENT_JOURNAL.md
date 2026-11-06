@@ -154,3 +154,39 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** I added R5 to `docs/PLAN.md` with a changelog row. I designed a pull-based worker: Colab asks aq-api for jobs through the tunnel using a worker token, saves the notes to Drive and posts them back, and Groq is the fallback. I created cards #29–#35 in Todo for scaling-lead, web-dev-1, ai-dev-1, web-dev-3, ai-dev-2, qa-guide and client-presenter.
 **What it solved:** The work has a design that survives Colab disconnects, and every piece has an owner.
 **Notes for the next agent:** #29 (the ADR) goes first; #30 and #31 depend on it. Keep the notes prompt and schema identical to Groq's. The worker token goes only in the gitignored `.env`. Nothing has been built yet.
+
+## [2026-11-01] Team lead (orchestrator): R5 kickoff with the user's local model
+**Before:** R5 described a Colab worker. The user then supplied the model (Qwen3-8B-Q4_K_M GGUF), asked for it to be moved into the repo, and handed orchestration over to me.
+**What I did:** I moved the model to `models/` and made sure git, Docker and `nuke.sh` all ignore or clean it. I wrote the R5 contract (llama-server on 127.0.0.1:8081, provider `local`, checkpoints, Groq fallback only for short videos) on #29, retitled #30 and #31, and created #37–#39. Then I ran 6 agents in parallel and web-dev-3 for integration. Two launches of web-dev-2 (#37) were blocked by the safety classifier because installing llama.cpp downloads and runs external code, so that install now waits for the user's approval.
+**What it solved:** Every R5 piece has an owner, and they all build against one contract.
+**Notes for the next agent:** No real model run has happened yet; it needs #37. Once llama.cpp is approved and installed, re-tune the `local` profile against measured tok/s.
+
+## [2026-11-01] scaling-lead: ADR-0003 local Qwen3-8B on llama.cpp (Metal) (#29, PR #41)
+**Before:** There was a model and a contract but no sizing and no Drive decision.
+**What I did:** I wrote ADR-0003: native llama.cpp on Metal, ctx 16K, 1 slot, flash attention, q8_0 KV (~7 GB). The `local` profile is single 12k / chunk 24k / batch 20k chars. Thinking is off for map and compose and on for the final call. Runs over ~10h get a merge level. Checkpoints are keyed by video id plus hashes. Drive uses the API with the `drive.file` scope, and I set the triggers for moving to Colab.
+**What it solved:** The team has concrete numbers. The estimate is ~25–35 min for a 1h video and ~5–6h for a 24h video (worst case ~10h).
+**Notes for the next agent:** The speeds are assumptions (150 pp / 12 tg tok/s); update them after #37. Docker Desktop should be capped at 4 GB.
+
+## [2026-11-01] web-dev-1: Hours-long local-model jobs, auto-resume, localModel health (#30, PR #42)
+**Before:** A Python restart marked jobs "expired", which would lose hours of work on long videos.
+**What I did:** I added auto re-submit on 404 under the per-video lock, a `resumes` counter (migration 002, capped by NOTES_MAX_AUTO_RESUMES=3), "(chunk i/N)" in the progress message, and `localModel` in deep health. I added 7 tests (40/40 pass).
+**What it solved:** Long jobs survive restarts and resume from checkpoints.
+**Notes for the next agent:** Python must expose `{id:"local", online}` and integer `chunk`/`chunks` (done in #43).
+
+## [2026-11-01] ai-dev-1: Local Qwen3-8B provider, 24h map-reduce with checkpoints (#31, PR #43)
+**Before:** Only rate-limited cloud providers were available, notes were capped at 18 sections, and nothing could resume.
+**What I did:** I added the keyless `local` provider using the ADR-0003 profile, with thinking off for map and compose and on for the final call. I added merge levels, atomic hash-checked checkpoints, a local→Groq fallback (≤1h only), `online`/`chunk`/`chunks` in the API, prompts suited to a small model, and up to 200 sections for local. 345 tests pass, 11 of them new.
+**What it solved:** 24h lectures can go through a bounded pipeline that can resume, on the user's own Mac.
+**Notes for the next agent:** The real run and the quality comparison with Groq are pending #37. Bump PROMPT_VERSION whenever a prompt changes.
+
+## [2026-11-01] ai-dev-2: 24h transcripts, chunked local Whisper, long-notes rendering (#36 #33, PR #44)
+**Before:** Caption downloads timed out and were held in RAM, speech-to-text needed Groq and couldn't resume, and the table of contents cut off at 24 entries.
+**What I did:** Caption downloads now stream to disk with retries. Speech-to-text uses faster-whisper (CPU int8, `small`) in 10-minute chunks with a checkpoint per chunk. I added a contents section with page numbers for long notes and made the Chrome time budgets scale with size. 380 tests pass, 28 of them new.
+**What it solved:** 24h videos without captions can be transcribed locally and resume after a crash, and long notebooks are easy to navigate.
+**Notes for the next agent:** Whisper runs on the CPU so it doesn't compete with llama-server for Metal. The Docker image needs the `[whisper]` extra.
+
+## [2026-11-01] qa-guide: QA plan + evaluation for the local model (#34, PR #40)
+**Before:** There was no R5 test plan, and the user couldn't compare the local model with Groq.
+**What I did:** I wrote `docs/qa/r5-local-model.md` (17 steps) and `docs/qa/r5-eval.md`: 5 fixed videos, minutes per hour of video, and a blind 1–5 side-by-side against Groq with a pass rule.
+**What it solved:** The user can test R5 alone and decide pass or fail on facts.
+**Notes for the next agent:** The log grep steps assume certain log words; tell qa-guide if the actual logs differ.
