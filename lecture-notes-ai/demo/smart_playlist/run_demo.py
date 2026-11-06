@@ -30,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent                      # lecture-notes-ai/
 OUT = HERE / "out"
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("LNA_CACHE_DIR", str(ROOT / "backend" / ".cache"))
+# LNA_CACHE_DIR is set in main(), not at import, so importing this module (evaluate.py, tests) has no side effects.
 
 GOAL = "System Design Interview Prep"          # the playlist name IS the goal
 
@@ -488,6 +488,7 @@ def cmd_finish(_args) -> None:
 
 def main() -> None:
     global RUN
+    os.environ.setdefault("LNA_CACHE_DIR", str(ROOT / "backend" / ".cache"))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("fetch")
