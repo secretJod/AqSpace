@@ -1,114 +1,83 @@
-# AQspace - repository overview
+# AQspace
 
-This repository holds two things:
+AQspace turns YouTube lectures (up to 24 hours long) into hand-drawn "field notebook" study notes, as a web page and a PDF. Paste a video or a playlist, watch it inside the app, and read the notes beside the video. Notes are written by a local open-source model on your Mac (Qwen3-8B), with Groq as the fallback.
 
-1. **Google OAuth app** (`backend/`, `frontend/`, `docker-compose.yml`) - setup notes right below.
-2. **AQspace notes app** - turns YouTube lectures into hand-drawn "field notebook" study notes. See [AQspace notes app](#aqspace-notes-app) further down.
+The repo also holds a small Google sign-in test app (`backend/`, `frontend/`).
 
-Everything the apps create stays inside this folder (Postgres in `.data/pgdata`, caches in `.npm-cache/` and `.pip-cache/`, runtime files in `.run/`). `scripts/nuke.sh` removes it all.
+Everything the app creates stays inside this folder (`.data/`, `models/`, `.npm-cache/`, `aq-api/data/`, `lecture-notes-ai/backend/output/`). `scripts/nuke.sh` removes it all.
 
----
+## Start (one command)
 
-## Run everything with Docker (one command)
+Requirements: Docker Desktop running.
 
-Requirements: Docker Desktop running. Nothing else needs installing on the host.
-
-1. Paste your Groq key (https://console.groq.com/keys) into `lecture-notes-ai/backend/.env`:
-   ```
-   GROQ_API_KEY=gsk_...
-   ```
-   (Copy `lecture-notes-ai/backend/.env.example` if the file is missing. The key is read at runtime and never baked into an image.)
-2. Make sure the root `.env` (Google OAuth keys, see [OAuth app](#oauth-app)) exists.
-3. Start everything:
+1. Put the keys in place (see [Keys](#keys)).
+2. Start everything:
    ```bash
    docker compose up --build
    ```
-   The first build downloads Chromium and ffmpeg and can take a while; later starts are fast.
+   The first build is slow (Chromium, ffmpeg, Whisper). Later starts are fast.
+3. Open http://localhost:5180
 
 | URL | What |
 |---|---|
 | http://localhost:5180 | AQspace notes app (UI + API) |
-| http://localhost:5173 | OAuth app frontend |
-| http://localhost:4000 | OAuth app API |
+| http://localhost:5173 | Google sign-in test app (frontend) |
+| http://localhost:4000 | Google sign-in test app (API) |
 
-- Stop: `docker compose down`
-- Logs: `docker compose logs -f notes-ai aq-api`
+Stop with `docker compose down`. Logs: `docker compose logs -f notes-ai aq-api`.
 
-Data stays in the repo: SQLite in `aq-api/data/`, generated notes in `lecture-notes-ai/backend/output/`, Postgres in `.data/pgdata`. The Python worker (port 5055) is internal only.
+## Local model
 
----
+The notes worker talks to a llama.cpp `llama-server` running natively on the Mac at `127.0.0.1:8081` (Metal GPU). The model file, Qwen3-8B-Q4_K_M GGUF (about 5 GB), lives in `models/` and is not in git.
 
-## OAuth app
-
-### Setup
-1. Google Cloud Console -> APIs & Services -> Credentials -> Create OAuth client ID (Web application)
-   - Authorized JavaScript origin:  http://localhost:5173
-   - Authorized redirect URI:       http://localhost:5173/api/auth/google/callback
-2. Put the client id/secret in `.env` (`cp .env.example .env`, and set a long random SESSION_SECRET)
-3. `docker compose up --build`  (stop with Ctrl+C or `docker compose down`)
-4. Open http://localhost:5173
-
-### Test with Postman / curl (no Google needed)
-- GET  http://localhost:4000/api/health
-- GET  http://localhost:4000/api/workspaces            -> 401
-- POST http://localhost:4000/api/auth/dev-login        body (JSON): {"email":"a@b.com","name":"Karan"}
-- GET  http://localhost:4000/api/auth/me               -> authenticated: true  (Postman keeps the cookie)
-- GET  http://localhost:4000/api/workspaces            -> 200
-- POST http://localhost:4000/api/auth/logout
-
----
-
-## AQspace notes app
-
-Paste a YouTube video or playlist and get study notes (PDF + HTML) written by the AI provider of your choice, with a notebook-style UI to browse playlists, watch the video and read the notes side by side.
-
-### Architecture
-
-```
- Browser (vanilla JS UI, served by the Node API)
-        |
-        v
- aq-api  - Node/Express app backend      http://127.0.0.1:5180   (playlists, progress, data store, serves the UI)
-        |   HTTP, local only
-        v
- lecture-notes-ai - Python AI worker     http://127.0.0.1:5055   (transcripts, LLM calls, notes -> PDF/HTML)
+```bash
+scripts/llm.sh start     # pending card #37 (llama.cpp install)
 ```
 
-- **aq-api/** - Node/Express app backend (SQLite via built-in `node:sqlite`). Data lives in `aq-api/data/` (git-ignored).
-- **lecture-notes-ai/** - Python (Flask) service plus the `notes_engine` package: fetches the transcript, calls Gemini / Groq / xAI / Hugging Face, renders the notebook PDF with Chrome/Edge/Chromium.
-- **lecture-notes-ui/** - vanilla JS front end (no build step).
-- **docs/** - architecture notes and the developer notebook.
+Until #37 lands, the local model is not available and notes fall back to Groq (short videos only). `curl -s 'localhost:5180/api/health?deep=1'` shows `localModel: ok` or `offline`. Plain-language guide: [docs/client/local-model.md](docs/client/local-model.md).
 
-Full details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/AQ-Learning-Dev-Notebook.pdf](docs/AQ-Learning-Dev-Notebook.pdf).
+## Public link (Cloudflare tunnel, optional)
 
-### Quick start (macOS)
-
-Run it with Docker. See **Run everything with Docker (one command)** above: put your key in `lecture-notes-ai/backend/.env`, then run `docker compose up --build`.
-
-### Folder map
-
-| Path | What it is |
-|---|---|
-| `backend/`, `frontend/`, `docker-compose.yml` | Google OAuth app (see above) |
-| `aq-api/` | Node/Express app backend, port 5180 |
-| `lecture-notes-ai/` | Python AI/notes worker, port 5055 (`backend/` Flask app, `notes_engine/`, `tests/`) |
-| `lecture-notes-ui/` | Vanilla JS UI |
-| `docs/` | `ARCHITECTURE.md`, dev notebook, `PLAN.md`, `AGENT_JOURNAL.md` |
-| `scripts/` | `nuke.sh` (remove all app data), `secret-scan.sh` (key scanner), `gh.sh` (repo-local GitHub CLI) |
-
-### Where files go (disk space)
-
-Everything that grows stays inside the project folder, on the project's drive: `.cache/` (pip, npm, model downloads), `.tmp/` (scratch files) and `lecture-notes-ai\backend\.cache` (saved transcripts and LLM answers, capped at 300 MB). All are git-ignored. `start-all.ps1` sets this up; in your own terminal run `. .\scripts\dev-env.ps1` before `npm install`, `pip install` or tests.
-
-### Development
-
-- Python tests: `cd lecture-notes-ai && LNA_OFFLINE=1 .venv/bin/python -m pytest tests -q`
-- Node tests: `cd aq-api && npm test`
-- Before pushing: `scripts/secret-scan.sh` (fails if a real-looking key or a `.env` file is in the tree).
-
-### Public link with a Cloudflare tunnel (optional)
 ```bash
 docker compose --profile tunnel up --build
 docker compose logs tunnel | grep trycloudflare.com   # your public https link
 ```
-The tunnel points at the UI (aq-api :5180). aq-api accepts writes from `https://*.trycloudflare.com` pages (`TUNNEL_ORIGINS`). There is no login, so anyone with the link uses your Groq key. Stop it with `docker compose stop tunnel`.
+
+The tunnel only exposes the app on port 5180. The link changes on every restart. There is no login, so anyone with the link can make notes on your machine and your Groq key. Stop it with `docker compose stop tunnel`.
+
+## Keys
+
+Keys are never committed and never baked into an image. Copy the `.example` files and fill them in.
+
+| File | What goes there |
+|---|---|
+| `lecture-notes-ai/backend/.env` | AI provider keys (for example `GROQ_API_KEY`). Copy from `lecture-notes-ai/backend/.env.example`. |
+| `.env` (repo root) | Google OAuth client id/secret and `SESSION_SECRET` for the sign-in app. Copy from `.env.example`. |
+
+`.env` files are not on GitHub: back them up before deleting the repo. Run `scripts/secret-scan.sh` before pushing.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `aq-api/` | Node/Express app backend and SQLite store, port 5180 |
+| `lecture-notes-ai/` | Python notes worker (transcripts, Whisper, LLM, PDF), internal port 5055 |
+| `lecture-notes-ui/` | Vanilla JS UI (no build step) |
+| `backend/`, `frontend/` | Google sign-in test app |
+| `scripts/` | `nuke.sh`, `secret-scan.sh`, `gh.sh` (repo-local GitHub CLI), `board.sh` |
+
+## Tests
+
+```bash
+cd aq-api && npm test
+cd lecture-notes-ai && LNA_OFFLINE=1 .venv/bin/python -m pytest tests -q
+```
+
+## Docs
+
+- [docs/PLAN.md](docs/PLAN.md): the plan and requirements (R1, R2, ...)
+- [docs/qa/](docs/qa/): test plans and checklists
+- [docs/client/](docs/client/): release notes, demo script, guides
+- [docs/decisions/](docs/decisions/): architecture decisions (ADRs)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/AGENT_JOURNAL.md](docs/AGENT_JOURNAL.md)
+- Board: https://github.com/users/secretJod/projects/2
