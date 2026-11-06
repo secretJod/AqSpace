@@ -22,6 +22,7 @@ The API key is only handled by ``llm._Client`` (header only, scrubbed from error
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -162,14 +163,19 @@ def _clean_videos(videos: list[dict]) -> list[dict]:
 
 
 # --------------------------------------------------------------------------------------------- transcripts
-def _fetch_excerpts(videos: list[dict], progress: Progress | None) -> None:
-    """Adds `excerpt` to every video ("" when no transcript could be fetched). Cached by ingest on disk."""
+def _fetch_excerpts(videos: list[dict], progress: Progress | None, *, groq_key: str | None = None,
+                    work_dir: str | None = None) -> None:
+    """Adds `excerpt` to every video ("" when no transcript could be fetched).
+
+    The one transcript path is ``ingest.get_transcript``: its 30-day disk cache, the captions API / yt-dlp fallbacks
+    and the Whisper speech-to-text path (Groq with ``groq_key``, or local Whisper) with checkpoints in ``work_dir``."""
     done = 0
 
     def one(v: dict) -> None:
         nonlocal done
         try:
-            t = ingest.get_transcript(f"https://www.youtube.com/watch?v={v['id']}")
+            t = ingest.get_transcript(f"https://www.youtube.com/watch?v={v['id']}", groq_key=groq_key,
+                                      work_dir=work_dir)
             v["excerpt"] = _excerpt(t["segments"])
         except Exception:  # noqa: BLE001 - IngestError or anything odd: this video is analysed from its title
             v["excerpt"] = ""
@@ -373,11 +379,13 @@ class _Meter:
 
 # --------------------------------------------------------------------------------------------- public API
 def analyze(goal: str, videos: list[dict], provider: str, api_key: str, model: str | None = None,
-            progress: Progress | None = None) -> dict:
+            progress: Progress | None = None, *, groq_key: str | None = None, work_dir: str | None = None) -> dict:
     """Playlist goal + videos [{id,title,channel,duration_sec}] -> {"result": Result, "usage": Usage}.
 
     Raises LLMError (user-safe message) on failure. Usage `wall_seconds` is the whole run, `api_seconds` the time spent
     inside the provider's API, `waiting_seconds` the rest (transcripts, rate-limit pacing, searches).
+    `groq_key` enables Groq Whisper for videos without captions (default: $GROQ_API_KEY, or `api_key` when the
+    provider is groq); `work_dir` is ingest's speech-to-text checkpoint dir (default: ingest's own default).
     """
     if provider not in PROVIDERS:
         raise LLMError(f"Unknown provider '{_s(provider, 40)}'. Choose one of: {', '.join(PROVIDERS)}.")
@@ -397,7 +405,8 @@ def analyze(goal: str, videos: list[dict], provider: str, api_key: str, model: s
     meter = _Meter(client)
     try:
         _report(progress, "transcripts", 2, "Reading transcripts...")
-        _fetch_excerpts(videos, progress)
+        stt_key = (groq_key or os.environ.get("GROQ_API_KEY") or (key if provider == "groq" else "") or "").strip() or None
+        _fetch_excerpts(videos, progress, groq_key=stt_key, work_dir=work_dir)
         inputs = {"goal": goal, "videos": videos}
 
         batch = 2 if provider == "groq" else 4         # Groq free tier: ~8k tokens per minute, keep calls small

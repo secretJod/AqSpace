@@ -451,3 +451,36 @@ def test_smart_origin_guard(smart_client):
     client, _, _ = smart_client()
     r = client.post("/api/smart", json=body(), headers={"Origin": "https://evil.example"})
     assert r.status_code == 403
+
+
+def test_transcripts_go_through_ingest_with_whisper_args(monkeypatch, tmp_path):
+    """F7 (#63): one transcript path, ingest.get_transcript, with the Groq key and work_dir passed on."""
+    calls = []
+
+    def get_transcript(url, **kw):
+        calls.append((url, kw))
+        return {"segments": [{"start": 0.0, "text": "hello world"}]}
+
+    monkeypatch.setattr(sp.ingest, "get_transcript", get_transcript)
+    vids = [{"id": "a" * 11}, {"id": "b" * 11}]
+    sp._fetch_excerpts(vids, None, groq_key="gk", work_dir=str(tmp_path))
+    assert sorted(u for u, _ in calls) == ["https://www.youtube.com/watch?v=" + c * 11 for c in "ab"]
+    assert all(kw == {"groq_key": "gk", "work_dir": str(tmp_path)} for _, kw in calls)
+    assert all(v["excerpt"] for v in vids)
+
+
+def test_analyze_passes_groq_key_from_env(fake_engine, monkeypatch):
+    seen_kw = []
+    inner = sp.ingest.get_transcript
+    monkeypatch.setattr(sp.ingest, "get_transcript", lambda url, **kw: (seen_kw.append(kw), inner(url, **kw))[1])
+    monkeypatch.setenv("GROQ_API_KEY", "env-groq")
+    videos = [{"id": i, "title": f"T {i}", "channel": "C", "duration_sec": 300} for i in IDS]
+    sp.analyze("System Design", videos, "gemini", SECRET, work_dir="/w")
+    assert seen_kw and all(kw == {"groq_key": "env-groq", "work_dir": "/w"} for kw in seen_kw)
+
+
+def test_no_own_fetching_in_smart_playlist():
+    import inspect
+    src = inspect.getsource(sp)
+    for banned in ("youtube_transcript_api", "_fetch_via_", "timedtext", "requests.get"):
+        assert banned not in src
