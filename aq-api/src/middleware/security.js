@@ -90,14 +90,17 @@ export function rateLimit({ max, windowMs }, now = Date.now) {
 }
 
 /** Proxy headers that mark a request as having come through the Cloudflare tunnel (or any other reverse proxy). */
-const PROXY_HEADERS = ["cdn-loop", "cf-connecting-ip", "cf-ray", "cf-visitor", "cf-ipcountry", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded"];
+const PROXY_HEADERS = ["cdn-loop", "cf-connecting-ip", "cf-ray", "cf-visitor", "cf-ipcountry", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded",
+  "x-forwarded-proto", "x-forwarded-port", "x-original-host", "true-client-ip", "via"];
 
 /** /dev pages and APIs are for the developer's own machine: anything that arrived through the tunnel (or another proxy)
     gets a plain 404, so the public link never reveals that the dev tools exist. The tunnel rewrites Host to
     localhost:5180, so hostGuard alone cannot tell tunnel traffic from local traffic. */
 export function localOnly(req, _res, next) {
   for (const h of PROXY_HEADERS) if (req.headers[h] !== undefined) return next(new HttpError(404, "Not found."));
+  // Node lower-cases header names, so "CF-Ray" / "X-Forwarded-For" are caught above. Any Origin present
+  // (including "null" or an empty string) must be a loopback page.
   const origin = req.headers.origin;
-  if (origin && !LOCAL_ORIGIN_RE.test(origin)) return next(new HttpError(404, "Not found."));
+  if (origin !== undefined && !LOCAL_ORIGIN_RE.test(origin)) return next(new HttpError(404, "Not found."));
   next();
 }

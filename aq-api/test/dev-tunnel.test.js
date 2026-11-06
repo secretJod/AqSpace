@@ -14,7 +14,10 @@ function get(base, p, headers) {
 const TUNNEL = [
   { "cf-connecting-ip": "203.0.113.9" }, { "cf-ray": "8abc-LHR" }, { "cdn-loop": "cloudflare" },
   { "x-forwarded-for": "203.0.113.9" }, { forwarded: "for=203.0.113.9" }, { "cf-visitor": '{"scheme":"https"}' },
-  { origin: "https://abc.trycloudflare.com" }
+  { origin: "https://abc.trycloudflare.com" },
+  // #57: mixed-case header names (Node lower-cases them), extra proxy headers, non-loopback IPv6 and "null" Origins
+  { "CF-Ray": "8abc-LHR" }, { "X-Forwarded-For": "203.0.113.9" }, { Via: "1.1 proxy" }, { "X-Forwarded-Proto": "https" },
+  { origin: "http://[2001:db8::1]:5180" }, { origin: "http://[::1].evil.com" }, { origin: "null" }
 ];
 
 test("dev tools: local request works, any tunnel/proxy header -> 404 on /dev and /dev/api/*", async () => {
@@ -22,6 +25,7 @@ test("dev tools: local request works, any tunnel/proxy header -> 404 on /dev and
   const a = await startApp({ py });
   try {
     assert.equal(await get(a.base, "/dev/api/overview", {}), 200);
+    assert.equal(await get(a.base, "/dev/api/overview", { Origin: "http://[::1]:5180" }), 200);   // local IPv6 page is fine
     for (const h of TUNNEL) {
       for (const p of ["/dev", "/dev/", "/dev/api/overview", "/dev/api/jobs", "/dev/tracker.html"]) {
         assert.equal(await get(a.base, p, h), 404, `${p} with ${JSON.stringify(h)}`);
