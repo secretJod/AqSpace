@@ -39,7 +39,9 @@ def main() -> None:
     # request for the same video skips the slow steps; set LNA_CACHE_DIR yourself to move it
     os.environ.setdefault("LNA_CACHE_DIR", os.path.join(_HERE, "output", "cache"))  # = cache.DEFAULT_DIR
     _use_local_temp()
-    app = create_app()
+    app = create_app()  # loads backend/.env
+    from app.keycheck import check_keys  # #81: warn about malformed provider keys (never logs values)
+    check_keys()
     print(f"Lecture Notes AI running at http://{HOST}:{PORT}  (Ctrl+C to stop)")
     app.run(host=HOST, port=PORT, debug=False, threaded=True, use_reloader=False)
 
