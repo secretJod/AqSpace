@@ -1,5 +1,5 @@
 /* ============================================================
-   AQ Learning - playlists app UI. All-black. Restyle by editing the tokens below.
+   AQspace - playlists app UI. All-black. Restyle by editing the tokens below.
    Sections: tokens | base | buttons | top bar | page head | playlist grid | detail + rows | add form |
              menus + toasts | modal + forms + notes | empty states | responsive | reduced motion
    ============================================================ */
@@ -12,7 +12,7 @@
   --ink: #0a0a0a;            /* text on white patches */
   --text: #f4f4f4;
   --muted: #9a9a9a;
-  --muted-dark: #555555;
+  --muted-dark: #6b6b6b;     /* >= 3:1 on --bg for non-text UI (status dots) */
   --line: rgba(255, 255, 255, .11);
   --line-strong: rgba(255, 255, 255, .26);
   --accent: #c9ccd1;         /* soft silver */
@@ -37,7 +37,7 @@
 
 /* ---------- base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--bar-h) + 16px); }
+html { -webkit-text-size-adjust: 100%; overflow-x: clip; scroll-padding-top: calc(var(--bar-h) + 16px); }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 400 15px/1.55 var(--font-body); font-variant-numeric: lining-nums;
@@ -414,6 +414,16 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; backgro
 /* ---------- click spark (clickspark.js) ---------- */
 .cspark { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 9999; pointer-events: none; display: none; }
 @media (prefers-reduced-motion: reduce) { .cspark { display: none !important; } }
+/* reused from #10 (PR #20): spinners keep a slow spin under reduced motion so progress stays visible
+   (the catch-all above would stop them after one turn) */
+@media (prefers-reduced-motion: reduce) {
+  .imp__spin { animation-duration: 2.4s !important; animation-iteration-count: infinite !important; }
+  .smart-handle__badge:empty { animation: sp-spin 2.4s linear infinite !important; }
+}
+/* reused from #10: visible focus ring in Windows high-contrast / forced-colors mode */
+@media (forced-colors: active) {
+  :focus-visible, .pcard__name a:focus-visible::after, .menu__item:focus-visible { outline: 2px solid CanvasText; }
+}
 
 /* C3: notes view */
 .nview { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: var(--bg); color: var(--text); }
