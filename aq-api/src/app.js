@@ -8,6 +8,7 @@ import { createNotesService } from "./notes-service.js";
 import { createSmartService } from "./smart-service.js";
 import { HttpError } from "./http.js";
 import { localAuth } from "./middleware/auth.js";
+import { createGoogleAuth } from "./middleware/google-auth.js";
 import { securityHeaders, hostGuard, cors, rateLimit, localOnly } from "./middleware/security.js";
 import { playlistRoutes } from "./routes/playlists.js";
 import { progressRoutes } from "./routes/progress.js";
@@ -19,7 +20,7 @@ import { healthRoutes, meRoutes, importRoutes, syncRoutes } from "./routes/misc.
 export const VERSION = "0.1.0";
 const STATIC_OK = /\.(html|js|css|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|json|txt)$/i;
 
-/** Builds the Express app. deps: { db?, authenticate?, fetchImpl?, clock? } (all optional; used for tests and the OAuth hook). */
+/** Builds the Express app. deps: { db?, authenticate?, fetchImpl?, googleFetch?, clock? } (all optional; used for tests and the OAuth hook). */
 export function createApp(config, deps = {}) {
   assertPyUrl(config.pyUrl, config.allowRemotePy);
   const db = deps.db || openDb(config.dbFile, config.sqlDir);
@@ -30,7 +31,10 @@ export function createApp(config, deps = {}) {
   const onChange = tracker ? tracker.change : null;
   const notes = createNotesService({ db, repo, py, config, clock: deps.clock || Date.now, onChange });
   const smart = createSmartService({ db, repo, py, config, clock: deps.clock || Date.now, onChange });
-  const authenticate = deps.authenticate || localAuth;
+  const google = config.authMode === "google" && !deps.authenticate
+    ? createGoogleAuth(config.google, { repo, fetchImpl: deps.googleFetch || fetch, clock: deps.clock || Date.now })
+    : null;
+  const authenticate = deps.authenticate || (google ? google.authenticate : localAuth);
 
   const app = express();
   app.disable("x-powered-by");
@@ -54,13 +58,14 @@ export function createApp(config, deps = {}) {
     app.use("/dev", localOnly, devRoutes({ db, py: createPyClient({ baseUrl: config.pyUrl, timeoutMs: 1500, fetchImpl }), tracker, runDir: config.runDir }));
   }
 
-  const general = rateLimit(config.rate.general, deps.clock);
-  const heavy = rateLimit(config.rate.heavy, deps.clock);
+  const general = rateLimit({ ...config.rate.general, trustCf: config.trustCfHeaders }, deps.clock);
+  const heavy = rateLimit({ ...config.rate.heavy, trustCf: config.trustCfHeaders }, deps.clock);
 
   // ---- API ----
   const api = express.Router();
   api.use(general);
   api.use(healthRoutes({ db, py, version: VERSION }));      // health needs no user
+  if (google) api.use(google.routes);                      // login/callback/logout need no user
   api.use(authenticate);
   api.use(meRoutes(repo));
   api.use(syncRoutes(repo));                                      // own (bigger) JSON parser, must come first
