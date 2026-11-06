@@ -1,4 +1,4 @@
-/* AQ Learning - adapter for the aq-api application backend (D:\AQspace\aq-api, http://127.0.0.1:5180).
+/* AQspace - adapter for the aq-api application backend (D:\AQspace\aq-api, http://127.0.0.1:5180).
 
    The UI keeps working without it: localStorage stays the offline cache / fallback and every store function is still synchronous.
    When the API is reachable (same origin when served by aq-api, else http://127.0.0.1:5180) this file
@@ -167,6 +167,8 @@
   };
   api.flush = function () { flushWatch(); return chain.then(function () { /* drained */ }); };
   api.available = function () { return state.ok; };
+  /** Generic JSON request against aq-api for other UI modules (smart.js). Resolves {status, json}; rejects on network failure / timeout. */
+  api.request = function (method, path, body, opts) { return req(method, path, body, opts); };
   api.ready = function () { return readyP || Promise.resolve(false); };
 
   /* try again when the browser comes back online / the tab is shown and the last attempt failed */

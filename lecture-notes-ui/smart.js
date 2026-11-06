@@ -1,4 +1,4 @@
-/* AQ Learning - smart playlist: the "Smart arrange" button + the learning-path panel on the playlist detail screen.
+/* AQspace - smart playlist: the "Smart arrange" button + the learning-path panel on the playlist detail screen.
 
    The playlist name is the learning goal, its videos are what is already covered. One run (aq-api, which asks the Python worker)
    orders the videos, finds the missing topics and suggests real YouTube videos for them. Contract: lecture-notes-ai/docs/smart-playlist-contract.md
@@ -57,24 +57,17 @@
   }
   function busy(r) { return r.posting || r.holding || r.state === "queued" || r.state === "running"; }     // holding = the magic sequence (smartmagic.js) has not revealed yet
 
-  /** JSON request against aq-api (same base as api.js). Resolves {status, json}; rejects only on network failure / timeout. */
+  /** JSON request against aq-api, always through api.js (one base URL, one timeout policy; no direct calls to the Python worker). */
   function request(method, path, body) {
-    var ctl = typeof AbortController === "function" ? new AbortController() : null;
-    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 20000);
-    return fetch((AQ.api ? AQ.api.base : "") + path, {
-      method: method, cache: "no-store",
-      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: ctl ? ctl.signal : undefined
-    }).then(function (res) {
-      return res.json().catch(function () { return null; }).then(function (j) { clearTimeout(timer); return { status: res.status, json: j }; });
-    }, function (err) { clearTimeout(timer); throw err; });
+    if (!AQ.api || typeof AQ.api.request !== "function") return Promise.reject(new Error("api.js not loaded"));
+    return AQ.api.request(method, path, body, { timeout: 20000 });
   }
   function runPath(pid) { return "/api/v1/playlists/" + encodeURIComponent(pid) + "/smart"; }
 
   /** A calm sentence for a failed request - never raw server output. */
   function failText(res) {
     var s = res ? res.status : 0;
+    if (s === 401 || s === 403) return "Your AQspace session has ended. Sign in again, then retry.";
     if (s === 429) return "The server is busy with another analysis. Try again in a moment.";
     if (s === 404) return "This playlist is not on the server yet. Wait a moment and try again.";
     if (s === 422) {
@@ -153,6 +146,7 @@
         stopPoll(r); finished(r, true);
         return;
       }
+      if (res.status === 401 || res.status === 403) { stopPoll(r); r.state = "error"; r.error = failText(res); finished(r, true); return; }
       throw new Error("poll " + res.status);
     }).catch(function () {
       if (!r.polling || gen !== r.gen) return;
@@ -838,6 +832,8 @@
     d.host.hidden = false;
     d.host.classList.toggle("is-open", open);
     d.handle.setAttribute("aria-expanded", String(open));
+    d.drawer.inert = !open;                        // a closed (off-screen) drawer must not take Tab focus
+    if (open) d.drawer.removeAttribute("aria-hidden"); else d.drawer.setAttribute("aria-hidden", "true");
     d.handle.classList.toggle("is-run", d.mode === "running");
     d.handle.classList.toggle("is-err", d.mode === "error");
     var text = d.mode === "running" ? "Arranging" : d.mode === "error" ? "Smart arrange" : "Topics to cover";

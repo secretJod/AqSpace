@@ -1,4 +1,4 @@
-/* AQ Learning - "Smart arrange" magic: the glass button + the click choreography (smartmagic.css has the looks).
+/* AQspace - "Smart arrange" magic: the glass button + the click choreography (smartmagic.css has the looks).
 
    One Smart arrange click runs this sequence (the real run itself - POST / poll - stays in smart.js; this file only drives visuals
    from it and tells smart.js when to reveal):
