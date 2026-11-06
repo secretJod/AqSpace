@@ -33,7 +33,7 @@
   font-size: .7rem;
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--muted-dark);
+  color: var(--muted);   /* #77: --muted-dark (#6b6b6b) is 3.6:1, too low for 11px text */
 }
 .dash__slot-title {
   margin: 0;
@@ -54,4 +54,7 @@
 @media (max-width: 560px) {
   .dash__grid { grid-template-columns: minmax(0, 1fr); }
   .dash__slot--wide { grid-column: auto; }
+}
+@media (forced-colors: active) {
+  .dash__slot--soon { border-color: CanvasText; }
 }

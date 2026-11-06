@@ -3,15 +3,17 @@
 :root {
   --nb-h: 64px;                 /* pill height */
   --nb-lens: 92px;              /* lens diameter (taller than the pill) */
-  --nb-w: min(360px, calc(100vw - 32px));
+  --nb-w: min(360px, calc(100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
   --nb-gap: 14px;               /* distance from viewport bottom */
   --nb-space: calc(var(--nb-lens) + var(--nb-gap) + env(safe-area-inset-bottom, 0px) + 12px);
-  --nb-dim: #5d5f63;
+  --nb-dim: #8a8c90;            /* #77: was #5d5f63 (2.9:1); now >= 4.5:1 on the pill */
   --nb-on: #ffffff;
   --nb-tint: 120, 170, 255;     /* blue refraction tint (rgb) */
 }
 
 body.has-navbar { padding-bottom: var(--nb-space); }
+/* #77: toasts sat at bottom:20px under the bar (z 900 > 150); lift them above it */
+body.has-navbar .toasts { bottom: var(--nb-space); }
 
 .nb-bar {
   position: fixed;
@@ -57,14 +59,14 @@ body.has-navbar { padding-bottom: var(--nb-space); }
   cursor: pointer;
   transition: color .25s ease;
 }
-.nb-tab:hover { color: #8a8c90; }
+.nb-tab:hover { color: #c4c6ca; }
 .nb-tab:focus { outline: none; }
 .nb-tab:focus-visible::after {
   content: "";
   position: absolute;
   inset: 8px 12%;
   border-radius: 999px;
-  box-shadow: 0 0 0 2px rgba(var(--nb-tint), .7);
+  box-shadow: 0 0 0 2px var(--nb-on);   /* #77: solid white ring, matches the app focus rule */
 }
 
 .nb-icon { width: 24px; height: 24px; display: block; transition: transform .3s cubic-bezier(.2, .7, .2, 1); }
@@ -155,4 +157,18 @@ body.has-navbar { padding-bottom: var(--nb-space); }
 
 @media (prefers-reduced-motion: reduce) {
   .nb-tab, .nb-icon, .nb-label, .nb-lens { transition: none; }
+}
+
+/* #77: reduced motion also stops the lens glide (navbar.js reads the same query) */
+@media (prefers-reduced-motion: reduce) {
+  .nb-lens, .nb-lens-clone { transition: none !important; will-change: auto; }
+}
+/* #77: forced colors drop the gradients/glass, so show the bar, the active tab and focus explicitly */
+@media (forced-colors: active) {
+  .nb-pill { border: 1px solid CanvasText; background: Canvas; }
+  .nb-tab { color: CanvasText; }
+  .nb-row .nb-tab[aria-selected="true"] { color: Highlight; }
+  .nb-lens { display: none; }
+  .nb-tab:focus-visible { outline: 2px solid CanvasText; outline-offset: -4px; }
+  .nb-tab:focus-visible::after { box-shadow: none; }
 }
