@@ -87,6 +87,7 @@ services:
       # aq-api refuses /dev for requests arriving through the tunnel. Set AQ_DEV_TOOLS=0 in your shell to turn it off.
       AQ_DEV_TOOLS: ${AQ_DEV_TOOLS:-1}
       AQ_RUN_DIR: ""                                    # empty = /dev does not tail .run/ logs; no service console logs inside the container
+      TRUST_CF_HEADERS: "1"                         # rate-limit per visitor via CF-Connecting-IP (only from loopback cloudflared)
     volumes:
       - ./aq-api/data:/app/aq-api/data    # SQLite aq.db stays in the repo (gitignored)
     depends_on:

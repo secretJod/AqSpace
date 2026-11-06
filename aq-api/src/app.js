@@ -54,8 +54,8 @@ export function createApp(config, deps = {}) {
     app.use("/dev", localOnly, devRoutes({ db, py: createPyClient({ baseUrl: config.pyUrl, timeoutMs: 1500, fetchImpl }), tracker, runDir: config.runDir }));
   }
 
-  const general = rateLimit(config.rate.general, deps.clock);
-  const heavy = rateLimit(config.rate.heavy, deps.clock);
+  const general = rateLimit({ ...config.rate.general, trustCf: config.trustCfHeaders }, deps.clock);
+  const heavy = rateLimit({ ...config.rate.heavy, trustCf: config.trustCfHeaders }, deps.clock);
 
   // ---- API ----
   const api = express.Router();
