@@ -286,3 +286,9 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 - **qa-guide (#79, PR #84):** `docs/qa/first-run.md`, a first-run guide with a key check that never shows the key.
 - **client-presenter (#80, PR #87):** README (run from preview/latest, correct health URL, providers) and v0.3 notes.
 - **web-dev-2 (#81, PR #88):** compose reviewed; a startup key-format warning that never logs values, and keys stripped of whitespace and quotes.
+
+## [2026-11-06] Team lead (orchestrator): Board and repo cleanup
+**Before:** The user said the GitHub project didn't look professional, and they were right. Titles were inconsistent and full of internal codes (F2, R2/R3, file names), four cards still said "Colab worker", there were no milestones, the board had no Priority or Area fields, 31 PRs were open although 30 were already in release candidate #82, and card #1 was missing from the board.
+**What I did:** I renamed all 54 open issues to `<Area>: <outcome>`, created the milestones v0.1, v0.2, v0.3 and Backlog and assigned every card, added board fields Priority and Area and filled them for every card, added #1 to the board, checked that each superseded PR's head commit is in preview/latest and closed those 30 with a link to #82, renamed #82 to "Release v0.3: …", set the repo description, topics and project description, and wrote the standards into `.claude/rules/team.md`.
+**What it solved:** The board reads like a real delivery board: releases, priorities, areas, one live release PR.
+**Notes for the next agent:** Follow the new "Card and PR standards" in team.md. The unused default GitHub labels (bug, duplicate, …) were not deleted because the permission was denied; the user can remove them in the repo's Labels settings.

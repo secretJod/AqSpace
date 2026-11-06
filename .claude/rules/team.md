@@ -30,6 +30,13 @@ Columns: **Backlog → Todo → In Progress → In Review → QA → Done**
 - An agent moves only its own cards, and comments on the card when it starts, when it opens a PR, and when it hands off to QA.
 - **QA gate:** only the user (with `qa-guide`) moves a card from QA to Done. A failed QA goes back to In Progress with a bug comment.
 
+## Card and PR standards (keep the board professional)
+- **Issue title:** `<Area>: <outcome in plain words>`. Area is one of API, Notes engine, UI, Platform, Integration, QA, Docs, Decision, Release, Bug. No internal codes (R5, F2), file names or issue numbers in titles.
+- **Every card:** milestone (v0.x or Backlog), labels `role:` / `type:` / `priority:`, and the board fields **Priority** and **Area** set. The body has *Goal*, *Scope*, *How to test*.
+- **Titles stay true:** when the plan changes, rename the card; never leave stale titles.
+- **PRs:** title `#<issue> <outcome>`. A PR that is folded into a release branch is closed with a comment linking the release PR, so only live PRs stay open.
+- **Releases:** one release PR per milestone (e.g. "Release v0.3: ..."), merged to main only after the QA tester approves.
+
 ## Git
 - One branch per card: `<agent-name>/<issue#>-<short-slug>`. Never commit directly to `main`.
 - PR title `#<issue> <summary>`; body links the card and says how to test it.
