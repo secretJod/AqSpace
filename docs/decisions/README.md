@@ -8,3 +8,4 @@ One file per decision: `NNNN-<slug>.md` with Context / Options / Decision / Cons
 | [0002](0002-aq-api-database.md) | aq-api stays on SQLite for now; Postgres when a named trigger fires | Accepted | 2026-10-25 | #6 |
 | [0003](0003-local-llm-qwen3-8b.md) | Local notes model: Qwen3-8B (GGUF) on llama.cpp with Metal | Accepted | 2026-11-01 | #37 |
 | [0004](0004-upstream-convergence.md) | Converging upstream feature/dev-tools with AQspace R5 | Accepted | 2026-11-03 | #47 |
+| [0006](0006-data-platform.md) | Analytics: DuckDB + dbt + Metabase now; Snowflake/Databricks on named triggers | Proposed | 2026-11-09 | #138 |
