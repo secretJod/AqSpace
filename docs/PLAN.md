@@ -21,6 +21,7 @@ Reference: https://github.com/developer4-gif/aq (read remotely, never cloned).
   - **R5 update (2026-11-01):** the model is **Qwen3-8B-Q4_K_M (GGUF, 5 GB)**, kept in `models/` (gitignored). It runs with llama.cpp `llama-server` natively on the Mac (M2, Metal GPU) at 127.0.0.1:8081 as a new `local` provider in notes_engine. Colab becomes an optional runner of the same server. Notes should match or beat Groq quality. The team lead runs the team on their own and reports when done; other GPU jobs on the Mac may be stopped.
 - **R6 (2026-11-03):** Bring in everything upstream (developer4-gif/aq) pushed on Nov 2-3 (`feature/dev-tools`: smart playlist, dev tools, Nemotron/Colab providers, notes cache), keeping all AQspace work. Then put the whole team to work: each owner reviews and hardens their imported area, and the docs (README, ARCHITECTURE, QA, client notes) are updated to match the current app.
 - **R7 (2026-11-06):** Pull upstream's latest (Nov 5: dashboard, daily streak tracker, liquid-glass bottom nav). **Gemini becomes the default notes provider** (fast for long videos; fallback chain local → Groq ≤1h → NVIDIA). Everything runs from one branch with `docker compose up`, every task is on the GitHub board, and the whole team works on it.
+- **R8 (2026-11-09):** Pull upstream's latest notes engine change (7 Nov) into AQspace, deploy AQspace to a second Mac over SSH, design the AWS architecture, and build a usage and feedback analytics pipeline (warehouse choice such as Snowflake or Databricks) so real traffic and user feedback guide the product. Milestone v0.4, epic #134.
 
 ## Architecture
 | Service | Path | Port | Tech |
@@ -51,3 +52,4 @@ Run with Docker only: `docker compose up --build`.
 | 2026-11-01 | R5 update: model Qwen3-8B-Q4_K_M GGUF moved to `models/`, served by llama.cpp on the Mac (Metal); Colab optional; cards #37-#39 | User chose the model and handed orchestration to the team lead | User |
 | 2026-11-03 | Added R6: import upstream Nov 2-3 work (card #47) and refresh all docs, with the whole team working | User request | User |
 | 2026-11-06 | Added R7: upstream Nov 5 import, Gemini default for notes, whole team active | User request | User |
+| 2026-11-09 | Added R8: upstream db9ac6b import, second-Mac deploy, AWS architecture, analytics pipeline (epic #134) | User request | User |
