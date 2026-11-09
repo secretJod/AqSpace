@@ -298,3 +298,14 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** With the user's choice ("board + issues only, rebuild from what exists"), I backed up all 54 issues to `.run/board-backup/` and deleted them. I added issue templates (feature, bug, decision) and a Size field. Then I rebuilt the board as 5 epics (#96–#100) with 33 feature-level sub-issues (#101–#133) in plain English with acceptance criteria: 25 delivered features in QA, 4 in Todo (3 bugs and the model server, which is blocked on approval) and 4 in Backlog. I rewrote the release PR #82 body around the epics, and added card standards and WIP limits to team.md.
 **What it solved:** The board now reads as a product roadmap that a client or tester can follow, and QA can tick each card's acceptance criteria.
 **Notes for the next agent:** Old card numbers (#1–#95) in docs, PRs and branch names no longer exist; refer to the new numbers. Respect the WIP limits and use the templates.
+
+## [2026-11-09] Team lead (orchestrator): R8, upstream update, deployment and data platform
+**Before:** Upstream had pushed faster, briefer Gemini notes and a compact notebook (db9ac6b). AQspace ran on one Mac only, with no cloud plan and no usage or feedback data.
+**What I did:** I added R8 and milestone v0.4, with epic #134 and cards #135–#138, and ran 3 agents. I merged their PRs (#139, #140, #141) into preview/latest and pushed it (Python 542 passed, aq-api 86/86, UI OK, the local analytics report runs). I created the follow-up cards #142–#149 in Backlog under #134.
+**What it solved:** Local and GitHub carry upstream's latest code, there's a one-command deploy to a second Mac, a costed AWS plan, and a data platform plan with a first working report.
+**Notes for the next agent:** A real deploy needs the target Mac's host, user and RAM. The running Docker stack must be rebuilt to pick up the new notes engine. Per-provider analytics wait for #142 and #143.
+
+## [2026-11-09] R8 agent results (from their PR journals)
+- **web-dev-3 (#135, PR #141):** upstream db9ac6b applied by patch (diff3 garbled files). Adopted structured output, a parallel single pass for Gemini, briefer prompts, cover takeaways and the flowing layout. Our pacer is now thread-safe and counts in-flight calls, a daily-quota hit stops all parallel calls, and PROMPT_VERSION is 2026-11-09.1.
+- **web-dev-2 (#136, PR #139):** `scripts/deploy.sh` (git archive + rsync, `--with-secrets` over SSH stdin with mode 600, health wait, rollback, status, dry run) and `docs/deploy/second-mac.md`.
+- **scaling-lead (#137 #138, PR #140):** `docs/architecture/aws.md` (Fargate + ALB + S3/CloudFront + RDS on trigger; ~$90–140/month small, ~$450–700 medium), `docs/architecture/data-platform.md`, ADR-0006 (DuckDB + dbt + Metabase now; Snowflake or Databricks on named triggers), and `scripts/analytics/report.py`.
