@@ -396,7 +396,7 @@ def test_pdf_of_40_section_notes(tmp_path, base_notes):
     n = len(doc)
     texts = [p.get_text() for p in doc]
     doc.close()
-    assert n > 40
+    assert n > 20  # compact layout (upstream db9ac6b): sections flow, so fewer than one page each
     for i, t in enumerate(texts, 1):
         assert re.search(r"pg\.\s*%d\s*/\s*%d" % (i, n), t)
     full = "\n".join(texts)

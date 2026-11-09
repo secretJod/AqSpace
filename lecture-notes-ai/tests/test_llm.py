@@ -401,6 +401,10 @@ def kind_of(call):
         return "digest"
     if "Write the complete field-notebook notes" in user:
         return "single"
+    if "transcript slice" in user and "Write the notebook sections" in user:
+        return "part"
+    if "front and back matter" in user:
+        return "front"
     if "This is part" in user:
         return "batch"
     if "OUTLINE:" in user:
@@ -422,6 +426,11 @@ def pipeline_script(provider, n_batch_sections=3):
             return FakeResp(200, ok_payload(provider, json.dumps(FRONT)))
         if k == "single":
             return FakeResp(200, ok_payload(provider, json.dumps(full_notes(6))))
+        if k == "part":  # Gemini parallel single pass (upstream db9ac6b)
+            n = int(re.search(r"NEVER fewer than (\d+)", user_text(call)).group(1))
+            return FakeResp(200, ok_payload(provider, json.dumps({"sections": [section(i * 10 + j) for j in range(n)]})))
+        if k == "front":
+            return FakeResp(200, ok_payload(provider, json.dumps(FRONT)))
         raise AssertionError(k)
     return script
 
@@ -1547,5 +1556,121 @@ def test_gemini_long_video_falls_back_to_nvidia_only(fb_env):
     notes = run("gemini", transcript=make_transcript(120, 60))
     assert notes["meta"]["provider"] == "nvidia" and notes["meta"]["fallback_from"] == "gemini"
     assert not any("groq" in c["url"] for c in rec.calls)
-    after = rec.calls[1:]
+    # parallel Gemini calls already in flight may finish, but once NVIDIA starts, Gemini is never called again
+    first_nv = next(i for i, c in enumerate(rec.calls) if "nvidia" in c["url"])
+    after = rec.calls[first_nv:]
     assert after and all("nvidia" in c["url"] for c in after)
+
+
+# ------------------------------------------------- parallel single pass (Gemini) ----
+def part_script(calls_per_kind=None):
+    def script(call, i):
+        u = user_text(call)
+        if "transcript slice" in u and "Write the notebook sections" in u:
+            n = int(re.search(r"NEVER fewer than (\d+)", u).group(1))
+            no = int(re.search(r"slice (\d+) of", u).group(1))
+            return FakeResp(200, ok_payload("gemini", json.dumps({"sections": [section(no * 10 + j) for j in range(n)]})))
+        if "front and back matter" in u:
+            front = {**FRONT, "cover": {**FRONT["cover"], "takeaways": ["top 1", "top 2"]}}
+            return FakeResp(200, ok_payload("gemini", json.dumps(front)))
+        raise AssertionError(u[:200])
+    return script
+
+
+def test_gemini_long_lecture_runs_parts_in_parallel(monkeypatch):
+    tr = make_transcript(minutes=45, chars_per_seg=150)  # target 18 sections -> 4 parts + front
+    rec = install(monkeypatch, part_script())
+    notes = llm.generate_notes(tr, provider="gemini", api_key=KEYS["gemini"])
+    assert len(rec.calls) == 5
+    parts = [c for c in rec.calls if "front and back matter" not in user_text(c)]
+    assert len(parts) == 4
+    # every call uses Gemini structured output and a tight output cap / timeout
+    for c in rec.calls:
+        assert "responseJsonSchema" in c["json"]["generationConfig"]
+        assert c["timeout"][1] == llm.PART_TIMEOUT
+    for c in parts:
+        assert c["json"]["generationConfig"]["maxOutputTokens"] <= 2000 + 1000 * 6
+    # sections come back in lecture order (slice 1 first), front matter is used
+    titles = [s["title"] for s in notes["sections"]]
+    assert titles[0] == "topic 10" and titles[-1].startswith("topic 4")
+    assert len(notes["sections"]) >= 15
+    assert notes["cover"]["takeaways"] == ["top 1", "top 2"]
+    assert notes["glossary"][0]["term"] == "cache"
+
+
+def test_parallel_part_runaway_output_is_salvaged(monkeypatch):
+    tr = make_transcript(minutes=45, chars_per_seg=150)
+    base = part_script()
+
+    def script(call, i):
+        u = user_text(call)
+        if "slice 2 of" in u:
+            body = json.dumps({"sections": [section(20 + j) for j in range(6)]})
+            return FakeResp(200, ok_payload("gemini", body[: int(len(body) * 0.9)], finish="MAX_TOKENS"))
+        return base(call, i)
+    install(monkeypatch, script)
+    notes = llm.generate_notes(tr, provider="gemini", api_key=KEYS["gemini"])
+    assert any(s["title"] == "topic 20" for s in notes["sections"])
+
+
+def test_short_gemini_video_stays_single_call(monkeypatch):
+    rec = install(monkeypatch, pipeline_script("gemini"))
+    llm.generate_notes(make_transcript(14), provider="gemini", api_key=KEYS["gemini"])
+    assert [kind_of(c) for c in rec.calls] == ["single"]
+    assert "responseJsonSchema" in rec.calls[0]["json"]["generationConfig"]
+
+
+def test_gemini_schema_rejected_falls_back_to_plain_json(monkeypatch):
+    seen = []
+
+    def script(call, i):
+        seen.append("responseJsonSchema" in call["json"]["generationConfig"])
+        if seen[-1]:
+            return FakeResp(400, {"error": {"message": 'Invalid JSON payload received. Unknown name "responseJsonSchema"'}})
+        return FakeResp(200, ok_payload("gemini", json.dumps(full_notes())))
+    install(monkeypatch, script)
+    notes = run("gemini")
+    assert seen == [True, False] and notes["sections"]
+
+
+def test_other_providers_never_get_a_schema_or_parallel_parts(monkeypatch):
+    for prov in ("groq", "nvidia", "local", "xai", "huggingface"):  # "colab" is an alias of local
+        assert llm._profile(prov, llm.PROVIDERS[prov]["default_model"])["parallel"] == 1
+
+
+def test_join_parts_merges_a_topic_split_by_the_boundary():
+    a = [section(1), {**section(2), "title": "tool use and browser integration"}]
+    b = [{**section(3), "title": "tool use in large language models"}, section(4)]
+    out = llm._join_parts(a, b)
+    assert [s["title"] for s in out] == ["topic 1", "tool use and browser integration", "topic 4"]
+    assert len(out[1]["key_takeaways"]) <= 3
+    c = [{**section(5), "title": "turning sums into areas under a graph"}]
+    d = [{**section(6), "title": "the area under a parabola"}]
+    assert len(llm._join_parts(c, d)) == 2  # one shared word is not enough
+
+
+def test_cover_takeaways_optional_and_validated():
+    raw = full_notes()
+    assert "takeaways" not in validate_notes(raw)["cover"]
+    raw["cover"] = {**raw["cover"], "takeaways": ["a", "", "b"] + ["x%d" % i for i in range(10)]}
+    got = validate_notes(raw)["cover"]["takeaways"]
+    assert got[:2] == ["a", "b"] and len(got) == notes_schema.MAX_COVER_TAKEAWAYS
+
+
+def test_pacer_counts_in_flight_requests(monkeypatch):
+    """Parallel parts share one pacer: requests still in flight count toward the Gemini RPM window."""
+    slept = []
+    monkeypatch.setattr(llm, "_sleep", lambda s: slept.append(s))
+    p = llm._Pacer(None, rpm=3)
+    p.after(0)                  # one finished request in the window
+    p.before(0)
+    p.before(0)                 # two in flight -> window full (1 + 2 = 3)
+    assert p.inflight == 2 and not slept
+    p.before(0)                 # a 4th waits for the oldest finished one to age out
+    assert slept
+
+
+def test_part_count_stays_below_gemini_rpm(monkeypatch):
+    monkeypatch.setenv("LNAI_GEMINI_RPM", "3")
+    c = llm._Client("gemini", "k" * 39, "gemini-2.5-flash")
+    assert llm._part_count(c, 18) == 2
