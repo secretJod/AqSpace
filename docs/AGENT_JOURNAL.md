@@ -190,3 +190,122 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** I wrote `docs/qa/r5-local-model.md` (17 steps) and `docs/qa/r5-eval.md`: 5 fixed videos, minutes per hour of video, and a blind 1–5 side-by-side against Groq with a pass rule.
 **What it solved:** The user can test R5 alone and decide pass or fail on facts.
 **Notes for the next agent:** The log grep steps assume certain log words; tell qa-guide if the actual logs differ.
+
+## [2026-11-01] web-dev-3: R5 integration, local model end to end (#32, PR #45)
+**Before:** R5 was spread across five PRs that had never run together, and compose still pointed at Groq.
+**What I did:** I merged #26, #43, #25, #44, #42 and the #41/#40 docs onto one branch (no conflicts), checked the cross-PR contracts, and wired compose: LNAI_LOCAL_URL through host.docker.internal, fallback on, PY_NOTES_PROVIDER=local, and the whisper extra in the image. I added `tests/test_e2e_local.py`: a fake llama-server, a crash mid-compose, and a resume. Python 400 passed, aq-api 40/40.
+**What it solved:** There is now one tested branch where every R5 piece fits together.
+**Notes for the next agent:** llama-server must stay bound to 127.0.0.1. The Whisper cache in the container isn't bind-mounted yet. Stale chunk counters after the map stage are cosmetic. After #45 merges, close #26, #43, #25, #44, #42, #41 and #40.
+
+## [2026-11-01] client-presenter: Guide for the local Qwen3-8B model (#35, PR #46)
+**Before:** The user had no plain page explaining how to use the local model.
+**What I did:** I wrote `docs/client/local-model.md`: what changed, setup, daily use, time estimates, fallback, how to stop it, and where notes are saved. Steps that depend on #37 are marked.
+**What it solved:** One page for the user to follow once #37 is approved.
+**Notes for the next agent:** Update it with real llm.sh output and measured times after #37.
+
+## [2026-11-03] Team lead (orchestrator): R6, upstream import + whole team on docs and hardening
+**Before:** Upstream had pushed smart playlist, dev tools, the Nemotron/Colab providers and a notes cache (Nov 2–3). Our docs were stale: ARCHITECTURE was upstream's original and the README was outdated.
+**What I did:** I added R6, created #47–#51 and #57–#65, and ran 13 agent tasks in two phases (import and docs first, then each owner hardening its own area). I relayed cross-agent contracts and caught that tunnel traffic looks like loopback, so `/dev` had to be guarded by proxy headers.
+**What it solved:** Upstream's features now sit on top of R5, every area has been reviewed by its owner, and the docs match the app.
+**Notes for the next agent:** Merge order: #45 → #58 → its stacked PRs (#66–#72) and #52–#56. #37 (llama.cpp) still needs the user's approval.
+
+## [2026-11-03] web-dev-3: Upstream import (#47, PR #58) and e2e tests (#62, PR #71)
+**Before:** None of upstream's Nov 2–3 work was in AQspace, and nothing tested the cache, the tunnel or the smart playlist end to end.
+**What I did:** I imported 75 files, three-way merged 23 (5 conflicts, keeping both sides), skipped 4 .ps1 files, renamed migration 002_smart_runs to 003, and added the `localOnly` `/dev` guard. Then I added e2e tests: resume with the cache on, a smart run through the tunnel, `/dev` 404 through the tunnel. I also fixed run_demo's import side effect.
+**What it solved:** Upstream's features run on top of R5 with all suites green (Python 489, aq-api 67), and `/dev` can't leak through the tunnel.
+**Notes for the next agent:** The rate limiter keys on the socket address (loopback behind the tunnel). Per-visitor limits are PR #19.
+
+## [2026-11-03] scaling-lead: ARCHITECTURE.md + ADR-0004 (#48, PR #56)
+**Before:** ARCHITECTURE.md was upstream's original, and there was no decision on how upstream's work overlaps ours.
+**What I did:** I rewrote ARCHITECTURE.md for AQspace. ADR-0004 folds colab into local with nvidia as the long-video fallback, puts the cache under checkpoints, keeps smart_runs in SQLite as 003, and makes `/dev` local-only by proxy headers.
+**What it solved:** The system has an accurate map, and each overlap has a decision.
+**Notes for the next agent:** F8: update ADR-0003's fallback section (Groq ≤1h, NVIDIA beyond) and close #39.
+
+## [2026-11-03] client-presenter: README + v0.2 release notes (#49, PR #52)
+**Before:** The README was outdated and there were no notes after v0.1.
+**What I did:** I wrote a new root README and `docs/client/release-notes-v0.2.md`.
+**What it solved:** A newcomer can start and understand the app from one page.
+**Notes for the next agent:** It links local-model.md (#46). Check it against llm.sh after #37.
+
+## [2026-11-03] qa-guide: QA plan for the upstream import (#50, PR #55)
+**Before:** There was no test plan for the imported features.
+**What I did:** I wrote `docs/qa/47-upstream-import.md`: 26 steps, including tunnel security checks and an R5 regression section.
+**What it solved:** The user can test #47 step by step.
+**Notes for the next agent:** Step 10 needs the provider route: `/api/v1/health` (localModel) or `/dev/api/overview`.
+
+## [2026-11-03] web-dev-2: Whisper cache (#51, PR #53) and compose/nuke cleanup (#61, PR #67)
+**Before:** The Whisper model downloaded again after every rebuild, and nuke.sh never removed `.data/`.
+**What I did:** I bind-mounted `.tools/whisper-models` (LNAI_WHISPER_DIR). nuke.sh now removes `.data` (wiped through a throwaway db container first). The cache is at `/app/backend/output/cache`, and the new env keys are documented in compose and the .env examples.
+**What it solved:** Storage rule kept: deleting the repo after nuke leaves nothing behind.
+**Notes for the next agent:** Run `docker compose config` once Docker is up.
+
+## [2026-11-03] web-dev-1: SQLite backups (#16, PR #54) and ordered migrations (#57, PR #68)
+**Before:** There was no safe backup, no contention signal, and an old database without a migrations table would fail to upgrade.
+**What I did:** I added `scripts/backup-db.sh` (VACUUM INTO, keeps the last 7) and a `dbBusy` counter in deep health. Old databases are baselined by probing their tables, migrations sort numerically, and the `/dev` guard blocks more proxy headers and any non-loopback Origin.
+**What it solved:** Hot backups work, and upgrading any database is safe.
+**Notes for the next agent:** Only `tx()` writes are counted.
+
+## [2026-11-03] ai-dev-1: colab folded into local, nvidia fallback, cache rules (#59 #60, PR #72)
+**Before:** colab was its own provider, long videos had no fallback, and cache keys ignored the profile and prompt version.
+**What I did:** `local` now accepts https plus LNAI_LOCAL_KEY, there's a local-small profile, and colab is a deprecated alias. Fallback: Groq ≤1h, then NVIDIA. Cache keys include the profile hash and PROMPT_VERSION, and the cache never stores degraded or fallback answers. smart.analyze gets groq_key and work_dir. 469 tests pass.
+**What it solved:** One self-hosted provider covers the Mac or Colab, and no stale answers are replayed.
+**Notes for the next agent:** Remove the colab alias next release.
+
+## [2026-11-03] ai-dev-2: smart playlist uses the one transcript path (#63, PR #66)
+**Before:** The smart playlist didn't pass groq_key or work_dir, so videos without captions were analysed from their title only.
+**What I did:** It now passes both to ingest.get_transcript. 3 tests added.
+**What it solved:** Notes and smart playlists share one transcript path.
+**Notes for the next agent:** run_demo.py is still a standalone copy.
+
+## [2026-11-03] ui-dev-1: smart playlist screens review (#64, PR #69)
+**Before:** smart.js made its own fetch calls, there was no 401 state, the closed drawer took focus, and one innerHTML remained.
+**What I did:** I added `AQ.api.request`, a 401/403 message, an inert drawer, textContent instead of innerHTML, and AQspace headers.
+**What it solved:** There's one API path, and keyboard and error handling are clean.
+**Notes for the next agent:** smartmagic.js should skip its canvas loop when reduced motion is on.
+
+## [2026-11-03] ui-dev-2: styles and motion review (#65 #21, PR #70)
+**Before:** water.js read reduced-motion only once, spinners froze, the forced-colors ring was missing, there was a contrast failure, sideways scroll on phones, and an empty eslint config.
+**What I did:** I fixed all of those, ported #20's rules and wrote the eslint config.
+**What it solved:** Accessibility holds across the imported UI.
+**Notes for the next agent:** Not yet checked in a browser; QA should take screenshots.
+
+## [2026-11-06] Team lead (orchestrator): R7, upstream Nov 5 + Gemini default + whole team
+**Before:** Upstream had added a dashboard, streak tracker and bottom nav (Nov 5). Notes defaulted to the local model, which can't run yet. The release candidate lacked the older PRs.
+**What I did:** I imported upstream 1b4cca0 onto `preview/latest` (rebranded to AQspace) and made Gemini the default notes provider. I opened RC PR #82, created cards #73–#81, and ran all 10 agents. I relayed fixes between them (wrong README health URL, the Gemini fallback order bug). Then I merged their 10 PRs (#83–#92) into preview/latest, resolving the navbar-demo conflict by deleting the demo. aq-api 86/86, Python 531 passed, UI syntax OK.
+**What it solved:** One branch holds everything, runs with `docker compose up`, and every task is on the board.
+**Notes for the next agent:** The user's GEMINI_API_KEY looks malformed (no AIza prefix, contains whitespace). The new keycheck warns about it at startup. #37 (llama.cpp) still needs approval. The evaluation (#75) is ready but has never run for real.
+
+## [2026-11-06] R7 team results (from the agents' PR journals)
+- **web-dev-3 (#73, PR #89):** brought #17 #18 #20 #22 #23 #28 into the RC. CI covers Python tests+demo, aq-api and a UI syntax job.
+- **web-dev-1 (#73 #14, PR #91):** per-visitor tunnel rate limiting (TRUST_CF_HEADERS, set in compose), Google OAuth behind AUTH_MODE (off by default), and server-side SQLite sessions (migration 004) so logout revokes. 86 tests.
+- **ai-dev-1 (#74, PR #90):** Gemini RPM pacer (LNAI_GEMINI_RPM=10), wait messages, a clear daily-quota error, and one fallback chain for every primary (local → Groq ≤1h → NVIDIA).
+- **ai-dev-2 (#75, PR #92):** `python -m demo.notes_eval.run_eval` through the app's pipeline, with local contestants, `--judge`, `--dry-run` with fakes, and a blind sheet with a hidden key.
+- **ui-dev-1 (#76, PR #85):** nav ARIA (aria-current) and arrow-key focus, and the smartmagic loop stops under reduced motion.
+- **ui-dev-2 (#77, PR #86):** nav, streak and dashboard contrast, focus, safe areas, forced-colors; removed the publicly served navbar demo.
+- **scaling-lead (#78, PR #83):** ADR-0005 provider strategy; ADR-0003 fallback updated; #39 covered by the https local provider.
+- **qa-guide (#79, PR #84):** `docs/qa/first-run.md`, a first-run guide with a key check that never shows the key.
+- **client-presenter (#80, PR #87):** README (run from preview/latest, correct health URL, providers) and v0.3 notes.
+- **web-dev-2 (#81, PR #88):** compose reviewed; a startup key-format warning that never logs values, and keys stripped of whitespace and quotes.
+
+## [2026-11-06] Team lead (orchestrator): Board and repo cleanup
+**Before:** The user said the GitHub project didn't look professional, and they were right. Titles were inconsistent and full of internal codes (F2, R2/R3, file names), four cards still said "Colab worker", there were no milestones, the board had no Priority or Area fields, 31 PRs were open although 30 were already in release candidate #82, and card #1 was missing from the board.
+**What I did:** I renamed all 54 open issues to `<Area>: <outcome>`, created the milestones v0.1, v0.2, v0.3 and Backlog and assigned every card, added board fields Priority and Area and filled them for every card, added #1 to the board, checked that each superseded PR's head commit is in preview/latest and closed those 30 with a link to #82, renamed #82 to "Release v0.3: …", set the repo description, topics and project description, and wrote the standards into `.claude/rules/team.md`.
+**What it solved:** The board reads like a real delivery board: releases, priorities, areas, one live release PR.
+**Notes for the next agent:** Follow the new "Card and PR standards" in team.md. The unused default GitHub labels (bug, duplicate, …) were not deleted because the permission was denied; the user can remove them in the repo's Labels settings.
+
+## [2026-11-06] Team lead (orchestrator): Board restarted from scratch
+**Before:** The user judged the card text unprofessional: developer scratch notes, internal codes, agent chatter, stale comments, and no acceptance criteria.
+**What I did:** With the user's choice ("board + issues only, rebuild from what exists"), I backed up all 54 issues to `.run/board-backup/` and deleted them. I added issue templates (feature, bug, decision) and a Size field. Then I rebuilt the board as 5 epics (#96–#100) with 33 feature-level sub-issues (#101–#133) in plain English with acceptance criteria: 25 delivered features in QA, 4 in Todo (3 bugs and the model server, which is blocked on approval) and 4 in Backlog. I rewrote the release PR #82 body around the epics, and added card standards and WIP limits to team.md.
+**What it solved:** The board now reads as a product roadmap that a client or tester can follow, and QA can tick each card's acceptance criteria.
+**Notes for the next agent:** Old card numbers (#1–#95) in docs, PRs and branch names no longer exist; refer to the new numbers. Respect the WIP limits and use the templates.
+
+## [2026-11-09] Team lead (orchestrator): R8, upstream update, deployment and data platform
+**Before:** Upstream had pushed faster, briefer Gemini notes and a compact notebook (db9ac6b). AQspace ran on one Mac only, with no cloud plan and no usage or feedback data.
+**What I did:** I added R8 and milestone v0.4, with epic #134 and cards #135–#138, and ran 3 agents. I merged their PRs (#139, #140, #141) into preview/latest and pushed it (Python 542 passed, aq-api 86/86, UI OK, the local analytics report runs). I created the follow-up cards #142–#149 in Backlog under #134.
+**What it solved:** Local and GitHub carry upstream's latest code, there's a one-command deploy to a second Mac, a costed AWS plan, and a data platform plan with a first working report.
+**Notes for the next agent:** A real deploy needs the target Mac's host, user and RAM. The running Docker stack must be rebuilt to pick up the new notes engine. Per-provider analytics wait for #142 and #143.
+
+## [2026-11-09] R8 agent results (from their PR journals)
+- **web-dev-3 (#135, PR #141):** upstream db9ac6b applied by patch (diff3 garbled files). Adopted structured output, a parallel single pass for Gemini, briefer prompts, cover takeaways and the flowing layout. Our pacer is now thread-safe and counts in-flight calls, a daily-quota hit stops all parallel calls, and PROMPT_VERSION is 2026-11-09.1.
+- **web-dev-2 (#136, PR #139):** `scripts/deploy.sh` (git archive + rsync, `--with-secrets` over SSH stdin with mode 600, health wait, rollback, status, dry run) and `docs/deploy/second-mac.md`.
+- **scaling-lead (#137 #138, PR #140):** `docs/architecture/aws.md` (Fargate + ALB + S3/CloudFront + RDS on trigger; ~$90–140/month small, ~$450–700 medium), `docs/architecture/data-platform.md`, ADR-0006 (DuckDB + dbt + Metabase now; Snowflake or Databricks on named triggers), and `scripts/analytics/report.py`.
