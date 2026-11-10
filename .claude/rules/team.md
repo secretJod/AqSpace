@@ -40,6 +40,10 @@ Columns: **Backlog → Todo → In Progress → In Review → QA → Done**
 - **PRs:** title `#<issue> <outcome>`. A PR that is folded into a release branch is closed with a comment linking the release PR, so only live PRs stay open.
 - **Releases:** one release PR per milestone (e.g. "Release v0.3: ..."), merged to main only after the QA tester approves.
 
+## System design
+- `web-dev-3` keeps the systemdesignsim.com design in sync with the running app, using the Playwright MCP, after every change that affects the architecture (see `.claude/agents/web-dev-3.md`). The team lead assigns it when such a change merges.
+- Screenshots and files from the browser go to `.playwright-mcp/` (gitignored) and are deleted at the end of every task.
+
 ## Git
 - One branch per card: `<agent-name>/<issue#>-<short-slug>`. Never commit directly to `main`.
 - PR title `#<issue> <summary>`; body links the card and says how to test it.

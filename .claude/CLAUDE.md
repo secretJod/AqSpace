@@ -13,6 +13,9 @@ Read this at the start of every session. These rules apply to every agent and su
 ## Company team
 AQspace runs as a fixed agent team (`.claude/agents/`) with a kanban board and daily standups. The user is the QA tester and the only one who moves cards to Done. Read `.claude/rules/team.md`, route work to the owning agent, and keep `docs/daily/` up to date.
 
+## System design
+After any change to services, ports, data flow, storage or AI providers, assign `web-dev-3` to update the design on systemdesignsim.com with Playwright, then delete `.playwright-mcp/` (no screenshots kept). Details: `.claude/rules/team.md`.
+
 ## Rules
 - Team & board workflow: `.claude/rules/team.md`
 - Tracking rules: `.claude/rules/tracking.md`
