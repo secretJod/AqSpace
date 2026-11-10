@@ -1,9 +1,8 @@
 # Smart playlist - contract between the three layers
 
 The playlist NAME is the learning goal; its videos are the topics already covered.
-One run = 3 AI agents (profiler, sequencer, gap analyst) + code checks. The working prototype is
-`lecture-notes-ai/demo/smart_playlist/run_demo.py` (prompts, `verify()`, `_search_youtube()`); the three layers below
-turn it into a feature. Do not change this contract without telling the orchestrator.
+One run = 3 AI agents (profiler, sequencer, gap analyst) + code checks. It is implemented in
+`lecture-notes-ai/notes_engine/smart_playlist.py`. Do not change this contract without telling the orchestrator.
 
 ```
 browser (lecture-notes-ui)  -->  aq-api :5180 (Node)  -->  Python worker :5055 (notes_engine)  -->  Gemini / Groq

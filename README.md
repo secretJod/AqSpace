@@ -86,7 +86,7 @@ Keys are never committed and never baked into an image. Copy the `.example` file
 | `aq-api/` | Node/Express app backend and SQLite store, port 5180 |
 | `lecture-notes-ai/` | Python notes worker (transcripts, Whisper, LLM, PDF), internal port 5055 |
 | `lecture-notes-ui/` | Vanilla JS UI (no build step): dashboard, streak, bottom nav, player, notes |
-| `scripts/` | `nuke.sh`, `secret-scan.sh`, `gh.sh` (repo-local GitHub CLI), `board.sh` |
+| `scripts/` | `nuke.sh` (remove everything), `secret-scan.sh` (check for leaked keys), `gh.sh` + `board.sh` (GitHub board), `backup-db.sh` (database backup), `deploy.sh` (deploy to a second Mac) |
 
 ## Tests
 

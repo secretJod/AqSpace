@@ -48,7 +48,7 @@ jobs:
       # which breaks Chrome's sandbox (used by the PDF tests). Re-allow them.
       - name: Allow Chrome sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      # tests/ = notes_engine + Flask API; demo/ = smart_playlist demo tests.
+      # tests/ = notes_engine + Flask API; demo/ = model evaluation (notes_eval) tests.
       - name: Test
         working-directory: lecture-notes-ai
         env:

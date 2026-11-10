@@ -19,7 +19,6 @@ import test_e2e_local as base  # noqa: E402  (reuse FakeLlama, fake modules and 
 from app import server as srv  # noqa: E402
 from notes_engine import llm  # noqa: E402
 
-DEMO = Path(__file__).resolve().parent.parent / "demo" / "smart_playlist" / "run_demo.py"
 
 
 class RichFakeLlama(base.FakeLlama):
@@ -85,11 +84,3 @@ def test_crash_resume_with_cache_on_makes_no_extra_model_calls(cached_stack):
     assert "digest" not in fake.calls and "batch" not in fake.calls, fake.calls
     assert len(fake.calls) <= len(first_resume_calls)
 
-
-def test_importing_demo_has_no_env_side_effect(monkeypatch):
-    monkeypatch.delenv("LNA_CACHE_DIR", raising=False)
-    spec = importlib.util.spec_from_file_location("run_demo_import_check", DEMO)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    assert "LNA_CACHE_DIR" not in os.environ
-    assert callable(mod.main)
