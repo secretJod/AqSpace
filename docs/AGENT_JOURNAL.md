@@ -309,3 +309,9 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 - **web-dev-3 (#135, PR #141):** upstream db9ac6b applied by patch (diff3 garbled files). Adopted structured output, a parallel single pass for Gemini, briefer prompts, cover takeaways and the flowing layout. Our pacer is now thread-safe and counts in-flight calls, a daily-quota hit stops all parallel calls, and PROMPT_VERSION is 2026-11-09.1.
 - **web-dev-2 (#136, PR #139):** `scripts/deploy.sh` (git archive + rsync, `--with-secrets` over SSH stdin with mode 600, health wait, rollback, status, dry run) and `docs/deploy/second-mac.md`.
 - **scaling-lead (#137 #138, PR #140):** `docs/architecture/aws.md` (Fargate + ALB + S3/CloudFront + RDS on trigger; ~$90–140/month small, ~$450–700 medium), `docs/architecture/data-platform.md`, ADR-0006 (DuckDB + dbt + Metabase now; Snowflake or Databricks on named triggers), and `scripts/analytics/report.py`.
+
+## [2026-11-11] Team lead (orchestrator): Legacy sign-in app removed
+**Before:** Every `docker compose up` also started the old Google sign-in test app (backend :4000, frontend :5173, Postgres), which AQspace never used. It cost ~1.4 GB of images and exposed two ports on the network.
+**What I did:** With the user's approval (#132), I deleted `backend/` and `frontend/`, removed the `db`, `backend` and `frontend` services from docker-compose.yml, and updated nuke.sh (no db-container wipe, no legacy node_modules), .env.example (OAuth redirect now aq-api :5180), README, ARCHITECTURE, the storage rule and web-dev-2's ownership. aq-api 86/86, compose valid. Commit 4e2132e on preview/latest.
+**What it solved:** compose starts only notes-ai and aq-api (+ the optional tunnel), with no unused ports or Postgres.
+**Notes for the next agent:** The Docker images, containers and `.data/pgdata` must be removed by the user (the classifier blocks irreversible local deletion). `main` still has the legacy app until release PR #82 merges.

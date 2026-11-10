@@ -53,3 +53,4 @@ Run with Docker only: `docker compose up --build`.
 | 2026-11-03 | Added R6: import upstream Nov 2-3 work (card #47) and refresh all docs, with the whole team working | User request | User |
 | 2026-11-06 | Added R7: upstream Nov 5 import, Gemini default for notes, whole team active | User request | User |
 | 2026-11-09 | Added R8: upstream db9ac6b import, second-Mac deploy, AWS architecture, analytics pipeline (epic #134) | User request | User |
+| 2026-11-11 | Removed the legacy Google sign-in app (backend/, frontend/, Postgres) from preview/latest; compose now runs notes-ai + aq-api only | User approved (card #132, ADR-0001) | User |
