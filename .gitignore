@@ -45,3 +45,6 @@ __pycache__/
 
 # Local LLM weights (GGUF), several GB, never committed
 models/
+
+# Playwright MCP output (screenshots, snapshots, downloads)
+.playwright-mcp/
