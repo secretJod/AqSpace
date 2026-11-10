@@ -16,7 +16,6 @@ Items marked **PENDING** are not on `main` yet.
 | `aq-api` | `aq-api/` (`aq-api/Dockerfile`) | Node 24, Express 5, `node:sqlite` | `5180` (shares notes-ai's namespace) | host `127.0.0.1:5180` only |
 | `tunnel` (profile `tunnel`) | `cloudflare/cloudflared:2026.10.3` | cloudflared quick tunnel | shares notes-ai's namespace | public `https://*.trycloudflare.com` -> `127.0.0.1:5180` |
 | `llama-server` | native on the Mac, `.tools/llama.cpp/` | llama.cpp, Metal | `127.0.0.1:8081` on the host | notes-ai via `host.docker.internal:8081` |
-| legacy `db`, `backend`, `frontend` | `backend/`, `frontend/` | Postgres 16, Node, Vite | 5432 (internal), 4000, 5173 | host; Google OAuth starter from R1, not used by the notes app |
 
 `docker compose up --build` starts everything except the model server and the tunnel. `docker compose --profile tunnel up` adds the public link. `lecture-notes-ui/` is static vanilla JS served by aq-api on 5180 (no build step).
 
@@ -69,7 +68,7 @@ Caveat: behind the tunnel every request arrives from 127.0.0.1 with a loopback H
 | `002_notes_resumes.sql` | `notes_jobs.resumes`: auto-resume counter after a Python restart (cap `NOTES_MAX_AUTO_RESUMES`, default 3) |
 | `003_smart_runs.sql` | `smart_runs`: one row per smart-playlist run (fingerprint, status, result/usage JSON); upstream's `002_smart_runs.sql` renumbered. **PENDING** #47 |
 
-Postgres (`./.data/pgdata`) belongs to the legacy `backend/` only.
+The legacy Google sign-in app (separate backend, frontend and Postgres) was removed on 2026-11-11 (ADR-0001); sign-in now lives in aq-api.
 
 ## 4. Notes pipeline (notes-ai)
 

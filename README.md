@@ -4,8 +4,6 @@ AQspace turns YouTube lectures (up to 24 hours long) into hand-drawn "field note
 
 The app opens on a dashboard with a daily study streak, and you move between screens with a bottom navigation bar.
 
-The repo also holds a small Google sign-in test app (`backend/`, `frontend/`).
-
 Everything the app creates stays inside this folder (`.data/`, `models/`, `.npm-cache/`, `aq-api/data/`, `lecture-notes-ai/backend/output/`). `scripts/nuke.sh` removes it all.
 
 ## Start (one command)
@@ -29,8 +27,6 @@ First time? Follow the step-by-step check in [docs/qa/first-run.md](docs/qa/firs
 | URL | What |
 |---|---|
 | http://localhost:5180 | AQspace notes app (UI + API) |
-| http://localhost:5173 | Google sign-in test app (frontend) |
-| http://localhost:4000 | Google sign-in test app (API) |
 
 Stop with `docker compose down`. Logs: `docker compose logs -f notes-ai aq-api`.
 
@@ -90,7 +86,6 @@ Keys are never committed and never baked into an image. Copy the `.example` file
 | `aq-api/` | Node/Express app backend and SQLite store, port 5180 |
 | `lecture-notes-ai/` | Python notes worker (transcripts, Whisper, LLM, PDF), internal port 5055 |
 | `lecture-notes-ui/` | Vanilla JS UI (no build step): dashboard, streak, bottom nav, player, notes |
-| `backend/`, `frontend/` | Google sign-in test app |
 | `scripts/` | `nuke.sh`, `secret-scan.sh`, `gh.sh` (repo-local GitHub CLI), `board.sh` |
 
 ## Tests
