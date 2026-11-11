@@ -54,6 +54,27 @@ test("#14 db with 001-003 recorded: only 004 runs and adds the sessions table", 
   db.close();
 });
 
+test("#151 db with 001-004 recorded: only 005 runs and adds users.picture; a baselined db with the column skips it", () => {
+  const f = tmp();
+  const raw = new DatabaseSync(f);
+  raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+  for (const m of ALL.slice(0, 4)) { run(raw, m); raw.prepare("INSERT INTO schema_migrations VALUES (?, 'x')").run(m); }
+  raw.close();
+  const db = openDb(f, SQL);
+  assert.ok(ALL.includes("005_user_picture.sql"));
+  assert.deepEqual(names(db), ALL);
+  assert.ok(cols(db, "users").includes("picture"));
+  db.close();
+
+  const f2 = tmp();
+  const raw2 = new DatabaseSync(f2);
+  for (const m of ALL.slice(0, 5)) run(raw2, m);           // no records table, picture column already there
+  raw2.close();
+  const db2 = openDb(f2, SQL);
+  assert.equal(db2.prepare("SELECT applied_at FROM schema_migrations WHERE name = '005_user_picture.sql'").get().applied_at, "baseline");
+  db2.close();
+});
+
 test("older db without a records table: existing schema is baselined, missing migrations run, data kept", () => {
   for (const upto of [1, 2, 3]) {
     const f = tmp();

@@ -18,7 +18,7 @@ export const CSP_APP = [
   "script-src 'self' https://www.youtube.com https://s.ytimg.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.ytimg.com https://*.ggpht.com",
+  "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.ytimg.com https://*.ggpht.com https://lh3.googleusercontent.com",
   "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com",
   "connect-src 'self' https://www.youtube.com",
   "media-src 'self' blob:",

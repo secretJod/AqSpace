@@ -20,7 +20,8 @@ export const BASELINE_PROBES = {
   "001_init.sql": (db) => hasTable(db, "users"),
   "002_notes_resumes.sql": (db) => hasColumn(db, "notes_jobs", "resumes"),
   "003_smart_runs.sql": (db) => hasTable(db, "smart_runs"),
-  "004_sessions.sql": (db) => hasTable(db, "sessions")
+  "004_sessions.sql": (db) => hasTable(db, "sessions"),
+  "005_user_picture.sql": (db) => hasColumn(db, "users", "picture")
 };
 
 export function migrate(db, sqlDir) {

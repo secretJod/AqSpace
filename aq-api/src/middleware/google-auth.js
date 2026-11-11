@@ -57,9 +57,10 @@ export function createGoogleAuth(g, { repo, fetchImpl = fetch, clock = Date.now 
   const clear = (res, name) => res.clearCookie(name, { httpOnly: true, sameSite: "lax", secure, path: "/" });
 
   const routes = Router();
-  routes.get("/auth/google/login", (_req, res) => {
+  routes.get("/auth/google/login", (req, res) => {
     const state = crypto.randomBytes(16).toString("hex");
-    cookie(res, STATE, s.sign({ state, exp: clock() + 10 * 60_000 }), 10 * 60_000);
+    const next = safeNext(req.query.next);
+    cookie(res, STATE, s.sign({ state, exp: clock() + 10 * 60_000, ...(next ? { next } : {}) }), 10 * 60_000);
     const u = new URL(g.authUrl);
     u.search = new URLSearchParams({
       client_id: g.clientId, redirect_uri: g.redirectUri, response_type: "code",
@@ -89,9 +90,9 @@ export function createGoogleAuth(g, { repo, fetchImpl = fetch, clock = Date.now 
       if (!ok) throw new HttpError(401, "Google sign-in failed.");
 
       const name = String(info.name || info.email || "user").slice(0, 200);
-      const uid = repo.upsertExternalUser(info.sub, name, info.email || null);
+      const uid = repo.upsertExternalUser(info.sub, name, info.email || null, safePicture(info.picture));
       cookie(res, SESSION, repo.createSession(uid, clock(), g.sessionMaxAgeMs), g.sessionMaxAgeMs);
-      res.redirect(302, g.afterLogin);
+      res.redirect(302, safeNext(saved.next) || g.afterLogin);
     } catch (e) {
       next(e instanceof HttpError ? e : new HttpError(502, "Google sign-in failed."));
     }
@@ -99,13 +100,29 @@ export function createGoogleAuth(g, { repo, fetchImpl = fetch, clock = Date.now 
 
   routes.post("/auth/logout", (req, res) => { repo.deleteSession(readCookies(req)[SESSION]); clear(res, SESSION); res.json({ ok: true }); });
 
+  /** The signed-in user id for this request, or null (used by /auth/status, which works without sign-in). */
+  const currentUser = (req) => repo.sessionUser(readCookies(req)[SESSION], clock());
+
   function authenticate(req, _res, next) {
-    const uid = repo.sessionUser(readCookies(req)[SESSION], clock());
+    const uid = currentUser(req);
     const u = uid && repo.getUser(uid);
-    if (!u) return next(new HttpError(401, "Sign in required."));
+    if (!u) return next(new HttpError(401, "Sign in required.", { code: "auth_required" }));
     req.user = { id: u.id, name: u.name };
     next();
   }
 
-  return { routes, authenticate };
+  return { routes, authenticate, currentUser };
+}
+
+/** #151: `?next=` must be a same-origin relative path ("/x", never "//host", "/\\host", a scheme or control chars). */
+export function safeNext(v) {
+  if (typeof v !== "string" || v.length > 512 || !v.startsWith("/") || v.startsWith("//")) return null;
+  if (/[\\\s\x00-\x1f\x7f]/.test(v)) return null;
+  return v;
+}
+
+/** Only an https URL is stored as the profile photo. */
+function safePicture(v) {
+  if (typeof v !== "string" || v.length > 2048) return null;
+  try { return new URL(v).protocol === "https:" ? v : null; } catch { return null; }
 }
