@@ -68,6 +68,15 @@ docker compose logs tunnel | grep trycloudflare.com   # your public https link
 
 The tunnel only exposes the app on port 5180. The link changes on every restart. There is no login, so anyone with the link can make notes on your machine and your AI keys. Stop it with `docker compose stop tunnel`.
 
+## Google sign-in (optional)
+By default the app runs as a single local user. To turn on Google sign-in:
+1. In Google Cloud Console (APIs & Services > Credentials), create a Web OAuth client and add the redirect URI `http://localhost:5180/api/v1/auth/google/callback`.
+2. In the root `.env` (see `.env.example`), set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (the URI above) and `SESSION_SECRET` (`openssl rand -hex 32`).
+3. Set `AUTH_MODE=google` in the same `.env`.
+4. Run `docker compose up -d` (it recreates aq-api with the new settings).
+
+A quick tunnel URL changes on every restart, so sign-in through the tunnel needs a fixed hostname.
+
 ## Keys
 
 Keys are never committed and never baked into an image. Copy the `.example` files and fill them in.

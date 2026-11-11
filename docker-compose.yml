@@ -49,6 +49,12 @@ services:
       AQ_DEV_TOOLS: ${AQ_DEV_TOOLS:-1}
       AQ_RUN_DIR: ""                                    # empty = /dev does not tail .run/ logs; no service console logs inside the container
       TRUST_CF_HEADERS: "1"                         # rate-limit per visitor via CF-Connecting-IP (only from loopback cloudflared)
+      # #152: sign-in, read from the root .env (never hard-coded). Missing .env = single local user.
+      AUTH_MODE: ${AUTH_MODE:-local}                    # local | google
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:5180/api/v1/auth/google/callback}
+      SESSION_SECRET: ${SESSION_SECRET:-}
     volumes:
       - ./aq-api/data:/app/aq-api/data    # SQLite aq.db stays in the repo (gitignored)
     depends_on:
