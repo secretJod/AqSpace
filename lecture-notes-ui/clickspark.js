@@ -1,4 +1,4 @@
-/* AQ Learning - click spark (vanilla take on React Bits <ClickSpark />).
+/* AQspace - click spark (vanilla take on React Bits <ClickSpark />).
    A press anywhere useful sends ~8 thin silver lines radiating a short way from the pointer, ease-out, ~420ms.
    One fixed, click-through canvas is created lazily, drawn only while sparks are alive (rAF stops, canvas clears
    and hides when idle). Skipped for text fields, selects, iframes, anything inside [data-no-spark] and

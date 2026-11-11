@@ -8,9 +8,14 @@
   <meta name="theme-color" content="#0a0a0a">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23fff'/%3E%3Ctext x='16' y='22' font-size='16' font-family='serif' font-weight='bold' text-anchor='middle' fill='%23000'%3EAQ%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="smartmagic.css">
+  <link rel="stylesheet" href="streak.css">
+  <link rel="stylesheet" href="navbar.css">
+  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="profile.css">
 </head>
 <body>
   <a class="skip" href="#view">Skip to content</a>
@@ -27,7 +32,7 @@
         <svg class="icon search__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM21 21l-4.3-4.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <input id="search" type="search" name="q" placeholder="Search playlists" maxlength="60" enterkeyhint="search">
       </form>
-      <span class="avatar" role="img" aria-label="Your account (placeholder)">
+      <span class="avatar" role="img" aria-label="Your account">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 3a4 4 0 100 8 4 4 0 000-8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
     </div>
@@ -57,6 +62,7 @@
   <script src="util.js"></script>
   <script src="store.js"></script>
   <script src="api.js"></script>
+  <script src="profile.js"></script>
   <script src="dialog.js"></script>
   <script src="notes.js"></script>
   <script src="notebutton.js"></script>
@@ -64,8 +70,14 @@
   <script src="player.js"></script>
   <script src="water.js"></script>
   <script src="clickspark.js"></script>
+  <script src="smartmagic.js"></script>
   <script src="split.js"></script>
   <script src="importpl.js"></script>
+  <script src="smart.js"></script>
+  <script src="streak.js"></script>
+  <script src="navbar.js"></script>
+  <script src="dashboard.js"></script>
+  <div id="navbar-root"></div>
   <script src="app.js"></script>
 </body>
 </html>

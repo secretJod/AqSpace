@@ -1,4 +1,4 @@
-# aq-api - AQ Learning application backend
+# aq-api - AQspace application backend
 
 Node.js (Express 5 + the built-in `node:sqlite`) service that owns the application data: users, playlists, videos, watch
 progress and notes records. The Python service (`D:\AQspace\lecture-notes-ai`) stays the **AI/media worker only**; this API
@@ -37,7 +37,9 @@ and notes calls answer `503 {"code":"py_offline"}`.
 | `DB_FILE` | `aq-api/data/aq.db` | SQLite file (created, migrated on start; `:memory:` works for experiments) |
 | `UI_DIR` | `../lecture-notes-ui` | folder served statically |
 | `PY_NOTES_URL` | `http://127.0.0.1:5055` | the Python notes service. Must be loopback unless `ALLOW_REMOTE_PY=1` |
-| `PY_NOTES_PROVIDER` | `groq` | provider name sent to Python when starting a job |
+| `PY_NOTES_PROVIDER` | `groq` | provider name sent to Python when starting a notes job |
+| `PY_SMART_PROVIDER` | `gemini` | provider name sent to Python when starting a smart playlist run (`gemini` or `groq`) |
+| `PY_SMART_MODEL` | (empty) | optional model name for smart runs; empty = the worker's default for that provider |
 | `NOTES_REQUIRE_MEMBERSHIP` | `1` | `0` lets any user start notes for any video id (default: only videos in their own playlists) |
 | `RATE_LIMIT_PER_MIN` | `600` | requests per IP per minute for `/api/v1` |
 | `RATE_LIMIT_HEAVY_PER_MIN` | `20` | starting notes + YouTube imports per IP per minute |
@@ -69,10 +71,14 @@ Everything except `health` runs through `authenticate` and is scoped to `req.use
 | `GET /notes/:videoId` | `{state: none\|queued\|running\|ready\|error, pct, stage, message, error, jobId}` (refreshes from Python) |
 | `POST /notes/:videoId` | start notes. **Cache:** ready -> 200 immediately (`cached:true`); already running -> 200 with its progress; otherwise starts one Python job -> 202. One live job per video across all users |
 | `GET /notes/:videoId/html`, `/pdf` | streams the finished file from Python (404 when not ready or expired) |
+| `POST /playlists/:id/smart` | smart arrangement + topics to cover (the playlist name is the learning goal). 404 unknown playlist, 422 when it has < 2 or > 20 videos. **Cache:** a queued / running / ready run with the same fingerprint (sha256 of the goal + the sorted video ids) is returned -> 200 with `cached:true`; otherwise one Python job is started -> 202. A failed run never blocks a new one. Heavy rate limiter |
+| `GET /playlists/:id/smart` | the latest run of that playlist: `{state: none\|queued\|running\|ready\|error, pct, stage, message, error, fingerprint, current, generatedAt, provider, model, result?, usage?}`. `current:false` = the playlist changed since the run (the result is still returned). `result`/`usage` only when `ready`; they are stored in SQLite, so they survive restarts. Refreshes from Python while running; a Python 404 (restart) -> `error` "The analysis was interrupted - run it again" |
 | `GET /import/youtube?url=` | proxies Python `/api/playlist` (only the validated `list=` id is forwarded, as a canonical URL) |
 | `POST /sync/import` | `{mode: "merge"\|"replace", playlists, progress}`: one-time import of the browser's localStorage, also used to push offline edits. Lenient (bad entries dropped); returns the full resulting state |
 
 Also: `GET /static/fonts/:file` (not under `/api`) streams the fonts the generated notes page references from Python.
+
+Smart runs (`sql/002_smart_runs.sql`, table `smart_runs`) are kept per playlist (deleted with it). The stored result must be a JSON object of at most 512 KB, otherwise the run becomes an `error`.
 
 Notes records expire when Python forgets a job (restart): a definitive 404 from Python marks the record `expired`
 (status becomes `none`) and a new `POST` starts a fresh job. Network errors never expire anything.
@@ -91,6 +97,7 @@ description 0-160, title 150, channel 80 (long titles are truncated, long names 
 | `playlists` | `pk`, `user_id`, `slug` (public id, UNIQUE per user), `name` (UNIQUE per user, NOCASE), `description`, `source_list_id`, `source_imported_at`, `created_at`, `updated_at` |
 | `playlist_videos` | PK `(playlist_pk, video_id)`, `position` (0..n-1), per-entry `title`, `channel`, `duration_sec`, `added_at` (cascade on playlist delete) |
 | `watch_progress` | PK `(user_id, video_id)`, `pos_sec`, `dur_sec`, `done`, `updated_ms` |
+| `smart_runs` (`002`) | `playlist_pk` (cascade), `fingerprint`, `job_id`, `status` queued/running/done/error, `pct`, `stage`, `message`, `error`, `provider`, `model`, `result_json`, `usage_json`, `checked_at`. Partial UNIQUE index on `(playlist_pk, fingerprint)` where status in (queued, running, done) |
 | `notes_jobs` | `video_id`, `job_id` (Python), `status` queued/running/done/error/expired, `pct`, `stage`, `message`, `error`, `requested_by`, `checked_at`. Partial UNIQUE index on `video_id` where status in (queued, running, done) = one live job per video |
 
 All SQL is parameterized (`?`); there is no string-built SQL with user input. New migrations: add `sql/002_*.sql`.
@@ -105,7 +112,21 @@ All SQL is parameterized (`?`); there is no string-built SQL with user input. Ne
 - Python is called only on fixed paths with validated ids; `PY_NOTES_URL` must be loopback; redirects from Python are refused.
 - Logs contain method, path, status, time only.
 
-## Plugging in OAuth later
+## Google sign-in (`AUTH_MODE=google`)
+
+Default `AUTH_MODE=local` = single built-in user (unchanged). With `AUTH_MODE=google` (`src/middleware/google-auth.js`):
+
+| Env | Meaning |
+|---|---|
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth web client from Google Cloud Console |
+| `GOOGLE_REDIRECT_URI` | default `http://localhost:5180/api/v1/auth/google/callback`; must match the Console exactly |
+| `SESSION_SECRET` | >= 32 chars, signs the session cookie (HMAC-SHA256) |
+| `SESSION_MAX_AGE_HOURS` | default 168 |
+| `AUTH_AFTER_LOGIN` | where the callback redirects, default `/` |
+
+Routes: `GET /api/v1/auth/google/login`, `GET /api/v1/auth/google/callback`, `POST /api/v1/auth/logout`, `GET /api/v1/me`.
+Unauthenticated API calls get 401; `health` and the static UI stay public. Sessions are stateless signed cookies (`aq_session`, HttpOnly, SameSite=Lax, Secure when the redirect URI is https); logout clears the cookie (no server-side revocation).
+
 
 Every `/api/v1` route (except `health`) runs one middleware, `authenticate(req, res, next)` (`src/middleware/auth.js`), and then only uses
 `req.user.id`. Today it is `localAuth` (always user 1, `local`). To use the OAuth app (`D:\AQspace\backend`):
@@ -126,3 +147,42 @@ The built-in local user can be migrated by setting `external_id` on row 1 to the
 - `notes.js` uses `/api/v1/notes/*` when the API is available (server-side cache, one job per video), else talks to `:5055` directly. `importpl.js` uses `/api/v1/import/youtube` in the same way.
 
 Conflict policy: the server wins on start when nothing is pending; local wins when there are unsent (offline) edits.
+
+## Developer tracker (`/dev`)
+
+Local-only debugging pages and JSON, on by default (the service is loopback-only); `AQ_DEV_TOOLS=0` turns it off and `/dev/*` returns 404.
+Same host guard as everything else; `/dev` pages get their own stricter CSP (`script-src 'self'`, no inline, no external origins).
+
+- `/dev/tracker.html` - live requests (filter by layer/status/text), pipeline events, jobs, service health + counts, recent errors (polls every 2 s).
+- `GET /dev/api/overview` - api/worker health (`/api/health` on the worker), counts of playlists, videos, notes and smart states, last 10 errors.
+- `GET /dev/api/requests?since=<seq>&limit=<n<=500>[&include_dev=1]` - in-memory ring buffer (last 2000) of `{seq, ts, method, path, status, ms, layer}`;
+  `layer` is `ui`, `api`, `worker` (calls this service makes to Python, status 0 = unreachable) or `dev` (hidden unless `include_dev=1`).
+- `GET /dev/api/events?since=<seq>` - notes job / smart run changes `{seq, ts, kind, jobId, videoId, playlistId, from, to, stage, pct}` (public states: queued/running/ready/error/none).
+- `GET /dev/api/jobs` - the latest 50 notes jobs and smart runs from SQLite.
+
+Only method, masked path (no query string, ids as `:id`), status and timing are kept - never headers, cookies, bodies or query strings.
+Buffers live in memory and reset when the service restarts (`last` drops; clients should start again from 0).
+
+**Persistent logs.** Every request entry (except `layer: dev`, i.e. the tracker's own polling) and every pipeline event is also appended to
+`data/devlogs/requests-YYYY-MM-DD.jsonl` / `events-YYYY-MM-DD.jsonl` (UTC day, same redacted fields as above). Writes are buffered and
+flushed asynchronously once per second (and synchronously on exit); files older than `AQ_DEVLOG_DAYS` (default 14) are deleted at startup.
+`AQ_DEVLOG_DIR` moves the folder, `AQ_DEVLOG_DIR=` (empty) turns persistence off (history endpoints then return 404). `data/devlogs/` is git-ignored.
+`seq` restarts with the process, so it is unique only within one run.
+
+- `GET /dev/api/history/days` - `{keepDays, items:[{date, requests, events, bytes}]}` newest first.
+- `GET /dev/api/history?type=requests|events&date=YYYY-MM-DD&q=&layer=&status=&limit=<=1000&offset=` - search one day, newest first,
+  `{type, date, total, offset, limit, items}`. Requests: `layer` ui/api/worker, `status` first digit (`2`..`5`) or `0`; events: `layer` = kind (notes/smart), `status` = new state.
+- `GET /dev/api/export?type=..&date=..&format=csv|jsonl` (+ same filters) - download (`Content-Disposition: attachment`); CSV is RFC 4180, cells starting with `= + - @` get a leading `'`.
+- `GET /dev/api/stats?date=&layer=` - `{total, errors, errorRate, p50, p95, max, paths:[{layer, method, path, count, errors, errorRate, p50, p95, max}], hours:[{hour, count, errors} x24]}`;
+  nearest-rank percentiles; an error is status 0, 5xx or 4xx (except UI 404s); hours are UTC.
+- `GET /dev/api/logs/api|worker?tail=<n<=2000>[&run=prev]` - last N lines of the service console output captured by `start-all.ps1`
+  (`../.run/api.out.log`, `api.err.log`, `ai.out.log`, `ai.err.log`; `AQ_RUN_DIR` overrides the folder) as `{service, run, tail, streams:{out, err}}`
+  (each `{size, mtime, lines}` or `null` if not captured). Lines are redacted: `gsk_`, `AIza`, `nvapi-`, `hf_`, `xai-`, `sk-` keys, `Bearer`/`Basic` tokens and
+  `key=` / `token=` / `api_key:` style values become `***`. `run=prev` reads `*.prev.log`, the previous run kept by start-all.ps1.
+
+The tracker page has matching **History**, **Stats** (hourly SVG chart + per-path table) and **Service logs** (auto-refresh every 3 s, pause, level colouring) tabs.
+## Docker
+
+`docker compose up --build` (repo root) runs aq-api inside the `notes-ai` network namespace (`network_mode: service:notes-ai`), so it talks to the Python worker at `PY_NOTES_URL=http://127.0.0.1:5055` and port 5055 is never exposed. The UI/API is published on `127.0.0.1:5180` only. SQLite lives in `./aq-api/data` (bind mount, gitignored).
+
+The notes-ai side uses `PY_NOTES_PROVIDER=local`: the local model at `LNAI_LOCAL_URL=http://host.docker.internal:8081/v1` (`scripts/llm.sh`), with `LNA_PROVIDER_FALLBACK=1` falling back to Groq for videos up to 1 h. The Whisper speech-to-text model is cached in `./.tools/whisper-models` (bind mount via `LNAI_WHISPER_DIR`), so it is not downloaded again after a rebuild. `scripts/nuke.sh` removes it. Optional public link: `docker compose --profile tunnel up`.

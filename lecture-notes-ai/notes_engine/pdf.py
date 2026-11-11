@@ -1300,7 +1300,8 @@ def _b_bullets(b) -> str:
     if not items:
         return ""
     lis = "".join("<li>%s</li>" % rich(i) for i in items)
-    return '<div class="item blk b-bullets" data-split="1" data-minkeep="2" data-minmove="2"><ul class="sb">%s</ul></div>' % lis
+    cols = " cols2" if len(items) >= 4 and max(len(plain(i)) for i in items) <= 48 else ""
+    return '<div class="item blk b-bullets' + cols + '" data-split="1" data-minkeep="2" data-minmove="2"><ul class="sb">%s</ul></div>' % lis
 
 
 def _b_steps(b) -> str:
@@ -1374,6 +1375,18 @@ def _b_formula(b) -> str:
     return '<div class="item blk b-formula"><div class="box">%s</div></div>' % e(t)
 
 
+def _b_unknown(b) -> str:
+    """Block types this renderer does not know yet: show any text / items instead of dropping them."""
+    if _list(b.get("items")):
+        return _b_bullets(b)
+    parts = [_s(b.get(k)) for k in ("title", "term", "text", "content", "body", "definition") if _s(b.get(k))]
+    if not parts:
+        return ""
+    if len(parts) > 1:
+        return _b_paragraph({"text": "**%s** — %s" % (parts[0], " ".join(parts[1:]))})
+    return _b_paragraph({"text": parts[0]})
+
+
 def _render_blocks(blocks: list) -> list[str]:
     out, ncall = [], 0
     for b in blocks:
@@ -1400,7 +1413,7 @@ def _render_blocks(blocks: list) -> list[str]:
         elif typ == "formula":
             h = _b_formula(b)
         else:
-            h = ""
+            h = _b_unknown(b)
         if h:
             out.append(h)
     return out
@@ -1427,7 +1440,8 @@ def _takeaways(items) -> str:
     if not items:
         return ""
     lis = "".join("<li>%s</li>" % rich(i) for i in items)
-    return '<div class="item take"><div class="tt">\u2605 to remember</div><ul>%s</ul></div>' % lis
+    return ('<div class="item take" data-split="1" data-minkeep="1" data-minmove="1"><div class="tt">\u2605 to remember</div>'
+            '<ul class="sb">%s</ul></div>' % lis)
 
 
 def _recall(r) -> str:
@@ -1458,6 +1472,8 @@ def _section_unit(sec: dict, i: int) -> str:
     items.append(_takeaways(sec.get("key_takeaways")))
     items.append(_recall(sec.get("recall")))
     nxt = _s(sec.get("next"))
+    if nxt:
+        items.append('<div class="item nextline" data-next="%s">next → %s</div>' % (e(nxt), e(nxt)))
     return ('<div class="unit" data-kind="section" data-num="%s" data-title="%s" data-next="%s">%s</div>'
             % (e(num), e(title), e(nxt), "".join(x for x in items if x)))
 
@@ -1492,6 +1508,31 @@ def _recap_unit(rc) -> str:
     return '<div class="unit" data-kind="recap" data-num="" data-title="%s">%s</div>' % (e(title), "".join(items))
 
 
+COVER_TOC_MAX = 18  # more sections than this -> cover shows 17 + "and N more", and a contents unit follows
+
+
+def _contents_unit(notes: dict) -> str:
+    """Full table of contents (number, title, video timestamp) for long notes.
+
+    One splittable list, so the measured pagination flows it over as many pages as needed."""
+    secs = _list(notes.get("sections"))
+    if len(secs) <= COVER_TOC_MAX:
+        return ""
+    lis = []
+    for i, sec in enumerate(secs):
+        sec = _dict(sec)
+        num = sec.get("number")
+        num = _s(num) if num not in (None, "") else str(i + 2)
+        title = _s(sec.get("title")) or "section %s" % num
+        ts = _s(sec.get("timestamp"))
+        lis.append('<li data-num="%s"><span class="num">%s</span><span class="tt">%s</span>%s<span class="pg"></span></li>'
+                   % (e(num), e(num), e(title), ('<span class="ts">\u25f7 %s</span>' % e(ts)) if ts else ""))
+    head = _head(None, "contents", "%d sections, in lecture order" % len(secs), "", "contents")
+    body = ('<div class="item blk toc-list" data-split="1" data-minkeep="3" data-minmove="3">'
+            '<ol class="sb">%s</ol></div>' % "".join(lis))
+    return '<div class="unit" data-kind="contents" data-num="" data-title="contents">%s%s</div>' % (head, body)
+
+
 def _fmt_date(s: str) -> str:
     try:
         d = _dt.datetime.strptime(s[:10], "%Y-%m-%d")
@@ -1522,20 +1563,27 @@ def _cover_unit(notes: dict, title: str) -> str:
     res = build_diagram_svg(dg, 600.0, "d")
     dsvg = res[0] if res else ""
     dcap = '<div class="cap">%s</div>' % e(dg["caption"]) if dg.get("caption") else ""
+    n_sec = len(_list(notes.get("sections")))
+    long_notes = n_sec > COVER_TOC_MAX
     toc = [_s(t) for t in _list(cover.get("toc")) if _s(t)][:24]
-    if not toc:
+    if not toc or long_notes:
         toc = ["%s. %s" % (_dict(s).get("number", i + 2), _s(_dict(s).get("title"))) for i, s in enumerate(_list(notes.get("sections"))[:24])]
+    if long_notes:  # a 24 h lecture has 40-80 sections: the full list gets its own pages
+        toc = toc[:COVER_TOC_MAX - 1] + ["\u2026 and %d more \u2014 full contents on the next page" % (n_sec - (COVER_TOC_MAX - 1))]
     cls = "" if len(toc) <= 11 else ("two" if len(toc) <= 18 else "two many")
     toc_html = "".join("<li>%s</li>" % e(t) for t in toc)
     idea = _s(cover.get("big_idea"))
     summ = _s(cover.get("summary"))
     sticky = '<div class="cv-idea">%s</div>' % e(trunc(idea, 90)) if idea else ""
     howto = ('<div class="cv-how"><div class="rt">\u2605 recall question</div><div class="q">Q: How do I use this book?</div>'
-             'A: After each page, close it and explain the page out loud in 30 seconds. Every page ends with one recall question.</div>')
+             'A: After each page, close it and explain it out loud in 30 seconds. Every section ends with one recall question.</div>')
     summary = '<div class="cv-sum">%s</div>' % e(trunc(summ, 200)) if summ else ""
     date = _fmt_date(_s(meta.get("generated_on")))
     date_html = '<div class="cv-date">\u2014 field notes%s</div>' % (", " + e(date) if date else "")
     toc_title = "what's inside \u2014 read top to bottom"
+    keys = [_s(t) for t in _list(cover.get("takeaways")) if _s(t)][:6]
+    keys_html = ('<div class="cv-keys"><div class="rt">\u2605 key takeaways</div><ol>%s</ol></div>'
+                 % "".join("<li>%s</li>" % e(trunc(k, 220)) for k in keys)) if keys else ""
     body = (
         '<div class="page cover">' + _rings_svg() + '%s<div class="cv-in">'
         '<div class="cv-tag">%s</div><div class="cv-title" style="font-size:%dpx">%s</div>%s'
@@ -1547,7 +1595,7 @@ def _cover_unit(notes: dict, title: str) -> str:
         _cover_border_svg(), e(tagline), tsize, e(title), _underline_svg("cover-title", 600, 4.2).replace('class="ul"', 'class="cv-ul"'),
         ('<div class="cv-sub">%s</div>' % e(trunc(subtitle, 140))) if subtitle else "",
         ('<div class="cv-info">%s</div>' % e(info)) if info else "",
-        dsvg, dcap, e(toc_title), cls, toc_html, sticky, howto, summary, date_html,
+        dsvg, dcap, e(toc_title), cls, toc_html, sticky, keys_html or howto, "" if keys_html else summary, date_html,
     )
     return '<div class="unit" data-kind="cover">%s</div>' % body
 
@@ -1568,7 +1616,7 @@ def _build(notes: dict, for_print: bool) -> str:
     notes = _dict(notes)
     meta = _dict(notes.get("meta"))
     title = _s(meta.get("title")) or "Lecture notes"
-    units = [_cover_unit(notes, title)]
+    units = [_cover_unit(notes, title), _contents_unit(notes)]
     for i, sec in enumerate(_list(notes.get("sections"))):
         units.append(_section_unit(sec, i))
     units.append(_glossary_unit(notes.get("glossary")))
@@ -1639,6 +1687,18 @@ def _pdf_ok(path: str) -> tuple[bool, int, int]:
     return ok, n, (next(iter(totals)) if len(totals) == 1 else 0)
 
 
+def _render_budgets(n_sections: int) -> tuple[tuple[int, int], int]:
+    """((virtual-time budget ms, retry budget ms), process timeout s) scaled to the notes size.
+
+    The in-browser pagination measures every item, so 80 sections (a 24 h lecture,
+    ~150-250 pages) need far more time than the usual 8-12."""
+    extra = max(0, int(n_sections) - 12)
+    first = min(120000, 20000 + 1500 * extra)
+    second = min(300000, 60000 + 4000 * extra)
+    timeout = min(900, 180 + 8 * extra)
+    return (first, second), timeout
+
+
 def render_pdf(notes: dict, out_path: str) -> str:
     """Render ``notes`` to an A4 PDF at ``out_path`` (returns the path)."""
     try:
@@ -1658,15 +1718,17 @@ def render_pdf(notes: dict, out_path: str) -> str:
         tmp_pdf = os.path.join(tmp, "notebook.pdf")
         uri = Path(hp).as_uri()
         last_err = ""
-        for attempt, budget in enumerate((20000, 60000)):
+        budgets, timeout = _render_budgets(len(_list(_dict(notes).get("sections"))))
+        for attempt, budget in enumerate(budgets):
             prof = os.path.join(tmp, "profile%d" % attempt)
             cmd = [exe, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", "--no-first-run", "--no-default-browser-check",
                    "--disable-extensions", "--disable-background-networking", "--hide-scrollbars", "--force-color-profile=srgb",
+                   "--disable-dev-shm-usage", "--js-flags=--max-old-space-size=4096",
                    "--user-data-dir=" + prof, "--virtual-time-budget=%d" % budget, "--print-to-pdf=" + tmp_pdf, uri]
             try:
                 if os.path.exists(tmp_pdf):
                     os.remove(tmp_pdf)
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180, check=False)
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, check=False)
             except subprocess.TimeoutExpired:
                 last_err = "the browser timed out"
                 continue

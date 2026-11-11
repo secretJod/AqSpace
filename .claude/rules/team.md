@@ -6,7 +6,7 @@ AQspace runs like a small company. The user is the **QA Tester** and final appro
 | Agent | Role | Owns |
 |---|---|---|
 | `web-dev-1` | Web developer (backend lead) | `aq-api/` (routes, SQLite, security) |
-| `web-dev-2` | Web developer (platform) | `backend/`, `frontend/`, OAuth, Postgres, `docker-compose.yml`, scripts |
+| `web-dev-2` | Web developer (platform) | `docker-compose.yml`, Dockerfiles, deploy and dev scripts |
 | `web-dev-3` | Web developer (integration) | Node ↔ Python contract, tunnel, end-to-end flows, tests across services |
 | `ai-dev-1` | AI developer (LLM) | `lecture-notes-ai/notes_engine/llm.py`, `prompts.py`, `notes_schema.py`, providers |
 | `ai-dev-2` | AI developer (media & rendering) | `ingest.py` (transcripts, yt-dlp, Whisper), `pdf.py`, notes templates |

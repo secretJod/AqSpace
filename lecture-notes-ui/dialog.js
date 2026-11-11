@@ -1,4 +1,4 @@
-/* AQ Learning - accessible modal dialog host (one dialog at a time).
+/* AQspace - accessible modal dialog host (one dialog at a time).
    Uses the #modal markup in index.html. Focus is trapped inside, Esc / backdrop / close button dismiss it,
    focus returns to the opener (or to `restore()` / the page heading when the opener no longer exists).
 
