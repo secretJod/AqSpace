@@ -11,7 +11,9 @@
    AQ.api.available()  -> boolean            server reachable and in sync (notes.js / importpl.js switch to /api/v1 on this)
    AQ.api.base         -> "" | "http://127.0.0.1:5180"
    AQ.api.flush()      -> Promise            resolves when queued writes (and pending progress) were sent
-   AQ.api.record(name, argsArray)            used by store.js only */
+   AQ.api.record(name, argsArray)            used by store.js only
+   AQ.api.signedOut()  -> boolean            a call returned 401 auth_required; all requests now short-circuit (profile.js shows sign-in)
+   Fires window event "aq:auth-required" once. Pass opts.authFree to request() for /auth/* calls. */
 (function () {
   "use strict";
 
@@ -31,8 +33,20 @@
   function clearDirty() { try { localStorage.removeItem(DIRTY_KEY); } catch (e) { /* storage blocked */ } }
   function plain(x) { return JSON.parse(JSON.stringify(x)); }
 
+  /* ---------- signed-out handling (#130): any 401 {code:"auth_required"} stops all traffic once and tells profile.js ---------- */
+  var authLost = false;
+  function authRequired() {
+    if (authLost) return;
+    authLost = true; state.ok = false;
+    Object.keys(pending).forEach(function (id) { clearTimeout(pending[id].timer); delete pending[id]; });
+    try { window.dispatchEvent(new CustomEvent("aq:auth-required")); } catch (e) { /* old browser */ }
+    if (window.AQ && AQ.profile && AQ.profile.authRequired) AQ.profile.authRequired();
+  }
+  var AUTH_401 = { status: 401, json: { code: "auth_required" } };
+
   function req(method, path, body, opts) {
     opts = opts || {};
+    if (authLost && !opts.authFree) return Promise.resolve(AUTH_401);   // signed out: stop polling and writes
     var base = opts.base != null ? opts.base : api.base;
     var ctl = typeof AbortController === "function" ? new AbortController() : null;
     var timer = setTimeout(function () { if (ctl) ctl.abort(); }, opts.timeout || 15000);
@@ -44,7 +58,11 @@
       signal: ctl ? ctl.signal : undefined
     }).then(function (res) {
       if (res.status === 204) { done(); return { status: 204, json: null }; }
-      return res.json().catch(function () { return null; }).then(function (j) { done(); return { status: res.status, json: j }; });
+      return res.json().catch(function () { return null; }).then(function (j) {
+        done();
+        if (res.status === 401 && !opts.authFree && j && j.code === "auth_required") authRequired();
+        return { status: res.status, json: j };
+      });
     }, function (err) { done(); throw err; });
   }
 
@@ -169,10 +187,12 @@
   api.available = function () { return state.ok; };
   /** Generic JSON request against aq-api for other UI modules (smart.js). Resolves {status, json}; rejects on network failure / timeout. */
   api.request = function (method, path, body, opts) { return req(method, path, body, opts); };
+  api.signedOut = function () { return authLost; };
   api.ready = function () { return readyP || Promise.resolve(false); };
 
   /* try again when the browser comes back online / the tab is shown and the last attempt failed */
   function retry() {
+    if (authLost) return;
     if (state.ok || !state.reconciled || (readyP && state.connecting)) return;
     state.connecting = true;
     readyP = connect().then(function (ok) { state.connecting = false; return ok; });
