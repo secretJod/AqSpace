@@ -9,16 +9,37 @@ const nowIso = () => new Date().toISOString();
 
 export function createRepo(db) {
   /* ---------- users ---------- */
-  const getUser = (id) => db.prepare("SELECT id, name, email, external_id, bootstrapped_at FROM users WHERE id = ?").get(id) || null;
+  const getUser = (id) => db.prepare("SELECT id, name, email, picture, external_id, bootstrapped_at FROM users WHERE id = ?").get(id) || null;
 
-  /** For the OAuth integration: find or create the user for an external subject. */
-  function upsertExternalUser(externalId, name, email) {
-    const row = db.prepare("SELECT id FROM users WHERE external_id = ?").get(externalId);
-    if (row) {
-      db.prepare("UPDATE users SET name = ?, email = ? WHERE id = ?").run(name, email ?? null, row.id);
-      return row.id;
-    }
-    return Number(db.prepare("INSERT INTO users (external_id, name, email) VALUES (?, ?, ?)").run(externalId, name, email ?? null).lastInsertRowid);
+  /** Public profile shape shared by /me and /auth/status (#151). */
+  const profile = (u) => ({ id: u.id, name: u.name, email: u.email ?? null, picture: u.picture ?? null });
+
+  /** Every table keyed by a user id (sessions excluded). Add new user-owned tables here (#151 claim). */
+  const USER_KEYED = [["playlists", "user_id"], ["watch_progress", "user_id"], ["notes_jobs", "requested_by"], ["smart_runs", "requested_by"]];
+
+  /** For the OAuth integration: find or create the user for an external subject, refreshing name/email/picture.
+      #151: the first external user ever created (when no external user existed before) takes ownership of everything
+      that belonged to the built-in local user (id 1), in the same transaction, exactly once. Returns the user id. */
+  function upsertExternalUser(externalId, name, email, picture = null) {
+    let claimed = null;
+    const id = tx(db, () => {
+      const row = db.prepare("SELECT id FROM users WHERE external_id = ?").get(externalId);
+      if (row) {
+        db.prepare("UPDATE users SET name = ?, email = ?, picture = ? WHERE id = ?").run(name, email ?? null, picture ?? null, row.id);
+        return row.id;
+      }
+      const first = !db.prepare("SELECT 1 FROM users WHERE external_id IS NOT NULL LIMIT 1").get();
+      const uid = Number(db.prepare("INSERT INTO users (external_id, name, email, picture) VALUES (?, ?, ?, ?)").run(externalId, name, email ?? null, picture ?? null).lastInsertRowid);
+      if (first && db.prepare("SELECT 1 FROM users WHERE id = 1 AND external_id IS NULL").get()) {
+        claimed = {};
+        for (const [t, c] of USER_KEYED) claimed[t] = Number(db.prepare(`UPDATE ${t} SET ${c} = ? WHERE ${c} = 1`).run(uid).changes);
+        db.prepare("UPDATE users SET bootstrapped_at = (SELECT bootstrapped_at FROM users WHERE id = 1) WHERE id = ?").run(uid);
+        db.prepare("UPDATE users SET bootstrapped_at = NULL WHERE id = 1").run();
+      }
+      return uid;
+    });
+    if (claimed) console.log(`[aq-api] first Google user ${id} claimed the local user's data: ${Object.entries(claimed).map(([k, n]) => `${k}=${n}`).join(" ")}`);
+    return id;
   }
 
   /* ---------- sessions (AUTH_MODE=google, #14) ---------- */
@@ -338,7 +359,7 @@ export function createRepo(db) {
   }
 
   return {
-    getUser, upsertExternalUser, createSession, sessionUser, deleteSession, ensureVideo,
+    getUser, profile, upsertExternalUser, createSession, sessionUser, deleteSession, ensureVideo,
     listPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist,
     addVideo, addVideos, reorder, editVideo, removeVideo, userHasVideo,
     getProgress, allProgress, putProgress, importState

@@ -7,7 +7,7 @@ import { createPyClient, assertPyUrl } from "./pyclient.js";
 import { createNotesService } from "./notes-service.js";
 import { createSmartService } from "./smart-service.js";
 import { HttpError } from "./http.js";
-import { localAuth } from "./middleware/auth.js";
+import { localAuth, LOCAL_USER } from "./middleware/auth.js";
 import { createGoogleAuth } from "./middleware/google-auth.js";
 import { securityHeaders, hostGuard, cors, rateLimit, localOnly } from "./middleware/security.js";
 import { playlistRoutes } from "./routes/playlists.js";
@@ -15,7 +15,7 @@ import { progressRoutes } from "./routes/progress.js";
 import { notesRoutes, fontRoutes } from "./routes/notes.js";
 import { smartRoutes } from "./routes/smart.js";
 import { createTracker, devRoutes } from "./dev.js";
-import { healthRoutes, meRoutes, importRoutes, syncRoutes } from "./routes/misc.js";
+import { healthRoutes, meRoutes, authStatusRoutes, importRoutes, syncRoutes } from "./routes/misc.js";
 
 export const VERSION = "0.1.0";
 const STATIC_OK = /\.(html|js|css|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|json|txt)$/i;
@@ -66,6 +66,8 @@ export function createApp(config, deps = {}) {
   api.use(general);
   api.use(healthRoutes({ db, py, version: VERSION }));      // health needs no user
   if (google) api.use(google.routes);                      // login/callback/logout need no user
+  api.use(authStatusRoutes(repo, config.authMode,          // #151: status needs no user either
+    google ? google.currentUser : () => LOCAL_USER.id));
   api.use(authenticate);
   api.use(meRoutes(repo));
   api.use(syncRoutes(repo));                                      // own (bigger) JSON parser, must come first
@@ -107,7 +109,7 @@ export function createApp(config, deps = {}) {
     else if (status >= 500 && !err.expose) console.error(`${req.method} ${req.path} failed: ${err.name}: ${String(err.message).slice(0, 200)}`);
     if (status < 400 || status > 599) status = 500;
     if (err.retryAfter) res.setHeader("Retry-After", String(err.retryAfter));
-    res.status(status).json({ error: message, ...(err.code === "py_offline" || err.code === "not_in_playlist" ? { code: err.code } : {}) });
+    res.status(status).json({ error: message, ...(err.code === "py_offline" || err.code === "not_in_playlist" || err.code === "auth_required" ? { code: err.code } : {}) });
   });
 
   return app;

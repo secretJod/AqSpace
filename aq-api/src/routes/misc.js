@@ -36,7 +36,20 @@ export function meRoutes(repo) {
   const r = Router();
   r.get("/me", (req, res) => {
     const u = repo.getUser(req.user.id);
-    res.json({ user: { id: u.id, name: u.name }, bootstrapped: !!u.bootstrapped_at });
+    res.json({ user: repo.profile(u), bootstrapped: !!u.bootstrapped_at });
+  });
+  return r;
+}
+
+export const LOGIN_URL = "/api/v1/auth/google/login";
+
+/** #151: GET /auth/status works without sign-in. resolveUser(req) returns the signed-in user id or null. */
+export function authStatusRoutes(repo, authMode, resolveUser) {
+  const r = Router();
+  r.get("/auth/status", (req, res) => {
+    const uid = resolveUser(req);
+    const u = uid ? repo.getUser(uid) : null;
+    res.json({ authMode, signedIn: !!u, user: u ? repo.profile(u) : null, loginUrl: LOGIN_URL });
   });
   return r;
 }
