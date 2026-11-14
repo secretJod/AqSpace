@@ -1,0 +1,206 @@
+/* =====================================================================================================
+   What this file does:  the "obsidian glass" finish for the dashboard. Every panel becomes a slab of
+                         polished black glass: a bevelled edge that catches light from above, a specular
+                         sheen on the top third, a soft diagonal reflection, a few pixels of visible
+                         thickness under it, a glare that follows the pointer and a faint mirror reflection
+                         on the floor below. Small readouts inside the cards become recessed glass wells.
+                         The core gets a glass lens and a tilted 3D orbit for its four satellites.
+   How it fits:          loaded LAST (after achievements.css) so it overrides the earlier "gunmetal" pass in
+                         dashboard.css section 21 and goals.css. Only CSS; the 3D orbit positions come from
+                         hud-gauges.js orbit(), which sets --orx/--ory and a per-chip --d (depth 0..1).
+                         The pointer glare uses --mx/--my from motion.js spotlight().
+   Start reading at:     section 1 (tokens), then 2 (the slab).
+   ===================================================================================================== */
+
+/* ===== 1. tokens ===== */
+.dash {
+  --gl-radius: 18px;
+  --gl-base: linear-gradient(165deg, #101317 0%, #07090b 48%, #020304 100%);
+  --gl-sheen: linear-gradient(180deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,.018) 24%, transparent 46%);
+  --gl-streak: linear-gradient(112deg, transparent 0 34%, rgba(255,255,255,.028) 34% 41%, transparent 41% 46%, rgba(255,255,255,.016) 46% 48%, transparent 48%);
+  /* the bevel: bright lip at the top, almost nothing on the sides, a little light again at the bottom */
+  --gl-bevel: linear-gradient(180deg, rgba(255,255,255,.42) 0%, rgba(255,255,255,.10) 12%, rgba(255,255,255,.035) 50%, rgba(255,255,255,.07) 92%, rgba(255,255,255,.16) 100%);
+  --gl-well: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012) 60%, rgba(0,0,0,.25));
+}
+
+/* ===== 2. the slab (all dashboard panels and the command deck) ===== */
+.dash .dash__card:is(:not(.dash__card--bare), .dash__card--streak),
+.dash .dash__head {
+  border-radius: var(--gl-radius);
+  clip-path: none;
+  border: 1px solid transparent;
+  background:
+    var(--gl-sheen) padding-box,
+    var(--gl-streak) padding-box,
+    var(--gl-base) padding-box,
+    var(--gl-bevel) border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.10),            /* top lip of the glass */
+    inset 0 -1px 0 rgba(0,0,0,.9),
+    inset 0 0 30px rgba(0,0,0,.55),                 /* the glass gets darker towards its edges */
+    0 1px 0 #15191e, 0 2px 0 #0a0c0f, 0 3px 0 #030405,   /* visible thickness: three stacked edges */
+    0 26px 50px -18px rgba(0,0,0,.95),
+    0 10px 22px -10px rgba(0,0,0,.8);
+  /* the polished floor: the lower part of the slab mirrored into the gap below it */
+  -webkit-box-reflect: below 5px linear-gradient(transparent 0 86%, rgba(255,255,255,.09) 100%);
+}
+.dash .dash__head { --gl-radius: 22px; }
+
+/* the old inner rule: now a second, finer glass edge 1px inside the bevel */
+.dash .dash__card:is(:not(.dash__card--bare), .dash__card--streak)::before,
+.dash .dash__head::before {
+  inset: 1px; width: auto; height: auto; clip-path: none; display: block;
+  border: 0; border-radius: calc(var(--gl-radius) - 1px); opacity: 1; z-index: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.035);
+}
+/* the old chamfer line: now the pointer glare (motion.js spotlight sets --mx/--my) */
+.dash .dash__card:is(:not(.dash__card--bare), .dash__card--streak)::after,
+.dash .dash__head::after {
+  display: block; inset: 0; width: auto; height: auto; border: 0; border-radius: inherit; z-index: 0;
+  background: radial-gradient(520px circle at var(--mx, 50%) var(--my, -20%), rgba(255,255,255,.06), transparent 42%);
+  opacity: .0; transition: opacity .4s ease;
+}
+.dash .dash__card:hover::after, .dash .dash__card:focus-within::after, .dash .dash__head:hover::after { opacity: 1; }
+
+/* hover: the slab lifts and its edge picks up the card's accent */
+.dash .dash__card:is(:not(.dash__card--bare), .dash__card--streak):hover,
+.dash .dash__card:is(:not(.dash__card--bare), .dash__card--streak):focus-within {
+  border-color: transparent;
+  background:
+    var(--gl-sheen) padding-box,
+    var(--gl-streak) padding-box,
+    var(--gl-base) padding-box,
+    linear-gradient(180deg, rgba(255,255,255,.55), color-mix(in srgb, var(--card-accent, #5fd4ff) 40%, transparent) 40%, rgba(255,255,255,.08)) border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.14),
+    inset 0 -1px 0 rgba(0,0,0,.9),
+    inset 0 0 30px rgba(0,0,0,.5),
+    0 1px 0 #171b21, 0 2px 0 #0b0d10, 0 3px 0 #030405,
+    0 36px 70px -22px rgba(0,0,0,1),
+    0 0 46px -14px color-mix(in srgb, var(--card-accent, #5fd4ff) 45%, transparent);
+}
+.dash .dash__card.is-expandable:hover { --mo-lift: -4px; }
+
+/* the HUD bracket corners and the beam were made for square panels: retire the brackets, keep a quiet beam */
+.dash .dash__card .hud-frame__corner, .dash .dash__head .hud-frame__corner { display: none; }
+.dash .hud-frame { border-radius: var(--gl-radius); }
+.dash .hud-frame__beam { opacity: .35; }
+.dash .mo-spot__ring { border-radius: var(--gl-radius); }
+
+/* the streak card brings its own panel: let the glass show through instead */
+.dash .dash__card--streak .stk--compact { background: transparent; border: 0; box-shadow: none; border-radius: var(--gl-radius); }
+
+/* ===== 3. card head: a glowing LED and an etched divider ===== */
+.dash .dash__card-head {
+  border-bottom: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.04) 60%, transparent) bottom / 100% 1px no-repeat;
+}
+.dash .dash__tag::before {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff 0 18%, var(--card-accent) 55%);
+  box-shadow: 0 0 8px var(--card-accent), 0 0 0 1px rgba(0,0,0,.7);
+}
+.dash .dash__open {
+  border-radius: 9px; border: 1px solid rgba(255,255,255,.12); border-top-color: rgba(255,255,255,.24);
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.01)), #07090b;
+  box-shadow: 0 4px 10px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
+}
+
+/* ===== 4. recessed glass wells (small readouts inside the cards) ===== */
+.dash .hudchip, .dash .dstat, .dash .readouts--full .readout, .dash .stk-stat,
+.dash .dash__core-strip, .dash .hg-tile, .dfull .dstat, .dfull .readouts--full .readout {
+  border-radius: 11px;
+  border: 1px solid rgba(255,255,255,.07); border-top-color: rgba(0,0,0,.9); border-bottom-color: rgba(255,255,255,.12);
+  background: var(--gl-well), #040506;
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.85), inset 0 -1px 0 rgba(255,255,255,.03), 0 1px 0 rgba(255,255,255,.04);
+}
+.dash .dash__core-strip { border-radius: 14px; overflow: hidden; }
+.dash .core-cell + .core-cell { border-left: 1px solid rgba(255,255,255,.06); }
+.dash .cont__thumb { border-radius: 12px; border-color: rgba(255,255,255,.14); box-shadow: 0 14px 30px -12px rgba(0,0,0,.9); overflow: hidden; }
+.dash .cont__play { border-radius: 50%; }
+.dash .seg { border-radius: 10px; overflow: hidden; }
+.dash .chip, .dash .pill { border-radius: 8px; }
+
+/* ===== 5. the core: a black glass lens behind the reactor ===== */
+.dash .hg-orbit__centre { isolation: isolate; }
+.dash .hg-orbit__centre::before {
+  content: ""; position: absolute; inset: 6px; z-index: -1; border-radius: 50%; pointer-events: none;
+  background:
+    radial-gradient(60% 34% at 50% 14%, rgba(255,255,255,.13), transparent 70%),   /* top specular */
+    radial-gradient(circle at 50% 60%, rgba(95,212,255,.07), transparent 60%),      /* the reactor glow inside the glass */
+    radial-gradient(circle at 50% 40%, #12161b 0%, #06080a 58%, #000 100%);
+  box-shadow:
+    inset 0 2px 1px rgba(255,255,255,.18), inset 0 -14px 30px rgba(0,0,0,.9),
+    0 0 0 1px rgba(255,255,255,.07), 0 0 0 6px rgba(0,0,0,.55), 0 0 0 7px rgba(255,255,255,.05),
+    0 40px 70px -20px rgba(0,0,0,1), 0 0 90px -10px rgba(95,212,255,.18);
+}
+
+/* ===== 6. the tilted orbit (hud-gauges.js orbit(): --orx / --ory, per chip --d) ===== */
+.dash .hg-orbit.is-3d .hg-orbit__ring { z-index: auto; animation: none; inset: auto; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+/* the ring path: two halves so the front half passes over the lens and the back half under it */
+.hg-orbit__ell {
+  position: absolute; left: 50%; top: 50%; pointer-events: none;
+  width: calc(var(--orx) * 2); height: calc(var(--ory) * 2); margin: calc(var(--ory) * -1) 0 0 calc(var(--orx) * -1);
+  border-radius: 50%; border: 1px solid rgba(95,212,255,.28);
+  box-shadow: 0 0 14px rgba(95,212,255,.12), inset 0 0 14px rgba(95,212,255,.08);
+}
+.hg-orbit__ell.is-inner { transform: scale(.86); border: 1px dashed rgba(200,215,230,.16); box-shadow: none; }
+.hg-orbit__ell.is-back  { z-index: 0; clip-path: inset(0 0 50% 0); opacity: .55; }
+.hg-orbit__ell.is-front { z-index: 3; clip-path: inset(50% 0 0 0); }
+.dash .hg-orbit__centre { z-index: 1; }
+
+/* the satellites: small slabs of the same black glass, lit by their own accent */
+.dash .hg-orbit.is-3d .hg-sat {
+  --d: 1;
+  position: absolute; left: 0; top: 0; pointer-events: auto;
+  display: grid; justify-items: start; gap: 4px; min-width: 86px; padding: 8px 12px 9px 15px;
+  clip-path: none; border-radius: 11px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.02) 45%, transparent) padding-box,
+    linear-gradient(165deg, #12161b, #040506) padding-box,
+    linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.06) 45%, color-mix(in srgb, var(--card-accent) 50%, transparent)) border-box;
+  box-shadow:
+    0 1px 0 #0b0d10, 0 2px 0 #000,
+    0 14px 26px -8px rgba(0,0,0,.95),
+    0 0 26px -8px color-mix(in srgb, var(--card-accent) calc(var(--d) * 70%), transparent);
+  opacity: calc(.5 + var(--d) * .5);
+  transition: box-shadow .25s, background .25s;
+  will-change: transform;
+}
+/* the accent light strip on the left edge */
+.dash .hg-orbit.is-3d .hg-sat::before {
+  content: ""; position: absolute; left: 6px; top: 9px; bottom: 9px; width: 3px; border-radius: 2px;
+  background: linear-gradient(180deg, #fff, var(--card-accent) 40%);
+  box-shadow: 0 0 8px var(--card-accent);
+}
+.dash .hg-orbit.is-3d .hg-sat__l { order: 0; font: 700 8.5px/1 var(--mono, ui-monospace, monospace); letter-spacing: .16em; color: rgba(230,237,245,.6); }
+.dash .hg-orbit.is-3d .hg-sat__v { font: 800 19px/1 var(--mono, ui-monospace, monospace); color: #f4f8fb; letter-spacing: -.02em; text-shadow: 0 0 12px color-mix(in srgb, var(--card-accent) 50%, transparent); }
+.dash .hg-orbit.is-3d .hg-sat:hover, .dash .hg-orbit.is-3d .hg-sat:focus-visible {
+  opacity: 1;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.03) 45%, transparent) padding-box,
+    linear-gradient(165deg, #151b21, #05070a) padding-box,
+    linear-gradient(180deg, #fff, var(--card-accent)) border-box;
+  box-shadow: 0 1px 0 #0b0d10, 0 2px 0 #000, 0 18px 30px -8px rgba(0,0,0,1), 0 0 34px -6px var(--card-accent);
+}
+.dash .hg-orbit.is-3d .hg-sat:focus-visible { outline: 0; }
+
+.hg-orbit.is-3d { --orx: 168px; --ory: 112px; }
+@media (max-width: 720px) {
+  .hg-orbit.is-3d { --orx: 128px; --ory: 88px; }
+}
+
+/* ===== 7. the expanded panel uses the same glass ===== */
+.xp__panel {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05) 0%, transparent 18%) padding-box,
+    linear-gradient(165deg, #0e1115 0%, #050607 60%, #020203 100%) padding-box,
+    linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,255,255,.05) 20%, rgba(255,255,255,.1)) border-box;
+}
+
+/* ===== 8. reduced motion: same glass, no movement ===== */
+@media (prefers-reduced-motion: reduce) {
+  .dash .hg-orbit.is-3d .hg-sat { transition: none; }
+}

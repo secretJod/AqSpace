@@ -1,0 +1,19 @@
+/*
+What: placement of the neural-network canvas drawn by js/features/dashboard/neural.js.
+How it fits: the canvas sits behind the dashboard content (z-index 0), content is lifted to z-index 1.
+Start reading at: .neural
+*/
+
+/* 1. The host (the .dash page) keeps its own stacking context */
+.neural-host { position: relative; isolation: isolate; }
+
+/* 2. The canvas: page-sized, behind everything, never catches the pointer */
+.neural {
+  position: absolute; top: 0; left: 0; z-index: 0;
+  pointer-events: none;
+  opacity: .95;
+}
+
+/* 3. Content above the network */
+.neural-host > .dash__head,
+.neural-host > .dash__grid { position: relative; z-index: 1; }
