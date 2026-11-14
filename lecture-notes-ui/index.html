@@ -10,12 +10,22 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23fff'/%3E%3Ctext x='16' y='22' font-size='16' font-family='serif' font-weight='bold' text-anchor='middle' fill='%23000'%3EAQ%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="smartmagic.css">
-  <link rel="stylesheet" href="streak.css">
-  <link rel="stylesheet" href="navbar.css">
-  <link rel="stylesheet" href="dashboard.css">
-  <link rel="stylesheet" href="profile.css">
+  <!-- Styles. Order matters: later files may override earlier ones. styles.css is the base for the whole app. -->
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/smart-magic.css">
+  <link rel="stylesheet" href="css/streak.css">
+  <link rel="stylesheet" href="css/navbar.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <link rel="stylesheet" href="css/goals.css">
+  <link rel="stylesheet" href="css/sticky-board.css">
+  <link rel="stylesheet" href="css/motion.css">
+  <link rel="stylesheet" href="css/neural.css">
+  <link rel="stylesheet" href="css/hud.css">
+  <link rel="stylesheet" href="css/expand.css">
+  <link rel="stylesheet" href="css/achievements.css">
+  <link rel="stylesheet" href="css/mirror.css">
+  <!-- AQspace: profile button + menu, sign-in and expired-session screens -->
+  <link rel="stylesheet" href="css/profile.css">
 </head>
 <body>
   <a class="skip" href="#view">Skip to content</a>
@@ -59,25 +69,51 @@
     </div>
   </div>
 
-  <script src="util.js"></script>
-  <script src="store.js"></script>
-  <script src="api.js"></script>
-  <script src="profile.js"></script>
-  <script src="dialog.js"></script>
-  <script src="notes.js"></script>
-  <script src="notebutton.js"></script>
-  <script src="notesview.js"></script>
-  <script src="player.js"></script>
-  <script src="water.js"></script>
-  <script src="clickspark.js"></script>
-  <script src="smartmagic.js"></script>
-  <script src="split.js"></script>
-  <script src="importpl.js"></script>
-  <script src="smart.js"></script>
-  <script src="streak.js"></script>
-  <script src="navbar.js"></script>
-  <script src="dashboard.js"></script>
+  <!-- Scripts. Every file adds one piece to the global `AQ` object, so the ORDER below matters:
+       a file may only use pieces from files listed above it. See README.md, "Load order". -->
+
+  <!-- 1. Core: helpers, data store, server sync (no screens) -->
+  <script src="js/core/demo-cleanup.js"></script>
+  <script src="js/core/util.js"></script>
+  <script src="js/core/store.js"></script>
+  <script src="js/core/api.js"></script>
+  <script src="js/features/profile/profile.js"></script>
+
+  <!-- 2. Shared UI pieces and features -->
+  <script src="js/ui/dialog.js"></script>
+  <script src="js/features/notes/notes-jobs.js"></script>
+  <script src="js/features/notes/note-button.js"></script>
+  <script src="js/features/notes/notes-view.js"></script>
+  <script src="js/features/player/player.js"></script>
+  <script src="js/ui/water-button.js"></script>
+  <script src="js/ui/click-spark.js"></script>
+  <script src="js/features/smart/smart-magic.js"></script>
+  <script src="js/features/playlists/split-view.js"></script>
+  <script src="js/features/playlists/import-playlist.js"></script>
+  <script src="js/features/smart/smart-arrange.js"></script>
+  <!-- motion effects + the card -> panel expand (used by the streak card and the dashboard) -->
+  <script src="js/features/dashboard/motion.js"></script>
+  <script src="js/features/dashboard/neural.js"></script>
+  <script src="js/features/dashboard/hud.js"></script>
+  <script src="js/features/dashboard/expand.js"></script>
+  <script src="js/features/streak/streak.js"></script>
+  <script src="js/features/achievements/achievements.js"></script>
+  <script src="js/features/navbar/navbar.js"></script>
+
+  <!-- 2b. Dashboard: the vendored chart library first (no CDNs: the CSP only allows our own scripts),
+       then activity data + hooks, goals, chart helpers and finally the dashboard screen that uses them all. -->
+  <script src="js/vendor/chart.umd.js"></script>
+  <script src="js/features/dashboard/activity-log.js"></script>
+  <script src="js/features/dashboard/activity-hooks.js"></script>
+  <script src="js/features/dashboard/goals.js"></script>
+  <script src="js/features/dashboard/charts.js"></script>
+  <script src="js/features/dashboard/hud-metrics.js"></script>
+  <script src="js/features/dashboard/hud-gauges.js"></script>
+  <script src="js/features/dashboard/sticky-board.js"></script>
+  <script src="js/features/dashboard/dashboard.js"></script>
+
+  <!-- 3. The app: routing + screens. Loaded last because it uses everything above. -->
   <div id="navbar-root"></div>
-  <script src="app.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

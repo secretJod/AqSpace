@@ -1,0 +1,223 @@
+/* =====================================================================================================
+   What this file does:
+     The activity log: a compact list of learning sessions (watched a video, notes finished, playlist
+     created, a review). Every dashboard chart and the goals card read their numbers from here.
+     No DOM code in this file.
+
+   How it fits:
+     Loaded after streak.js and before activity-hooks.js / goals.js / dashboard.js.
+     activity-hooks.js writes sessions with `AQ.activity.log(...)` when the app is used.
+     Charts read with `minutesByDay`, `minutesByHour`, `weekdayHeat`, `totals`, `recent`, `sessions`
+     and re-draw themselves from `AQ.activity.subscribe(fn)`.
+     Each `log()` also calls `AQ.streak.record(kind, 1, {minutes})` so the streak card stays in sync
+     (unless the caller passes `{streak: false}`; see activity-hooks.js for why).
+
+   Start reading at:
+     The session shape below, then `log()` (section 3) and `minutesByDay()` (section 4).
+   ===================================================================================================== */
+
+/* AQspace - activity log (data only).
+   localStorage key `aq.activitylog.v1` = JSON array of sessions, oldest first:
+   Session = { id, kind: "watch"|"notes"|"playlist"|"review", videoId?, playlistId?, title?,
+               start (ISO), minutes (number, may be 0), hour (0-23, local hour of `start`) }
+   Dates/days are LOCAL calendar days. If storage is blocked the log keeps working in memory. */
+window.AQ = window.AQ || {};
+(function (AQ) {
+  "use strict";
+
+  var KEY = "aq.activitylog.v1";
+  var KINDS = ["watch", "notes", "playlist", "review"];
+  var MAX_SESSIONS = 5000;            // oldest sessions are dropped past this (keeps the JSON small)
+  var MAX_MINUTES = 24 * 60;          // one session can never be longer than a day
+  var ID_RE = /^[A-Za-z0-9_-]{11}$/;  // YouTube video id
+  var PID_RE = /^[a-z0-9][a-z0-9-]{0,47}$/;
+
+  var sessions = [];
+  var storageOk = true;
+  var listeners = [];
+  var emitTimer = null;
+
+  // ===== 1. date helpers (local calendar days) =====
+  function pad(n) { return n < 10 ? "0" + n : String(n); }
+  function dayKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+  function today() { return startOfDay(new Date()); }
+  function weekdayIdx(d) { return (d.getDay() + 6) % 7; }   // Mon = 0 ... Sun = 6
+  /* Accepts a Date, an ISO string, a "YYYY-MM-DD" day or a timestamp; null when unreadable. */
+  function toDate(x) {
+    if (x == null) return null;
+    if (x instanceof Date) return isNaN(x.getTime()) ? null : x;
+    if (typeof x === "number") return new Date(x);
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(x));
+    if (m) return new Date(+m[1], m[2] - 1, +m[3]);
+    var t = Date.parse(x);
+    return isNaN(t) ? null : new Date(t);
+  }
+  function num(x) { x = +x; return isFinite(x) && x > 0 ? x : 0; }
+  function round1(x) { return Math.round(x * 10) / 10; }
+
+  // ===== 2. persistence =====
+  function cleanSession(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    if (KINDS.indexOf(raw.kind) < 0) return null;
+    var start = toDate(raw.start);
+    if (!start) return null;
+    var s = {
+      id: typeof raw.id === "string" && raw.id ? raw.id.slice(0, 24) : newId(),
+      kind: raw.kind,
+      start: start.toISOString(),
+      minutes: round1(Math.min(MAX_MINUTES, num(raw.minutes))),
+      hour: start.getHours()
+    };
+    if (typeof raw.videoId === "string" && ID_RE.test(raw.videoId)) s.videoId = raw.videoId;
+    if (typeof raw.playlistId === "string" && PID_RE.test(raw.playlistId)) s.playlistId = raw.playlistId;
+    if (typeof raw.title === "string" && raw.title.trim()) s.title = raw.title.trim().slice(0, 150);
+    return s;
+  }
+  function byStart(a, b) { return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; }
+  function load() {
+    var raw = null;
+    try { raw = localStorage.getItem(KEY); } catch (e) { storageOk = false; }
+    if (!raw) return;
+    var arr;
+    try { arr = JSON.parse(raw); } catch (e) { return; }
+    if (!Array.isArray(arr)) return;
+    var seen = {};
+    sessions = [];
+    arr.forEach(function (r) { var s = cleanSession(r); if (s && !seen[s.id]) { seen[s.id] = 1; sessions.push(s); } });
+    sessions.sort(byStart);
+  }
+  function save() {
+    if (sessions.length > MAX_SESSIONS) sessions.splice(0, sessions.length - MAX_SESSIONS);
+    try { localStorage.setItem(KEY, JSON.stringify(sessions)); storageOk = true; }
+    catch (e) { storageOk = false; }
+  }
+  /* Subscribers are told at most a few times per second (watch sessions grow every second). */
+  function emit(evt) {
+    if (emitTimer) return;
+    emitTimer = setTimeout(function () {
+      emitTimer = null;
+      listeners.slice().forEach(function (fn) { try { fn(evt || {}); } catch (e) { /* one bad listener must not stop the rest */ } });
+    }, 250);
+  }
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // ===== 3. writing =====
+  /** Add a session for "now". kind: "watch" | "notes" | "playlist" | "review".
+      opts: { videoId, playlistId, title, minutes, streak }  (streak:false = do not tell AQ.streak)
+      Returns the stored session (or null for an unknown kind). */
+  function log(kind, opts) {
+    opts = opts || {};
+    var s = cleanSession({ id: newId(), kind: kind, start: new Date(), minutes: opts.minutes,
+      videoId: opts.videoId, playlistId: opts.playlistId, title: opts.title });
+    if (!s) return null;
+    sessions.push(s);
+    save();
+    if (opts.streak !== false) recordStreak(s.kind, s.minutes);
+    emit({ type: "log", session: s });
+    return s;
+  }
+  /** Grow an open session (the player saves position every second; one session per sitting keeps the log small). */
+  function extend(id, minutes) {
+    var s = find(id), add = num(minutes);
+    if (!s || !add) return null;
+    s.minutes = round1(Math.min(MAX_MINUTES, s.minutes + add));
+    save();
+    emit({ type: "extend", session: s });
+    return s;
+  }
+  function find(id) { for (var i = sessions.length - 1; i >= 0; i--) if (sessions[i].id === id) return sessions[i]; return null; }
+  function recordStreak(kind, minutes) {
+    var S = AQ.streak;
+    if (!S || typeof S.record !== "function") return;
+    try { S.record(kind, 1, { minutes: minutes }); } catch (e) { /* the streak is a bonus, never a blocker */ }
+  }
+  /** Wipe everything (used by tests). */
+  function clear() { sessions = []; save(); emit({ type: "clear" }); }
+
+  // ===== 4. reading =====
+  /** Sessions in a range: { from, to } (Date / ISO / "YYYY-MM-DD"; both inclusive, both optional). Oldest first. */
+  function list(range) {
+    range = range || {};
+    var from = toDate(range.from), to = toDate(range.to);
+    // a bare day as "to" means the whole of that day
+    if (to && typeof range.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(range.to)) to = addDays(to, 1);
+    var fromIso = from ? from.toISOString() : null, toIso = to ? to.toISOString() : null;
+    return sessions.filter(function (s) { return (!fromIso || s.start >= fromIso) && (!toIso || s.start < toIso); });
+  }
+  function sumMinutes(arr) { var t = 0; arr.forEach(function (s) { t += s.minutes; }); return round1(t); }
+
+  /** The last `days` days (today included): [{ date: "YYYY-MM-DD", minutes, byKind: {watch, notes, ...}, count }] */
+  function minutesByDay(days) {
+    days = Math.max(1, Math.floor(+days || 7));
+    var t = today(), first = addDays(t, -(days - 1)), out = [], byKey = {};
+    for (var i = 0; i < days; i++) {
+      var k = dayKey(addDays(first, i));
+      byKey[k] = { date: k, minutes: 0, byKind: {}, count: 0 };
+      out.push(byKey[k]);
+    }
+    list({ from: first }).forEach(function (s) {
+      var row = byKey[dayKey(new Date(s.start))];
+      if (!row) return;
+      row.minutes = round1(row.minutes + s.minutes);
+      row.byKind[s.kind] = round1((row.byKind[s.kind] || 0) + s.minutes);
+      row.count++;
+    });
+    return out;
+  }
+  /** 24 numbers: minutes per local hour of day (all time). */
+  function minutesByHour() {
+    var out = []; for (var h = 0; h < 24; h++) out.push(0);
+    sessions.forEach(function (s) { out[s.hour] = round1(out[s.hour] + s.minutes); });
+    return out;
+  }
+  /** 7 rows (Mon..Sun) x 24 hours: minutes. */
+  function weekdayHeat() {
+    var out = [];
+    for (var d = 0; d < 7; d++) { out.push([]); for (var h = 0; h < 24; h++) out[d].push(0); }
+    sessions.forEach(function (s) {
+      var d = weekdayIdx(new Date(s.start));
+      out[d][s.hour] = round1(out[d][s.hour] + s.minutes);
+    });
+    return out;
+  }
+  /** Minutes: { today, week (Mon..today), lastWeek (full), month (calendar month), allTime } */
+  function totals() {
+    var t = today(), monday = addDays(t, -weekdayIdx(t)), month1 = new Date(t.getFullYear(), t.getMonth(), 1);
+    return {
+      today: sumMinutes(list({ from: t })),
+      week: sumMinutes(list({ from: monday })),
+      lastWeek: sumMinutes(list({ from: addDays(monday, -7), to: monday })),
+      month: sumMinutes(list({ from: month1 })),
+      allTime: sumMinutes(sessions)
+    };
+  }
+  /** How many sessions of a kind in a range (goals: "3 notes this week"). */
+  function count(kind, range) {
+    return list(range).filter(function (s) { return !kind || s.kind === kind; }).length;
+  }
+  /** Newest n sessions, newest first. */
+  function recent(n) {
+    n = Math.max(1, Math.floor(+n || 10));
+    return sessions.slice(-n).reverse();
+  }
+  function subscribe(fn) {
+    if (typeof fn !== "function") return function () {};
+    listeners.push(fn);
+    return function () { listeners = listeners.filter(function (f) { return f !== fn; }); };
+  }
+
+  // ===== 5. start =====
+  // (no sample data: everything here comes from real use; js/core/demo-cleanup.js removed the old demo history)
+  load();
+  try { window.addEventListener("storage", function (e) { if (e.key === KEY) { load(); emit({ type: "sync" }); } }); } catch (e) { /* no window */ }
+
+  AQ.activity = {
+    KEY: KEY, KINDS: KINDS,
+    log: log, extend: extend, clear: clear,
+    sessions: list, minutesByDay: minutesByDay, minutesByHour: minutesByHour, weekdayHeat: weekdayHeat,
+    totals: totals, count: count, recent: recent, subscribe: subscribe,
+    dayKey: dayKey, storageOk: function () { return storageOk; }
+  };
+})(window.AQ);
