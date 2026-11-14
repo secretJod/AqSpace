@@ -8,7 +8,7 @@
    Endpoints (mounted under /api/v1): GET /auth/google/login, GET /auth/google/callback, POST /auth/logout. */
 import crypto from "node:crypto";
 import { Router } from "express";
-import { HttpError } from "../http.js";
+import { HttpError } from "../utils/http-errors.js";
 
 const SESSION = "aq_session";
 const STATE = "aq_oauth_state";

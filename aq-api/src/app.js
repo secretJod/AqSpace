@@ -1,116 +1,107 @@
+/* app.js - builds the Express app (but does not start listening; server.js does that).
+
+   What:  creates the database, repository, worker client and services, then plugs the
+          middleware and routers together in the right order.
+   How it fits: server.js calls createApp(config); the tests call createApp(config, deps)
+          with an in-memory database and a mock worker.
+   A request goes through, in this order:
+     1. security headers -> request logger -> host guard -> CORS
+     2. dev tracker + /dev pages (when AQ_DEV_TOOLS is on)
+     3. /api/v1 router (routes/index.js) -> service -> worker / database
+     4. /static/fonts (from the worker), then the UI files
+     5. 404, then the JSON error handler
+   Read next: routes/index.js */
 import express from "express";
 import fs from "node:fs";
-import path from "node:path";
-import { openDb } from "./db.js";
-import { createRepo } from "./repo.js";
-import { createPyClient, assertPyUrl } from "./pyclient.js";
-import { createNotesService } from "./notes-service.js";
-import { createSmartService } from "./smart-service.js";
-import { HttpError } from "./http.js";
-import { localAuth, LOCAL_USER } from "./middleware/auth.js";
-import { createGoogleAuth } from "./middleware/google-auth.js";
-import { securityHeaders, hostGuard, cors, rateLimit, localOnly } from "./middleware/security.js";
-import { playlistRoutes } from "./routes/playlists.js";
-import { progressRoutes } from "./routes/progress.js";
-import { notesRoutes, fontRoutes } from "./routes/notes.js";
-import { smartRoutes } from "./routes/smart.js";
-import { createTracker, devRoutes } from "./dev.js";
-import { healthRoutes, meRoutes, authStatusRoutes, importRoutes, syncRoutes } from "./routes/misc.js";
+import { openDb } from "./db/database.js";
+import { createRepo } from "./db/repository.js";
+import { createPyClient, assertPyUrl } from "./services/worker-client.js";
+import { createNotesService } from "./services/notes-service.js";
+import { createSmartService } from "./services/smart-service.js";
+import { localAuth } from "./middleware/auth.js";
+import { securityHeaders } from "./middleware/security-headers.js";
+import { hostGuard, cors } from "./middleware/local-only.js";
+import { rateLimit } from "./middleware/rate-limit.js";
+import { requestLogger } from "./middleware/request-logger.js";
+import { notFoundHandler, errorHandler } from "./middleware/error-handler.js";
+import { createApiRouter } from "./routes/index.js";
+import { fontRoutes } from "./routes/fonts.js";
+import { uiStaticRoutes } from "./routes/ui-static.js";
+import { createTracker, devRoutes } from "./dev/index.js";
 
 export const VERSION = "0.1.0";
-const STATIC_OK = /\.(html|js|css|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|json|txt)$/i;
 
-/** Builds the Express app. deps: { db?, authenticate?, fetchImpl?, googleFetch?, clock? } (all optional; used for tests and the OAuth hook). */
+/** Builds the Express app. deps: { db?, authenticate?, fetchImpl?, clock? } (all optional; used for tests and the OAuth hook). */
 export function createApp(config, deps = {}) {
+  // -------------------------------------------------------------------------
+  // 1. Building blocks: database, worker client, services
+  // -------------------------------------------------------------------------
+
   assertPyUrl(config.pyUrl, config.allowRemotePy);
   const db = deps.db || openDb(config.dbFile, config.sqlDir);
   const repo = createRepo(db);
+  const clock = deps.clock || Date.now;
+
   const tracker = config.devTools ? createTracker({ logDir: config.devLogDir, keepDays: config.devLogDays }) : null;
   const fetchImpl = deps.fetchImpl || fetch;
+  // With the tracker on, every call to the worker is recorded (layer "worker").
   const py = createPyClient({ baseUrl: config.pyUrl, timeoutMs: config.notes.pyTimeoutMs, fetchImpl: tracker ? tracker.wrapFetch(fetchImpl) : fetchImpl });
+
   const onChange = tracker ? tracker.change : null;
-  const notes = createNotesService({ db, repo, py, config, clock: deps.clock || Date.now, onChange });
-  const smart = createSmartService({ db, repo, py, config, clock: deps.clock || Date.now, onChange });
-  const google = config.authMode === "google" && !deps.authenticate
-    ? createGoogleAuth(config.google, { repo, fetchImpl: deps.googleFetch || fetch, clock: deps.clock || Date.now })
-    : null;
-  const authenticate = deps.authenticate || (google ? google.authenticate : localAuth);
+  const notes = createNotesService({ db, repo, py, config, clock, onChange });
+  const smart = createSmartService({ db, repo, py, config, clock, onChange });
+  const authenticate = deps.authenticate || localAuth;
+
+  // -------------------------------------------------------------------------
+  // 2. The Express app and global middleware
+  // -------------------------------------------------------------------------
 
   const app = express();
   app.disable("x-powered-by");
   app.set("etag", false);
-  app.locals.db = db; app.locals.repo = repo; app.locals.tracker = tracker;
+  app.locals.db = db;
+  app.locals.repo = repo;
+  app.locals.tracker = tracker;
 
   app.use(securityHeaders);
-  if (config.log) {
-    app.use((req, res, next) => {              // method, path (no query string, no headers, no bodies), status, time
-      const t = Date.now();
-      if (req.path.startsWith("/dev/api/")) return next();   // tracker polling would flood the console
-      res.on("finish", () => console.log(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - t}ms`));
-      next();
-    });
-  }
+  if (config.log) app.use(requestLogger);
   app.use(hostGuard);
   app.use(cors);
+
+  // -------------------------------------------------------------------------
+  // 3. Developer tools (/dev)
+  // -------------------------------------------------------------------------
+
   if (tracker) {
     app.use(tracker.middleware);
     // own (unrecorded) client: the tracker's health probe must not fill the request log
-    app.use("/dev", localOnly, devRoutes({ db, py: createPyClient({ baseUrl: config.pyUrl, timeoutMs: 1500, fetchImpl }), tracker, runDir: config.runDir }));
+    const quietPy = createPyClient({ baseUrl: config.pyUrl, timeoutMs: 1500, fetchImpl });
+    app.use("/dev", devRoutes({ db, py: quietPy, tracker, runDir: config.runDir }));
   }
 
-  const general = rateLimit({ ...config.rate.general, trustCf: config.trustCfHeaders }, deps.clock);
-  const heavy = rateLimit({ ...config.rate.heavy, trustCf: config.trustCfHeaders }, deps.clock);
+  // -------------------------------------------------------------------------
+  // 4. The API (/api/v1)
+  // -------------------------------------------------------------------------
 
-  // ---- API ----
-  const api = express.Router();
-  api.use(general);
-  api.use(healthRoutes({ db, py, version: VERSION }));      // health needs no user
-  if (google) api.use(google.routes);                      // login/callback/logout need no user
-  api.use(authStatusRoutes(repo, config.authMode,          // #151: status needs no user either
-    google ? google.currentUser : () => LOCAL_USER.id));
-  api.use(authenticate);
-  api.use(meRoutes(repo));
-  api.use(syncRoutes(repo));                                      // own (bigger) JSON parser, must come first
-  api.use(express.json({ limit: config.bodyLimit }));
-  api.use(playlistRoutes(repo));
-  api.use(progressRoutes(repo));
-  api.use(notesRoutes(notes, heavy));
-  api.use(smartRoutes(smart, heavy));
-  api.use(importRoutes(py, config, heavy));
-  api.use((_req, _res, next) => next(new HttpError(404, "Not found.")));
-  app.use("/api/v1", api);
-  app.use("/api", (_req, _res, next) => next(new HttpError(404, "Not found.")));
+  const generalLimiter = rateLimit(config.rate.general, deps.clock);
+  const heavyLimiter = rateLimit(config.rate.heavy, deps.clock);
 
-  // fonts used by the generated notes page (served from the Python service)
+  app.use("/api/v1", createApiRouter({ db, repo, py, notes, smart, config, authenticate, generalLimiter, heavyLimiter, version: VERSION }));
+  app.use("/api", notFoundHandler);                  // e.g. /api/v2/... or /api/anything
+
+  // -------------------------------------------------------------------------
+  // 5. Fonts for the notes page, then the UI (same origin as the API)
+  // -------------------------------------------------------------------------
+
   app.use(fontRoutes(py));
+  if (config.uiDir && fs.existsSync(config.uiDir)) app.use(uiStaticRoutes(config.uiDir));
 
-  // ---- the UI, same origin as the API ----
-  if (config.uiDir && fs.existsSync(config.uiDir)) {
-    const uiDir = path.resolve(config.uiDir);
-    app.use((req, res, next) => {
-      if (req.method !== "GET" && req.method !== "HEAD") return next(new HttpError(405, "Method not allowed."));
-      const p = req.path === "/" ? "/index.html" : req.path;
-      // only web assets, never dot-files, backups (_landing-backup), scripts or docs
-      if (p.split("/").some((s) => s.startsWith(".") || s.startsWith("_")) || !STATIC_OK.test(p)) return next(new HttpError(404, "Not found."));
-      next();
-    });
-    app.use(express.static(uiDir, { index: "index.html", dotfiles: "ignore", etag: true, maxAge: 0, redirect: false, fallthrough: true }));
-  }
-  app.use((_req, _res, next) => next(new HttpError(404, "Not found.")));
+  // -------------------------------------------------------------------------
+  // 6. Nothing matched / something failed: always JSON, never a stack trace
+  // -------------------------------------------------------------------------
 
-  // ---- errors: always JSON, never a stack trace ----
-  app.use((err, req, res, _next) => {
-    if (res.headersSent) return res.destroy();
-    let status = err.status || err.statusCode || 500;
-    let message = err.expose ? err.message : "Something went wrong.";
-    if (err.type === "entity.parse.failed") { status = 400; message = "The request body is not valid JSON."; }
-    else if (err.type === "entity.too.large") { status = 413; message = "The request body is too large."; }
-    else if (/SQLITE_CONSTRAINT/.test(String(err.code || err.message))) { status = 409; message = "That conflicts with existing data."; }
-    else if (status >= 500 && !err.expose) console.error(`${req.method} ${req.path} failed: ${err.name}: ${String(err.message).slice(0, 200)}`);
-    if (status < 400 || status > 599) status = 500;
-    if (err.retryAfter) res.setHeader("Retry-After", String(err.retryAfter));
-    res.status(status).json({ error: message, ...(err.code === "py_offline" || err.code === "not_in_playlist" || err.code === "auth_required" ? { code: err.code } : {}) });
-  });
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
   return app;
 }
