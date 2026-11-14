@@ -21,5 +21,11 @@ After any change to services, ports, data flow, storage or AI providers, assign 
 - Tracking rules: `.claude/rules/tracking.md`
 - Storage rules (everything stays inside the repo): `.claude/rules/storage.md`
 
+## How to give the user commands
+- Give short, simple commands a person would type: one command per line, no long pipes, no clever one-liners.
+- Put a plain sentence before each command saying what it does.
+- Say where to run it (this Mac, the other Mac, the VM).
+- Show what a good result looks like.
+
 ## Working style
 The user gives requirements one at a time. Add each one to PLAN.md as R1, R2, ... and build step by step.
