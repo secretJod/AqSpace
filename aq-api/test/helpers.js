@@ -71,6 +71,12 @@ export async function startApp({ py, overrides = {}, authenticate, clock, fetchI
     fs.writeFileSync(path.join(uiDir, "app.js"), "//js");
     fs.writeFileSync(path.join(uiDir, "serve.ps1"), "secret");
     fs.writeFileSync(path.join(uiDir, "README.md"), "docs");
+    for (const f of ["package.json", "package-lock.json", "eslint.config.mjs", "eslint.config.js", ".npmrc", "notes.txt"]) fs.writeFileSync(path.join(uiDir, f), "{}");
+    for (const d of ["css", "js", "vendor", "screenshots"]) fs.mkdirSync(path.join(uiDir, d));
+    fs.writeFileSync(path.join(uiDir, "css", "styles.css"), "body{}");
+    fs.writeFileSync(path.join(uiDir, "js", "app.js"), "//js");
+    fs.writeFileSync(path.join(uiDir, "vendor", "chart.umd.min.js"), "//chart");
+    fs.writeFileSync(path.join(uiDir, "screenshots", "desktop.png"), "png");
     fs.mkdirSync(path.join(uiDir, "_landing-backup"));
     fs.writeFileSync(path.join(uiDir, "_landing-backup", "index.html"), "old");
   }

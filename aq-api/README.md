@@ -37,7 +37,7 @@ src/
     index.js             builds /api/v1 and shows the middleware order
     health.js me.js auth-status.js sync.js playlists.js progress.js notes.js smart.js youtube-import.js
     fonts.js             /static/fonts/* proxied from the worker
-    ui-static.js         serves lecture-notes-ui (web assets only, no "." / "_" path parts)
+    ui-static.js         serves lecture-notes-ui (runtime assets only: html/css/js/images/fonts; no package files, lint config, docs, "." / "_" parts, screenshots/)
   services/
     worker-client.js     HTTP client for the Python worker (127.0.0.1:5055)
     notes-service.js     notes jobs: start, poll, cache, auto-resume after a worker restart, expire, stream files

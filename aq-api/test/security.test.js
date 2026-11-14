@@ -155,6 +155,15 @@ test("static UI: serves web assets, hides dot-files, scripts, docs and backups; 
   } finally { await t.close(); }
 });
 
+test("#158 static UI: only runtime assets; package files, lint config, docs, dotfiles and screenshots are 404", async () => {
+  const t = await startApp({ withUi: true });
+  try {
+    for (const ok of ["/css/styles.css", "/js/app.js", "/vendor/chart.umd.min.js", "/index.html"]) assert.equal((await t.get(ok)).status, 200, ok);
+    for (const no of ["/package.json", "/package-lock.json", "/eslint.config.mjs", "/eslint.config.js", "/README.md", "/.npmrc", "/notes.txt",
+      "/screenshots/desktop.png", "/PACKAGE.JSON", "/js/../package.json", "/%2enpmrc"]) assert.equal((await t.get(no)).status, 404, no);
+  } finally { await t.close(); }
+});
+
 test("migrations are idempotent and create the expected tables", async () => {
   const cfg = loadConfig({}, {});
   const db = openDb(":memory:", cfg.sqlDir);
