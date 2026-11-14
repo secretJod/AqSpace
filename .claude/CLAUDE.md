@@ -13,6 +13,9 @@ Read this at the start of every session. These rules apply to every agent and su
 ## Company team
 AQspace runs as a fixed agent team (`.claude/agents/`) with a kanban board and daily standups. The user is the QA tester and the only one who moves cards to Done. Read `.claude/rules/team.md`, route work to the owning agent, and keep `docs/daily/` up to date.
 
+## Deployment
+AQspace is deployed to a second Mac (Mac B, SSH alias `aqspace-macb`, Docker in Colima). The `devops` agent owns that machine, CI/CD and every deploy and rollback. Route all deployment work to `devops`.
+
 ## System design
 After any change to services, ports, data flow, storage or AI providers, assign `web-dev-3` to update the design on systemdesignsim.com with Playwright, then delete `.playwright-mcp/` (no screenshots kept). Details: `.claude/rules/team.md`.
 
@@ -20,6 +23,12 @@ After any change to services, ports, data flow, storage or AI providers, assign 
 - Team & board workflow: `.claude/rules/team.md`
 - Tracking rules: `.claude/rules/tracking.md`
 - Storage rules (everything stays inside the repo): `.claude/rules/storage.md`
+
+## How to give the user commands
+- Give short, simple commands a person would type: one command per line, no long pipes, no clever one-liners.
+- Put a plain sentence before each command saying what it does.
+- Say where to run it (this Mac, the other Mac, the VM).
+- Show what a good result looks like.
 
 ## Working style
 The user gives requirements one at a time. Add each one to PLAN.md as R1, R2, ... and build step by step.

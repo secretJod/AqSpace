@@ -14,6 +14,7 @@ AQspace runs like a small company. The user is the **QA Tester** and final appro
 | `ui-dev-2` | UI developer (design system) | `styles.css`, motion and effects, responsive/mobile, accessibility, branding |
 | `scaling-lead` | Scaling decision taker | Architecture, performance, infra/cost decisions; writes ADRs in `docs/decisions/` |
 | `client-presenter` | Client presenter | Release notes, demos, client-facing summaries in `docs/client/` |
+| `devops` | DevOps / release engineer | Deployment to the second Mac (Mac B, Colima), CI/CD workflows, the self-hosted runner, health checks, rollbacks, monitoring |
 | `qa-guide` | QA guide | Guides the user's testing: test plans, checklists, bug reports in `docs/qa/` |
 
 Work outside your area goes to its owner. Cross-area changes need a note to the other owner in the journal.

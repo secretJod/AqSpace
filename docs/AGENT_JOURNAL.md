@@ -315,3 +315,11 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 **What I did:** With the user's approval (#132), I deleted `backend/` and `frontend/`, removed the `db`, `backend` and `frontend` services from docker-compose.yml, and updated nuke.sh (no db-container wipe, no legacy node_modules), .env.example (OAuth redirect now aq-api :5180), README, ARCHITECTURE, the storage rule and web-dev-2's ownership. aq-api 86/86, compose valid. Commit 4e2132e on preview/latest.
 **What it solved:** compose starts only notes-ai and aq-api (+ the optional tunnel), with no unused ports or Postgres.
 **Notes for the next agent:** The Docker images, containers and `.data/pgdata` must be removed by the user (the classifier blocks irreversible local deletion). `main` still has the legacy app until release PR #82 merges.
+
+## [2026-11-11] Google sign-in and profile section (cards #130, #151, #152, #153)
+- **web-dev-1 (#151, PR #155):** added `/api/v1/auth/status` (works before sign-in), `/me` with name, email and Google photo (migration 005), a 401 with `code:"auth_required"`, a safe `?next=` return, logout that ends the session, and a first Google sign-in that claims the local user's playlists, progress, notes and smart runs in one transaction (add new user-keyed tables to `USER_KEYED`). aq-api 93/93.
+- **web-dev-2 (#152, PR #154):** compose passes AUTH_MODE, GOOGLE_* and SESSION_SECRET to aq-api from the root .env (defaults: local, 5180 callback); .env.example and README updated.
+- **ui-dev-1 (#130, PR #156):** profile button (photo or initials) and keyboard menu, Google sign-in screen, expired-session screen; one 401 hook in api.js. Note: a different Google account on the same browser could merge leftover local state, so consider clearing local storage when the user id changes.
+- **qa-guide (#153, PR #157):** `docs/qa/google-signin.md`, 12 steps.
+- **web-dev-3:** system design updated with Google sign-in: https://systemdesignsim.com/s/DLBvXh
+- **Team lead:** merged all four into preview/latest, rebuilt aq-api, and checked the header shows the profile initials in local mode.

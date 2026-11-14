@@ -22,6 +22,7 @@ Reference: https://github.com/developer4-gif/aq (read remotely, never cloned).
 - **R6 (2026-11-03):** Bring in everything upstream (developer4-gif/aq) pushed on Nov 2-3 (`feature/dev-tools`: smart playlist, dev tools, Nemotron/Colab providers, notes cache), keeping all AQspace work. Then put the whole team to work: each owner reviews and hardens their imported area, and the docs (README, ARCHITECTURE, QA, client notes) are updated to match the current app.
 - **R7 (2026-11-06):** Pull upstream's latest (Nov 5: dashboard, daily streak tracker, liquid-glass bottom nav). **Gemini becomes the default notes provider** (fast for long videos; fallback chain local → Groq ≤1h → NVIDIA). Everything runs from one branch with `docker compose up`, every task is on the GitHub board, and the whole team works on it.
 - **R8 (2026-11-09):** Pull upstream's latest notes engine change (7 Nov) into AQspace, deploy AQspace to a second Mac over SSH, design the AWS architecture, and build a usage and feedback analytics pipeline (warehouse choice such as Snowflake or Databricks) so real traffic and user feedback guide the product. Milestone v0.4, epic #134.
+- **R9 (2026-11-11):** Move AQspace onto a resume-grade stack: **Next.js** (frontend), **FastAPI** (backend), **PostgreSQL + pgvector** (data and semantic search), **Celery + RabbitMQ** (background notes jobs), **Redis** (cache, rate limits, job results), **Kafka** (event stream for activity, analytics and indexing). Each technology must have a real job in the product. Migrate in phases, keeping the app working throughout.
 
 ## Architecture
 | Service | Path | Port | Tech |
@@ -54,3 +55,4 @@ Run with Docker only: `docker compose up --build`.
 | 2026-11-06 | Added R7: upstream Nov 5 import, Gemini default for notes, whole team active | User request | User |
 | 2026-11-09 | Added R8: upstream db9ac6b import, second-Mac deploy, AWS architecture, analytics pipeline (epic #134) | User request | User |
 | 2026-11-11 | Removed the legacy Google sign-in app (backend/, frontend/, Postgres) from preview/latest; compose now runs notes-ai + aq-api only | User approved (card #132, ADR-0001) | User |
+| 2026-11-11 | Added R9: Next.js, FastAPI, PostgreSQL + pgvector, Celery + RabbitMQ, Redis, Kafka | User wants these technologies in the product for their resume | User |
