@@ -6,6 +6,9 @@ never printed.
 
 Exit codes: 0 ok | 1 unexpected error | 2 bad usage / missing key | 3 transcript (ingest) error |
             4 AI provider error | 5 notes made but the PDF could not be drawn (JSON/HTML saved) | 130 Ctrl+C
+
+How it fits: a thin wrapper around ``notes_engine.generate`` / ``render_notes`` (see ``__init__.py``)
+that adds argument parsing, a progress bar and exit codes.
 """
 from __future__ import annotations
 

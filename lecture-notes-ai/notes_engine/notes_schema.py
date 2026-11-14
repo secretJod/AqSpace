@@ -11,6 +11,10 @@ Decisions worth knowing (all deterministic, no network):
   (sections may be dropped/merged during coercion).
 * ``meta`` facts (title, channel, duration, url, language) come from the
   transcript when given; the LLM only contributes the subtitle.
+
+How it fits: the last step of ``llm.generate_notes``; ``pdf.py`` renders its output.
+
+Read next: ``docs/notes-schema.md`` (the schema) and ``pdf.py`` (rendering).
 """
 from __future__ import annotations
 
@@ -19,7 +23,9 @@ import json
 import re
 from typing import Any
 
-# ---------------------------------------------------------------- limits ----
+# ---------------------------------------------------------------------------
+# 1. Limits
+# ---------------------------------------------------------------------------
 MAX_SECTIONS = 24
 MAX_BLOCKS = 14
 MAX_ITEMS = 12
@@ -68,7 +74,9 @@ _WS = re.compile(r"\s+")
 _NUM_PREFIX = re.compile(r"^\s*(?:pg\.?\s*)?\d{1,2}\s*[.):\-–]\s+")
 
 
-# --------------------------------------------------------------- helpers ----
+# ---------------------------------------------------------------------------
+# 2. Helpers
+# ---------------------------------------------------------------------------
 def _to_str(v: Any) -> str:
     if v is None:
         return ""
@@ -177,7 +185,9 @@ def _slug(s: str) -> str:
     return s[:20]
 
 
-# ---------------------------------------------------------------- blocks ----
+# ---------------------------------------------------------------------------
+# 3. Blocks
+# ---------------------------------------------------------------------------
 def _coerce_table(b: dict) -> dict | None:
     headers = _str_list(b.get("headers") or b.get("columns"), 8, 60)
     rows_raw = b.get("rows") or b.get("data") or []
@@ -254,7 +264,9 @@ def _coerce_block(b: Any) -> dict | None:
     return None
 
 
-# --------------------------------------------------------------- diagram ----
+# ---------------------------------------------------------------------------
+# 4. Diagram
+# ---------------------------------------------------------------------------
 _CHILD_KEYS = ("children", "subtopics", "branches", "subnodes")
 _PARENT_KEYS = ("parent", "parent_id", "parentId")
 
@@ -506,7 +518,9 @@ def _coerce_diagram(d: Any) -> dict | None:
             "caption": _line(d.get("caption"), 160), "nodes": nodes, "edges": edges}
 
 
-# -------------------------------------------------------------- sections ----
+# ---------------------------------------------------------------------------
+# 5. Sections
+# ---------------------------------------------------------------------------
 def _coerce_section(s: Any) -> dict | None:
     if not isinstance(s, dict):
         return None
@@ -575,7 +589,9 @@ def _unwrap(raw: Any) -> dict:
     return raw
 
 
-# ------------------------------------------------------------------ main ----
+# ---------------------------------------------------------------------------
+# 6. Main
+# ---------------------------------------------------------------------------
 def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | None = None,
                    max_sections: int = MAX_SECTIONS) -> dict:
     """Coerce ``raw`` into the contract schema. Raises ValueError if unusable.

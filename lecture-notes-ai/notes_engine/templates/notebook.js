@@ -1,7 +1,23 @@
 /* Lecture Notes AI - measured pagination. Runs in the browser (preview) and in headless Edge/Chrome (PDF).
-   Source units live in #source; pages are generated into #pages. Every page gets a chrome (rings, footer, pg. N / M). */
+   Source units live in #source; pages are generated into #pages. Every page gets a chrome (rings, footer, pg. N / M).
+
+   How it fits: notes_engine/render/page_layout.py inlines this script (after Rough.js) into the page.
+   Python decides WHAT is on the page (units of .item divs, diagram layout); this script decides
+   WHERE each item lands, by actually measuring it in fixed-size A4 page boxes.
+
+   Item attributes it reads (set by render/blocks.py and render/sections.py):
+     data-keep="1"     keep this item (a heading) on the same page as the next item
+     data-split="1"    the item may be split; its .sb element's children are the pieces
+     data-minkeep / data-minmove   at least this many pieces stay / move when splitting
+
+   Sections:
+     1. State and page helpers      4. Rough.js drawing
+     2. Placing and splitting items 5. Footers, page numbers and "next ->" links
+     3. Laying out units            6. Zoom and start-up (after the fonts have loaded)
+*/
 (function () {
   'use strict';
+  // ---- 1. State and page helpers -----------------------------------------------------------
   var root = document.documentElement;
   var isPrint = root.getAttribute('data-print') === '1';
   var SLACK = 1;                                   // px tolerance when testing overflow
@@ -13,6 +29,7 @@
   var pages = [];                                  // {el, content, unit}
   var cur = null;
 
+  // true when everything inside the page's content box is visible (nothing overflows)
   function fits(c) { return c.scrollHeight <= c.clientHeight + SLACK; }
 
   function makePage(kind, unit) {
@@ -28,6 +45,7 @@
     return rec;
   }
 
+  // the small "N. title … continued" heading at the top of a page that continues a section
   function contHead(unit) {
     var d = document.createElement('div');
     d.className = 'item cont-head';
@@ -60,6 +78,8 @@
     return true;
   }
 
+  // ---- 2. Placing and splitting items ------------------------------------------------------
+  // last resort for an item taller than a whole empty page: shrink it in 4 % steps until it fits
   function zoomFit(item, content) {
     var base = parseFloat(item.style.zoom || '1') || 1;
     for (var z = 0.96; z >= 0.4; z -= 0.04) {
@@ -68,6 +88,8 @@
     }
   }
 
+  // Split a data-split item: move pieces (.sb children) from its end to a copy on the next page
+  // until the current page fits. Returns false when splitting is not possible / not worth it.
   function trySplit(item, unit) {
     var sb = item.querySelector('.sb');
     if (!sb || item.getAttribute('data-split') !== '1') return false;
@@ -104,6 +126,8 @@
     return true;
   }
 
+  // Put one item on the current page. If it overflows: split it, or shrink it (page otherwise
+  // empty), or move it - with any headings right above it - to a new page.
   function place(item, unit) {
     cur.content.appendChild(item);
     if (fits(cur.content)) return;
@@ -127,6 +151,7 @@
     });
   }
 
+  // ---- 3. Laying out units -----------------------------------------------------------------
   // Units flow one after another (no forced page break per section); a unit only opens a new page
   // when the previous page is the cover or the unit is marked data-break="1".
   function layoutUnit(u) {
@@ -139,11 +164,13 @@
     items.forEach(function (it) { place(it, work); });
   }
 
-  // ---- Rough.js: python computes the layout and emits shape specs; here they are drawn hand-sketched.
+  // ---- 4. Rough.js drawing ------------------------------------------------------------------
+  // Rough.js: python computes the layout and emits shape specs; here they are drawn hand-sketched.
   // Runs BEFORE pagination (on the hidden #source, no layout needed) so measured sizes never change: the
   // svg viewBox is fixed and the drawn strokes live inside it. On any failure the plain python strokes
   // (<g class="py">) stay visible.
   var SVGNS = 'http://www.w3.org/2000/svg';
+  // one spec from render/sketch.py: k = r(ectangle) | e(llipse) | l(ine) | p(ath), a = args, o = options
   function drawSpec(rc, s) {
     var a = s.a, o = s.o || {}, node = null;
     switch (s.k) {
@@ -155,6 +182,7 @@
     if (node && s.op) node.setAttribute('opacity', String(s.op));
     return node;
   }
+  // redraw every diagram in scope with Rough.js; returns {done, failed} (failed = -1: no Rough.js)
   function roughify(scope) {
     var done = 0, failed = 0;
     if (typeof rough === 'undefined' || !rough.svg) return { done: 0, failed: -1 };
@@ -182,6 +210,7 @@
     return { done: done, failed: failed };
   }
 
+  // main flow: draw diagrams, then the cover page as-is, then every other unit item by item
   function paginate() {
     try {
       var rs = roughify(srcEl);
@@ -201,6 +230,8 @@
     finish();
   }
 
+  // ---- 5. Footers, page numbers and "next ->" links --------------------------------------------
+  // runs once all pages exist, so the total page count (M in "pg. N / M") is known
   function finish() {
     var total = pages.length;
     // section number -> page (1-based) where its heading sits; also the page of the first non-section unit after them
@@ -256,6 +287,8 @@
     if (!isPrint) applyZoom();
   }
 
+  // ---- 6. Zoom and start-up ---------------------------------------------------------------------
+  // on screen only: shrink the 794px-wide pages to fit narrow windows
   function applyZoom() {
     var w = window.innerWidth || 800;
     var z = Math.min(1, (w - 16) / 794);
@@ -271,6 +304,7 @@
 
   if (!isPrint) window.addEventListener('resize', function () { if (root.getAttribute('data-paginated')) applyZoom(); });
 
+  // wait until every embedded font has loaded - measuring with fallback fonts would break pages wrongly
   var go = function () {
     if (document.fonts && document.fonts.load) {
       var loads = [];

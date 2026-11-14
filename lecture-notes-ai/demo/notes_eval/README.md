@@ -1,6 +1,6 @@
 # Notes provider evaluation (developer only)
 
-Compares LLM providers for the AQ Learning notes pipeline (`notes_engine.llm.generate_notes`, unchanged)
+Compares LLM providers for the AQspace notes pipeline (`notes_engine.llm.generate_notes`, unchanged)
 on 4 real library videos, 2 runs each, and publishes the results to the dev page
 `http://127.0.0.1:5180/dev/eval.html` (`aq-api/dev-ui/eval.html`, override with `LNAI_EVAL_DEV_UI`; + `eval.js`, `eval.css`, `eval-data.json`).
 
