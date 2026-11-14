@@ -1,29 +1,50 @@
-"""LLM providers + notes generation (plain ``requests``, no vendor SDKs).
+"""Transcript -> study notes, using an AI model (plain ``requests``, no vendor SDKs).
 
-Pipeline
---------
+Start here: ``generate_notes()`` at the bottom of this file.
+
+The pipeline
+------------
 * short lecture  -> ONE call that returns the whole Notes JSON ("single pass");
+                    on Gemini a longer "short" lecture is cut into a few time slices that are
+                    written in parallel ("parallel single pass").
 * long lecture   -> map-reduce:
     1. ``ingest.chunk_transcript`` -> N slices,
-    2. one *digest* call per slice (compact facts only),
-    3. digests are packed into batches; each batch is composed into 2-10 sections,
-    4. one small final call writes subtitle / cover / glossary / recap from the outline,
-    5. ``notes_schema.validate_notes`` coerces everything.
+    2. one *digest* call per slice (compact facts only; checkpointed per chunk),
+    3. very long lectures: digests are folded by hierarchical *merge* levels until they fit,
+    4. digests are packed into batches; each batch is composed into 2-10 sections,
+    5. one small final call writes subtitle / cover / glossary / recap from the outline,
+    6. ``notes_schema.validate_notes`` coerces everything.
   Single pass falls back to map-reduce if the output is truncated or unusable.
 
-Size / token reasoning (rough rule: 1 token ~ 3.3 chars of English transcript; one finished
-notebook section is ~800 output tokens; the rules prompt + schema example ~2k tokens):
-* Groq free tier (llama-3.3-70b-versatile) allows ~12k tokens/minute INCLUDING the requested
-  ``max_tokens``.  So: digest call = 10k chars (3k) + 1k prompt + 1.5k out ~ 5.5k; compose batch =
-  12k chars of digests (3.6k) + 2k prompt + 3.5k out ~ 9k; single pass = 8k chars (2.4k) + 2k +
-  6k out ~ 10.4k.  A client-side pacer sleeps so the trailing-minute total stays under ~85 % of
-  the limit, and 429s sleep per Retry-After / "try again in Xs".
-* Gemini / xAI have huge contexts, so the limits there are *output* limits (2.5/3 models: 32k,
-  older ones: 8k).  Single pass is only attempted when the expected notes (sections x 800 + 1.2k
-  tokens) fit comfortably in the output budget.
+AQspace additions
+-----------------
+* ``local`` provider: an OpenAI-compatible llama-server (LNAI_LOCAL_URL, optional LNAI_LOCAL_KEY),
+  "local" / "local-small" profiles by the server's context size; ``colab`` is a deprecated alias.
+* Gemini RPM pacer (LNAI_GEMINI_RPM): thread-safe, counts in-flight calls, says why it waits;
+  a daily-quota hit marks the client ``quota_dead`` so parallel calls stop.
+* Fallback chain (LNA_PROVIDER_FALLBACK): local -> Groq (videos <= 1 h) -> NVIDIA, one provider per
+  run, never mixing answers; a fallback run never writes to the shared cache.
+* ``_Checkpoints``: every finished step is saved under ``checkpoint_dir/<video_id>/`` so a retry
+  resumes; the cache sits under it, keyed by ``profile_hash`` (+ prompts.PROMPT_VERSION).
+
+How the file is organised
+-------------------------
+1. Re-exports       - names that now live in ``notes_engine/ai/`` (kept importable from here).
+2. Tunables         - timeouts, retry counts; the local server helpers.
+3. Sleeping/pacing  - ``_sleep`` and ``_Pacer`` (tests replace ``llm._sleep``).
+4. ``_Client``      - builds requests, retries HTTP errors, extracts text, asks for JSON.
+5. Pipeline helpers - checkpoints, single pass, parallel single pass, digest, merge, compose, map-reduce.
+6. ``generate_notes`` - the public entry point, with the provider fallback chain.
 
 The API key is only ever put in a request header (never a URL) and is scrubbed from every error
-message.
+message.  Size / token reasoning per provider is explained in ``ai/providers.py``.
+
+Read next: ``ai/providers.py`` (limits), ``prompts.py`` (what we ask), ``notes_schema.py`` (what
+we accept).
+
+Note for maintainers: tests patch ``llm._sleep``, ``llm._get_chunker``, ``llm.local_online``,
+``llm._CTX_SEEN``, ``llm.random``, ``llm.time`` and ``llm.requests`` - so the code that *uses*
+those names must stay in this module.
 """
 from __future__ import annotations
 
@@ -42,205 +63,65 @@ from typing import Any, Callable
 import requests
 
 from . import cache, prompts
+from .ai.errors import LLMError, _BadJSON, _HTTPStatusError, _OutputTruncated, _TransientError
+from .ai.json_repair import loads_lenient, outermost_json, parse_json, salvage_truncated_json, strip_code_fences
+from .ai.key_safety import KEY_PATTERNS, clean_api_key, scrub_secrets
+from .ai.providers import (BASE_PROFILES, CHARS_PER_TOKEN, ENDPOINTS, GEMINI_URL, LOCAL_READ_TIMEOUT,
+                           LOCAL_URL_DEFAULT, PROVIDERS, READ_TIMEOUT, SECTION_TOKENS, SMALL_CTX_MAX,
+                           colab_base_url, local_profile_name, model_profile)
+from .ai.responses import as_dict, as_str, failed_generation_text, is_daily_quota_error, parse_retry_delay
+from .ai.sections import (STOP_WORDS, coverage_needed, find_sections, glossary_from_blocks, join_section_lists,
+                          looks_like_section, pack_batches, title_words, usable_section_count)
 from .notes_schema import format_duration, validate_notes
 
-# ------------------------------------------------------------ public API ----
-PROVIDERS: dict[str, dict] = {
-    "local": {
-        "label": "Local model (Qwen3-8B)",
-        "default_model": "qwen3-8b",
-        "needs_key": False,
-        "key_hint": "No key needed: runs on your own llama-server (LNAI_LOCAL_URL, default http://127.0.0.1:8081/v1; "
-                    "an https URL plus LNAI_LOCAL_KEY for a remote/Colab server)",
-    },
-    "gemini": {
-        "label": "Google Gemini",
-        "default_model": "gemini-3.5-flash-lite",
-        "needs_key": True,
-        "key_hint": "Free key from aistudio.google.com/apikey (starts with AIza...)",
-    },
-    "groq": {
-        "label": "Groq",
-        "default_model": "openai/gpt-oss-120b",
-        "needs_key": True,
-        "key_hint": "Free key from console.groq.com/keys (starts with gsk_...)",
-    },
-    "xai": {
-        "label": "xAI Grok",
-        "default_model": "grok-4",
-        "needs_key": True,
-        "key_hint": "Key from console.x.ai (starts with xai-...)",
-    },
-    "huggingface": {
-        "label": "Hugging Face",
-        "default_model": "meta-llama/Llama-3.3-70B-Instruct",
-        "needs_key": True,
-        "key_hint": "Access token from huggingface.co/settings/tokens with 'Inference Providers' permission (hf_...)",
-    },
-    "nvidia": {
-        "label": "NVIDIA Nemotron",
-        "default_model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
-        "needs_key": True,
-        "key_hint": "Free key from build.nvidia.com (starts with nvapi-...)",
-    },
-    # DEPRECATED alias of "local" (ADR-0004, kept for one release): runs the local provider against
-    # COLAB_LLM_URL with COLAB_LLM_KEY and the local-small profile. Prefer LNAI_LOCAL_URL + LNAI_LOCAL_KEY.
-    "colab": {
-        "label": "Colab Qwen3-8B (deprecated: use Local)",
-        "default_model": "qwen3-8b",
-        "needs_key": True,
-        "deprecated": True,
-        "alias_of": "local",
-        "key_hint": "Deprecated: set LNAI_LOCAL_URL (https) and LNAI_LOCAL_KEY and choose Local. "
-                    "Still reads COLAB_LLM_URL and COLAB_LLM_KEY from backend/.env for one release.",
-    },
-}
+# --------------------------------------------------------------------------- #
+# 1. Re-exports (old private names -> new homes in notes_engine/ai/)
+#    smart_playlist.py, server.py, demo/notes_eval and the tests import these from ``llm``.
+# --------------------------------------------------------------------------- #
 
-_ENDPOINTS = {
-    "groq": "https://api.groq.com/openai/v1/chat/completions",
-    "xai": "https://api.x.ai/v1/chat/completions",
-    "huggingface": "https://router.huggingface.co/v1/chat/completions",
-    "nvidia": "https://integrate.api.nvidia.com/v1/chat/completions",
-}
-LOCAL_URL_DEFAULT = "http://127.0.0.1:8081/v1"
-_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+_ENDPOINTS = ENDPOINTS
+_GEMINI_URL = GEMINI_URL
+_colab_base_url = colab_base_url
+_BASE_PROFILES = BASE_PROFILES
+_profile = model_profile
 
+_KEY_PATTERNS = KEY_PATTERNS
+_scrub = scrub_secrets
+_clean_key = clean_api_key
 
-def _colab_base_url() -> str:
-    """Deprecated alias: the Colab server's base URL (a cloudflared link) from COLAB_LLM_URL, as an
-    OpenAI-compatible ``.../v1`` base for the local provider."""
-    base = (os.environ.get("COLAB_LLM_URL") or "").strip().rstrip("/").removesuffix("/v1")
-    if not re.fullmatch(r"https://[A-Za-z0-9.\-]+(:\d+)?", base):
-        raise LLMError("COLAB_LLM_URL is not set to the https link printed by the Colab server cell.")
-    return base + "/v1"
+_parse_retry_delay = parse_retry_delay
+_daily_quota_hit = is_daily_quota_error
+_to_s = as_str
+_dict = as_dict
+_failed_generation = failed_generation_text
 
+_strip_fences = strip_code_fences
+_outermost = outermost_json
+_loads = loads_lenient
+
+_looks_like_section = looks_like_section
+_as_section_list = find_sections
+_STOP = STOP_WORDS
+_title_words = title_words
+_join_parts = join_section_lists
+_pack_batches = pack_batches
+_usable_count = usable_section_count
+_coverage_needed = coverage_needed
+_glossary_from_blocks = glossary_from_blocks
+
+# progress(stage, percent, message) - the same callback shape the whole engine uses
 Progress = Callable[[str, int, str], None]
 
+# --------------------------------------------------------------------------- #
+# 2. Tunables and the local server
+# --------------------------------------------------------------------------- #
 
-class LLMError(Exception):
-    """User-safe error message (never contains the API key)."""
-
-
-class _BadJSON(LLMError):
-    """The model kept returning unparseable JSON."""
-
-
-class _OutputTruncated(LLMError):
-    """The model hit its output-token limit (``text`` = what it produced before the cut)."""
-
-    def __init__(self, message: str, text: str = ""):
-        super().__init__(message)
-        self.text = text
-
-
-class _TransientError(LLMError):
-    """Rate limit (429), server error (5xx) or timeout - another provider may still work."""
-
-    def __init__(self, message: str, daily_quota: bool = False):
-        super().__init__(message)
-        self.daily_quota = daily_quota
-
-
-class _HTTPStatusError(LLMError):
-    def __init__(self, message: str, status: int, detail: str = "", payload: Any = None):
-        super().__init__(message)
-        self.status, self.detail, self.payload = status, detail, payload
-
-
-# ----------------------------------------------------------- tunables -------
 CONNECT_TIMEOUT = 15
-READ_TIMEOUT = 240
 MAX_ATTEMPTS = 5              # per HTTP call (429 / 5xx / network)
 MAX_RETRY_WAIT = 75           # seconds we are willing to sleep for one retry
 BACKOFF_BASE = 2.0
-SECTION_TOKENS = 800          # expected output tokens per finished section
-CHARS_PER_TOKEN = 3.3
 
-LOCAL_READ_TIMEOUT = 1800   # one compose on an M2 at ~10-20 tok/s can take several minutes
 LOCAL_MAX_ATTEMPTS = 2       # a local server that is down will not come back by retrying 5 times
-
-_BASE_PROFILES: dict[str, dict] = {
-    # Qwen3-8B Q4_K_M on llama.cpp, ctx 16384, 1 slot (numbers from ADR-0003). The biggest call
-    # stays <= ~14k tokens (tokens ~ chars/3.3 worst case; Qwen's tokenizer is nearer chars/4):
-    #   digest  : 24k chars (6-7k) + 0.8k prompt + 1.5k out             ~ 9k
-    #   compose : 20k chars of digests (5-6k) + 2.8k rules/example + 6k out ~ 14k
-    #   final   : outline (trimmed to fit) + 4k out + 1.5k thinking
-    # No rate limits -> no pacer. Thinking off for map/merge/compose, on for the final call.
-    "local": dict(single_chars=12000, chunk_chars=24000, batch_chars=20000, digest_cap=2500,
-                  digest_out=1500, out_single=6000, out_batch=6000, tpm=None, final_out=4000,
-                  final_reasoning_reserve=1500, max_total_sections=200, merge_budget_chars=60000,
-                  merge_fanout=8, read_timeout=LOCAL_READ_TIMEOUT, ctx_tokens=16384),
-    # single_chars: biggest transcript (chars) attempted in one call
-    # chunk_chars: map-stage slice size; batch_chars: digest text per compose call
-    "gemini": dict(single_chars=90000, chunk_chars=36000, batch_chars=40000, digest_cap=5000,
-                   digest_out=3000, out_single=None, out_batch=None, tpm=None),
-    "groq": dict(single_chars=8000, chunk_chars=10000, batch_chars=12000, digest_cap=3000,
-                 digest_out=1500, out_single=6000, out_batch=3500, tpm=12000),
-    "xai": dict(single_chars=100000, chunk_chars=40000, batch_chars=40000, digest_cap=5000,
-                digest_out=3000, out_single=16000, out_batch=12000, tpm=None),
-    "huggingface": dict(single_chars=20000, chunk_chars=10000, batch_chars=14000, digest_cap=3500,
-                        digest_out=2000, out_single=8000, out_batch=5000, tpm=None),
-    # NVIDIA NIM free tier: ~40 requests/minute, no daily token cap; large-context Nemotron models
-    "nvidia": dict(single_chars=40000, chunk_chars=20000, batch_chars=20000, digest_cap=4000,
-                   digest_out=2500, out_single=12000, out_batch=8000, tpm=None),
-    # self-hosted Qwen3-8B (llama.cpp on a Colab T4, 16k context, ~33 tok/s): small slices keep every
-    # call well inside the context window and each call short
-    # local-small: the same Qwen3-8B on a llama-server with <= 8K context (upstream's Colab T4 sizes).
-    # Chosen when the server reports n_ctx <= SMALL_CTX_MAX (or LNAI_LOCAL_CTX says so), and always
-    # for the deprecated "colab" alias. Small slices keep every call inside the window.
-    "local-small": dict(single_chars=6000, chunk_chars=8000, batch_chars=8000, digest_cap=2500,
-                        digest_out=1500, out_single=5000, out_batch=4000, tpm=None, final_out=3000,
-                        final_reasoning_reserve=0, max_total_sections=200, merge_budget_chars=40000,
-                        merge_fanout=8, read_timeout=LOCAL_READ_TIMEOUT, ctx_tokens=8192),
-}
-SMALL_CTX_MAX = 8192
-
-
-def _profile(provider: str, model: str) -> dict:
-    """Tunables for a provider id or a profile name ("local-small")."""
-    p = dict(_BASE_PROFILES[provider])
-    ml = model.lower()
-    if provider == "gemini":
-        big = re.search(r"gemini-(2\.5|3)", ml) is not None
-        out = 32768 if big else 8192
-        p["out_single"], p["out_batch"] = out, min(out, 16000)
-    if provider == "groq" and "gpt-oss" in ml:
-        # gpt-oss-120b / -20b on the Groq free tier: ~8k tokens/minute (input + max_tokens), and they
-        # are reasoning models: reasoning tokens are billed against max_tokens, so every call reserves
-        # ~1.2k of its budget for them (reasoning_effort "low" keeps it near that).
-        # Per request (tokens ~ chars/3.3; rules prompt ~1.3k):
-        #   digest  : 5k chars (1.5k) + 0.7k prompt + 2k out            ~ 4.2k
-        #   compose : 4k chars of digests (1.2k) + 1.9k prompt + 3k out ~ 6.1k   (<= 85 % of 8k = 6.8k)
-        # A single pass never fits (6+ sections need > 6k output tokens) -> always map-reduce.
-        p.update(single_chars=2500, chunk_chars=5000, batch_chars=4000, digest_cap=2000,
-                 digest_out=2000, out_single=3000, out_batch=3000, tpm=8000,
-                 reasoning_effort="low", reasoning_reserve=1200, final_out=2800)
-    elif provider == "groq" and "qwen" in ml:
-        # qwen3.x on Groq free tier: ~6k tokens/minute. Thinking is switched off (reasoning_effort
-        # "none"; dropped automatically if the model rejects it) and <think> blocks are stripped.
-        p.update(single_chars=2000, chunk_chars=4000, batch_chars=3000, digest_cap=1600,
-                 digest_out=1600, out_single=2500, out_batch=2500, tpm=6000,
-                 reasoning_effort="none", reasoning_reserve=500, final_out=2200)
-    elif provider == "groq" and re.search(r"(^|[-/])8b|instant", ml):
-        # llama-3.1-8b-instant: only ~6k tokens/minute on the free tier
-        p.update(single_chars=3000, chunk_chars=5000, batch_chars=6000, digest_cap=2000,
-                 digest_out=1000, out_single=3000, out_batch=2000, tpm=6000)
-    # concurrent requests one job may run (Gemini: slice the lecture and write the slices in parallel;
-    # the shared RPM pacer still spaces every request, so parallelism never breaks the free-tier limit)
-    p.setdefault("parallel", 4 if provider == "gemini" else 1)
-    p.setdefault("reasoning_effort", None)   # sent to the provider when set (Groq reasoning models)
-    p.setdefault("reasoning_reserve", 0)     # output tokens a reasoning model may burn before the answer
-    p.setdefault("final_out", 3000)
-    p.setdefault("final_reasoning_reserve", 0)  # thinking budget for the final call only (local)
-    p.setdefault("max_total_sections", 18)      # cap on the whole notebook (cloud: keep it short)
-    p.setdefault("merge_budget_chars", None)    # digests above this -> hierarchical merge levels
-    p.setdefault("merge_fanout", 8)
-    p.setdefault("read_timeout", READ_TIMEOUT)
-    p.setdefault("ctx_tokens", None)
-    # sections one compose call can reliably return: answer budget = out_batch - reasoning reserve
-    answer = p["out_batch"] - p["reasoning_reserve"]
-    p["max_sections_per_call"] = max(1, min(10, int(answer * 0.9 / SECTION_TOKENS)))
-    return p
 
 
 def local_key() -> str:
@@ -281,10 +162,6 @@ def local_server_ctx(base: str | None = None, key: str | None = None, timeout: f
     return n
 
 
-def local_profile_name(ctx: int | None, force_small: bool = False) -> str:
-    return "local-small" if force_small or (ctx is not None and ctx <= SMALL_CTX_MAX) else "local"
-
-
 def local_base_url() -> str:
     """OpenAI-compatible base URL of the local llama-server (LNAI_LOCAL_URL; http or https)."""
     url = (os.environ.get("LNAI_LOCAL_URL") or "").strip() or LOCAL_URL_DEFAULT
@@ -303,58 +180,11 @@ def local_online(timeout: float = 1.0) -> bool:
         return False
 
 
-# ----------------------------------------------------------- utilities ------
+# --------------------------------------------------------------------------- #
+# 3. Sleeping and pacing
+# --------------------------------------------------------------------------- #
 def _sleep(sec: float) -> None:
     time.sleep(max(0.0, sec))
-
-
-_KEY_PATTERNS = re.compile(
-    r"(AIza[0-9A-Za-z_\-]{20,}|gsk_[A-Za-z0-9]{20,}|xai-[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}"
-    r"|sk-[A-Za-z0-9_\-]{20,}|Bearer\s+[A-Za-z0-9._\-]{12,})")
-
-
-def _scrub(text: Any, key: str | None, limit: int = 300) -> str:
-    s = str(text or "")
-    if key:
-        s = s.replace(key, "***")
-    s = _KEY_PATTERNS.sub("***", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s if len(s) <= limit else s[: limit - 1] + "…"
-
-
-def _parse_retry_delay(resp: Any) -> float | None:
-    """Seconds to wait, from Retry-After header or provider-specific body hints."""
-    try:
-        ra = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
-    except Exception:  # noqa: BLE001
-        ra = None
-    if ra:
-        try:
-            return max(0.0, float(ra))
-        except ValueError:
-            pass
-    body = ""
-    try:
-        body = resp.text or ""
-    except Exception:  # noqa: BLE001
-        pass
-    m = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', body)  # Gemini
-    if m:
-        return float(m.group(1))
-    m = re.search(r"try again in\s+(?:(\d+)h)?(?:(\d+)m(?!s))?(?:(\d+(?:\.\d+)?)(ms|s))?", body)  # Groq
-    if m and any(m.groups()[:3]):
-        h, mi, sec, unit = m.groups()
-        total = int(h or 0) * 3600 + int(mi or 0) * 60
-        if sec:
-            total += float(sec) / (1000 if unit == "ms" else 1)
-        return total
-    return None
-
-
-def _daily_quota_hit(body: str) -> bool:
-    b = body.lower()
-    return any(t in b for t in ("perday", "per day", "tokens per day", "(tpd)", "requests per day",
-                                "(rpd)", "daily limit", "daily quota", '"limit": 0', "limit: 0"))
 
 
 GEMINI_RPM_DEFAULT = 10  # free-tier Flash / Flash-Lite allow ~10-15 requests per minute
@@ -422,118 +252,9 @@ class _Pacer:
                 self.log.append((time.monotonic(), est_tokens))
 
 
-# ------------------------------------------------------------- JSON repair --
-def _strip_fences(text: str) -> str:
-    t = text.strip()
-    m = re.match(r"^```[a-zA-Z0-9_-]*\s*\n?(.*?)\n?```\s*$", t, re.S)
-    if m:
-        return m.group(1).strip()
-    if t.startswith("```"):
-        t = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", t)
-        t = re.sub(r"```\s*$", "", t)
-    return t.strip()
-
-
-def _outermost(text: str) -> str | None:
-    """Substring from the first '{' or '[' to its matching closer (string-aware)."""
-    starts = [i for i in (text.find("{"), text.find("[")) if i >= 0]
-    if not starts:
-        return None
-    start = min(starts)
-    stack: list[str] = []
-    in_str = esc = False
-    for i in range(start, len(text)):
-        c = text[i]
-        if in_str:
-            if esc:
-                esc = False
-            elif c == "\\":
-                esc = True
-            elif c == '"':
-                in_str = False
-            continue
-        if c == '"':
-            in_str = True
-        elif c in "{[":
-            stack.append("}" if c == "{" else "]")
-        elif c in "}]":
-            if stack and stack[-1] == c:
-                stack.pop()
-                if not stack:
-                    return text[start:i + 1]
-            else:
-                return None
-    return None
-
-
-def _loads(s: str) -> Any:
-    try:
-        return json.loads(s, strict=False)
-    except json.JSONDecodeError:
-        fixed = re.sub(r",\s*([}\]])", r"\1", s)  # trailing commas
-        return json.loads(fixed, strict=False)
-
-
-def parse_json(text: str) -> Any:
-    """Parse model output into a dict/list: strips ``` fences, extracts the outermost {...}."""
-    if not text or not text.strip():
-        raise ValueError("empty response")
-    cleaned = _strip_fences(text)
-    candidates = [cleaned]
-    outer = _outermost(cleaned)
-    if outer and outer != cleaned:
-        candidates.append(outer)
-    last: Exception | None = None
-    for c in candidates:
-        try:
-            val = _loads(c)
-            if isinstance(val, (dict, list)):
-                return val
-        except json.JSONDecodeError as e:
-            last = e
-    raise ValueError(str(last) if last else "no JSON object found")
-
-
-def salvage_truncated_json(text: str) -> Any:
-    """Best-effort close of JSON cut off by an output limit (drops the dangling tail)."""
-    s = _strip_fences(text)
-    start = min([i for i in (s.find("{"), s.find("[")) if i >= 0] or [-1])
-    if start < 0:
-        raise ValueError("no JSON found")
-    s = s[start:]
-    for _ in range(80):
-        stack: list[str] = []
-        in_str = esc = False
-        for c in s:
-            if in_str:
-                if esc:
-                    esc = False
-                elif c == "\\":
-                    esc = True
-                elif c == '"':
-                    in_str = False
-            elif c == '"':
-                in_str = True
-            elif c in "{[":
-                stack.append("}" if c == "{" else "]")
-            elif c in "}]" and stack:
-                stack.pop()
-        cand = s + ('"' if in_str else "")
-        cand = re.sub(r",\s*$", "", cand) + "".join(reversed(stack))
-        try:
-            val = _loads(cand)
-            if isinstance(val, (dict, list)):
-                return val
-        except json.JSONDecodeError:
-            pass
-        cut = s.rfind(",")
-        if cut <= 0:
-            break
-        s = s[:cut]
-    raise ValueError("could not salvage truncated JSON")
-
-
-# ------------------------------------------------------------------ client --
+# --------------------------------------------------------------------------- #
+# 4. The HTTP client for one provider + model
+# --------------------------------------------------------------------------- #
 class _Client:
     def __init__(self, provider: str, api_key: str, model: str, *, base_url: str | None = None,
                  profile_name: str | None = None, cache_writes: bool = True):
@@ -795,21 +516,9 @@ class _Client:
             raise _BadJSON(f"{self.label} returned malformed JSON twice. Try again, or pick a different model.") from None
 
 
-def _to_s(v: Any) -> str:
-    return v if isinstance(v, str) else ("" if v is None else str(v))
-
-
-def _dict(v: Any) -> dict:
-    return v if isinstance(v, dict) else {}
-
-
-def _failed_generation(payload: Any) -> str | None:
-    err = _dict(_dict(payload).get("error"))
-    fg = err.get("failed_generation")
-    return fg if isinstance(fg, str) and fg.strip() else None
-
-
-# -------------------------------------------------------------- pipeline ----
+# --------------------------------------------------------------------------- #
+# 5. Pipeline helpers
+# --------------------------------------------------------------------------- #
 def _get_chunker() -> Callable[..., list[dict]]:
     from .ingest import chunk_transcript  
     return chunk_transcript
@@ -827,37 +536,6 @@ class _Reporter:
                 self.cb("notes", max(0, min(100, int(pct))), msg)
             except Exception:  # noqa: BLE001 - a broken progress callback must not kill the job
                 pass
-
-
-def _looks_like_section(v: Any) -> bool:
-    return isinstance(v, dict) and ("blocks" in v or "key_takeaways" in v) and ("title" in v or "heading" in v)
-
-
-def _as_section_list(obj: Any, _depth: int = 0) -> list:
-    """Find the sections in whatever shape the model chose: {"sections": [...]}, {"pages": [...]},
-    {"section": {...}}, a bare section object, a bare list, or any of these nested one level down."""
-    if _depth > 3:
-        return []
-    if isinstance(obj, list):
-        if any(_looks_like_section(v) for v in obj):
-            return [v for v in obj if isinstance(v, dict)]
-        found = [s for v in obj for s in _as_section_list(v, _depth + 1)]
-        return found or obj
-    if not isinstance(obj, dict):
-        return []
-    if _looks_like_section(obj):
-        return [obj]
-    for k in ("sections", "pages", "notebook_pages", "notes", "section", "page", "items"):
-        if k in obj:
-            got = _as_section_list(obj[k], _depth + 1)
-            if got:
-                return got
-    for v in obj.values():
-        if isinstance(v, (dict, list)):
-            got = _as_section_list(v, _depth + 1)
-            if got:
-                return got
-    return []
 
 
 def _meta_for_prompt(transcript: dict) -> dict:
@@ -977,38 +655,6 @@ def _part_count(client: _Client, n_target: int) -> int:
     if par <= 1 or n_target < 7:
         return 1
     return max(1, min(par, math.ceil(n_target / SECTIONS_PER_PART)))
-
-
-_STOP = {"the", "a", "an", "and", "of", "in", "on", "to", "for", "vs", "with", "from", "how", "what", "is",
-         "llm", "llms", "model", "models", "stage", "into", "via", "its", "under", "over", "between", "by",
-         "as", "at", "or", "part", "intro", "introduction", "basics", "overview"}
-
-
-def _title_words(s: Any) -> set[str]:
-    t = _to_s(s.get("title") if isinstance(s, dict) else "").lower()
-    return {w for w in re.findall(r"[a-z0-9][a-z0-9\-]+", t) if w not in _STOP}
-
-
-def _join_parts(left: list, right: list) -> list:
-    """Concatenate two consecutive slices' sections. A topic cut by the slice boundary tends to come
-    back twice (end of one slice, start of the next); when the two boundary titles clearly name the
-    same topic (2+ shared content words that make up at least half of the shorter title), merge them
-    into one section instead of printing the topic twice."""
-    if not left or not right or not isinstance(left[-1], dict) or not isinstance(right[0], dict):
-        return left + right
-    a, b = left[-1], right[0]
-    wa, wb = _title_words(a), _title_words(b)
-    common = len(wa & wb)
-    if common < 2 or common / max(1, min(len(wa), len(wb))) < 0.5:
-        return left + right
-    blocks_a = a.get("blocks") if isinstance(a.get("blocks"), list) else []
-    blocks_b = b.get("blocks") if isinstance(b.get("blocks"), list) else []
-    take = [t for t in (a.get("key_takeaways") or []) + (b.get("key_takeaways") or []) if isinstance(t, str)]
-    merged = dict(a)
-    merged["blocks"] = (blocks_a + [x for x in blocks_b if x not in blocks_a])[:8]
-    merged["diagram"] = a.get("diagram") or b.get("diagram")
-    merged["key_takeaways"] = list(dict.fromkeys(take))[:3]
-    return left[:-1] + [merged] + right[1:]
 
 
 def _parallel_single(client: _Client, transcript: dict, text_chars: int, meta: dict, parts: int,
@@ -1170,38 +816,6 @@ def _merge_levels(client: _Client, digests: list[str], meta: dict, report: _Repo
     return digests
 
 
-def _pack_batches(digests: list[str], max_chars: int, min_batches: int = 1) -> list[list[str]]:
-    """Group consecutive digests; use at least ``min_batches`` groups (if there are that many digests)
-    so each compose call only has to write a few sections for its own slice of the lecture."""
-    total = sum(len(d) for d in digests)
-    if min_batches > 1 and len(digests) >= min_batches:
-        max_chars = min(max_chars, max(1, math.ceil(total / min_batches)))
-    batches: list[list[str]] = []
-    cur: list[str] = []
-    size = 0
-    for d in digests:
-        if cur and size + len(d) > max_chars:
-            batches.append(cur)
-            cur, size = [], 0
-        cur.append(d)
-        size += len(d)
-    if cur:
-        batches.append(cur)
-    return batches
-
-
-def _usable_count(sections: list, max_sections: int = 10 ** 4) -> int:
-    try:
-        return len(validate_notes({"sections": sections}, max_sections=max_sections)["sections"])
-    except ValueError:
-        return 0
-
-
-def _coverage_needed(target: int) -> int:
-    """Minimum acceptable number of sections: ~70 % of the target."""
-    return max(1, math.ceil(0.7 * target))
-
-
 def _compose_covered(client: _Client, meta: dict, digs: list[str], n: int, cap: int,
                      prior: list[str], no: int, total: int) -> list:
     """Compose one batch asking for ``n`` sections; if the model returns < 70 % of that, retry once
@@ -1342,27 +956,11 @@ def _final_messages_fit(client: _Client, meta: dict, outline: list[dict], terms:
     return msgs
 
 
-def _glossary_from_blocks(sections: list) -> list[dict]:
-    g = []
-    for s in sections:
-        for b in (s.get("blocks") or []) if isinstance(s, dict) else []:
-            if isinstance(b, dict) and b.get("type") == "definition" and b.get("term") and b.get("text"):
-                g.append({"term": b["term"], "definition": b["text"]})
-    return g[:20]
-
-
-def _clean_key(api_key: str | None) -> str:
-    key = (api_key or "").strip().strip("\"'").strip()
-    if key.lower().startswith("bearer "):
-        key = key[7:].strip()
-    if not key:
-        raise LLMError("No API key was provided. Paste your key in the app or set it in the environment (e.g. GROQ_API_KEY) or backend/.env.")
-    if not key.isascii() or re.search(r"\s", key):
-        raise LLMError("The API key contains spaces or unusual characters. Re-copy it without quotes or line breaks.")
-    return key
-
-
 # provider id -> env var holding a SERVER-side key (mirrors backend/app/server.py ENV_KEYS)
+# --------------------------------------------------------------------------- #
+# 6. Public entry point: provider fallback chain + generate_notes
+# --------------------------------------------------------------------------- #
+
 SERVER_KEY_ENV = {
     "gemini": "GEMINI_API_KEY",
     "groq": "GROQ_API_KEY",

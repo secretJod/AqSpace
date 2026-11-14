@@ -7,6 +7,11 @@ Pipeline shapes (llm.py decides which one runs):
                 compose_final_messages         -> {subtitle, cover, glossary, recap}
 
 All builders return ``(system, user)`` strings.  Every prompt demands JSON only.
+
+How it fits: ``llm.py`` calls these builders and sends the result to the provider;
+``notes_schema.validate_notes`` then cleans whatever comes back.
+
+Read next: ``notes_schema.py`` (what we accept back) or ``llm.py`` (who calls these).
 """
 from __future__ import annotations
 
@@ -17,7 +22,9 @@ from typing import Any
 # Bump when any prompt changes: it is part of the checkpoint key, so old cached chunks are not reused.
 PROMPT_VERSION = "2026-11-09.1"
 
-# ------------------------------------------------------------ shared text ----
+# ---------------------------------------------------------------------------
+# 1. Shared text
+# ---------------------------------------------------------------------------
 RULES = """\
 You write STUDY NOTES from a lecture/video transcript, in the voice of a diligent student's hand-written field notebook: terse, concrete, well organised, lower-case friendly section titles (like "architecture, the 30,000ft map" or "session & auth").
 
@@ -99,7 +106,9 @@ def _meta_line(meta: dict) -> str:
     return "; ".join(bits)
 
 
-# ------------------------------------------------------------------ digest ----
+# ---------------------------------------------------------------------------
+# 2. Digest
+# ---------------------------------------------------------------------------
 DIGEST_SYSTEM = """\
 You are the first stage of a lecture-note pipeline. You read ONE slice of a transcript and extract ONLY its teachable knowledge as compact, faithful facts that a second stage will turn into notebook pages.
 
@@ -167,7 +176,9 @@ def digest_to_text(d: Any, max_chars: int) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1].rsplit("\n", 1)[0]
 
 
-# ----------------------------------------------------------------- compose ----
+# ---------------------------------------------------------------------------
+# 3. Compose
+# ---------------------------------------------------------------------------
 COMPOSE_SYSTEM = RULES
 
 
@@ -329,7 +340,9 @@ TRANSCRIPT:
     return COMPOSE_SYSTEM, user
 
 
-# ------------------------------------------------- Gemini response schemas ----
+# ---------------------------------------------------------------------------
+# 4. Gemini response schemas
+# ---------------------------------------------------------------------------
 # Gemini's structured output (``responseJsonSchema``) guarantees syntactically valid JSON, which
 # removes the costly "repair the JSON" round trip.  Shapes are permissive (one flat block object with
 # optional fields); notes_schema.validate_notes still does the real coercion.

@@ -18,6 +18,11 @@ Public surface:
 Transcripts come from ``ingest.get_transcript`` (so they share its 30-day disk cache with the notes pipeline).
 A video whose transcript cannot be fetched is still analysed from its title and channel, and `checks` says so.
 The API key is only handled by ``llm._Client`` (header only, scrubbed from errors).
+
+How it fits: reuses ``llm._Client`` (HTTP, retries, JSON repair) and ``ingest.get_transcript``;
+``backend/app/server.py`` calls ``analyze``.  Contract: ``docs/smart-playlist-contract.md``.
+
+Read next: ``verify()`` (the plain-code checks) and then ``analyze()`` at the bottom.
 """
 from __future__ import annotations
 
@@ -41,7 +46,9 @@ MIN_CANDIDATE_SEC, MAX_CANDIDATE_SEC = 120, 1500
 LEVELS = ("beginner", "intermediate", "advanced")
 KINDS = ("overview", "deep-dive", "practice")
 
-# --------------------------------------------------------------------------------------------- prompts
+# ---------------------------------------------------------------------------
+# 1. Prompts
+# ---------------------------------------------------------------------------
 SYS_1 = """You are the Profiler in a learning-playlist assistant. You read transcript excerpts of several videos and \
 describe what each video actually teaches. Use ONLY what the excerpt says. Never add outside knowledge.
 
@@ -101,7 +108,9 @@ VIDEO PROFILES:
 {profiles}"""
 
 
-# --------------------------------------------------------------------------------------------- helpers
+# ---------------------------------------------------------------------------
+# 2. Helpers
+# ---------------------------------------------------------------------------
 def _report(cb: Progress | None, stage: str, pct: int, msg: str) -> None:
     if cb:
         try:
@@ -162,7 +171,9 @@ def _clean_videos(videos: list[dict]) -> list[dict]:
     return out
 
 
-# --------------------------------------------------------------------------------------------- transcripts
+# ---------------------------------------------------------------------------
+# 3. Transcripts
+# ---------------------------------------------------------------------------
 def _fetch_excerpts(videos: list[dict], progress: Progress | None, *, groq_key: str | None = None,
                     work_dir: str | None = None) -> None:
     """Adds `excerpt` to every video ("" when no transcript could be fetched).
@@ -186,7 +197,9 @@ def _fetch_excerpts(videos: list[dict], progress: Progress | None, *, groq_key: 
         list(pool.map(one, videos))
 
 
-# --------------------------------------------------------------------------------------------- agents
+# ---------------------------------------------------------------------------
+# 4. Agents
+# ---------------------------------------------------------------------------
 def _video_block(v: dict) -> str:
     excerpt = v["excerpt"] or "(transcript unavailable - judge from the title only, topics must be empty)"
     return (f'--- video_id: {v["id"]}\ntitle: {v["title"]}\nchannel: {v["channel"]}\n'
@@ -237,7 +250,9 @@ def _grounded_profiles(inputs: dict, agent1: dict) -> tuple[dict, dict]:
     return out, {"topics_claimed": total, "topics_grounded": kept}
 
 
-# --------------------------------------------------------------------------------------------- verification
+# ---------------------------------------------------------------------------
+# 5. Verification
+# ---------------------------------------------------------------------------
 def verify(inputs: dict, a1: dict, a2: dict, a3: dict) -> dict:
     """Turns raw agent answers into a safe Result (candidates still empty) and records every correction in `checks`.
 
@@ -319,7 +334,9 @@ def verify(inputs: dict, a1: dict, a2: dict, a3: dict) -> dict:
                       "suggestions": len(suggestions), "candidates_found": 0}}
 
 
-# --------------------------------------------------------------------------------------------- candidates
+# ---------------------------------------------------------------------------
+# 6. Candidates
+# ---------------------------------------------------------------------------
 def _search_youtube(query: str, exclude: set[str], limit: int = CANDIDATES_PER_TOPIC) -> list[dict]:
     """Real YouTube search results via yt-dlp (no API key). Skips videos already in the playlist and very short/long ones."""
     try:
@@ -357,7 +374,9 @@ def _add_candidates(result: dict, known: set[str]) -> None:
                             "(candidates are search results, not yet vetted against the transcript).")
 
 
-# --------------------------------------------------------------------------------------------- usage ledger
+# ---------------------------------------------------------------------------
+# 7. Usage ledger
+# ---------------------------------------------------------------------------
 class _Meter:
     """Counts the real tokens and seconds of every HTTP call a client makes (Gemini and OpenAI-style responses)."""
 
@@ -377,7 +396,9 @@ class _Meter:
         client._post = metered_post
 
 
-# --------------------------------------------------------------------------------------------- public API
+# ---------------------------------------------------------------------------
+# 8. Public API
+# ---------------------------------------------------------------------------
 def analyze(goal: str, videos: list[dict], provider: str, api_key: str, model: str | None = None,
             progress: Progress | None = None, *, groq_key: str | None = None, work_dir: str | None = None) -> dict:
     """Playlist goal + videos [{id,title,channel,duration_sec}] -> {"result": Result, "usage": Usage}.

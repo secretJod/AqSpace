@@ -5,6 +5,14 @@ tests stay free of side effects.  Entries are JSON files ``<dir>/<namespace>/<ke
 a missing, unreadable or corrupt file is simply a miss.  Once the cache is bigger than ``LNA_CACHE_MAX_MB``
 (default 300) the least recently used files are deleted.  Keys are hashes or validated ids, and API keys are
 never part of a key or a value.
+
+How it fits: ``ingest.get_transcript`` stores transcripts here (namespace "transcript", 30 days);
+``llm.py`` stores accepted digest and compose answers (namespaces "digest" and "compose").  The full
+prompt text is part of each LLM cache key, so changing a prompt or model never reuses old answers.
+
+Sections: 1. settings + paths   2. get / put   3. eviction (least recently used first)
+
+Read next: ``llm._digest_one`` / ``llm._compose_covered`` to see how keys are built.
 """
 from __future__ import annotations
 
@@ -16,6 +24,10 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+# --------------------------------------------------------------------------- #
+# 1. Settings and paths
+# --------------------------------------------------------------------------- #
 
 ENV_DIR = "LNA_CACHE_DIR"
 # where backend/run.py points LNA_CACHE_DIR by default (git-ignored; Docker: /app/backend/output/cache)
@@ -43,6 +55,11 @@ def _path(namespace: str, key: str) -> Path | None:
     if root is None or not _SAFE.fullmatch(namespace) or not _SAFE.fullmatch(key):
         return None
     return root / namespace / f"{key}.json"
+
+
+# --------------------------------------------------------------------------- #
+# 2. Reading and writing entries
+# --------------------------------------------------------------------------- #
 
 
 def get(namespace: str, key: str, max_age_sec: float | None = None) -> Any | None:
@@ -88,7 +105,13 @@ def put(namespace: str, key: str, value: Any) -> None:
     _evict()
 
 
+# --------------------------------------------------------------------------- #
+# 3. Eviction
+# --------------------------------------------------------------------------- #
+
+
 def _evict() -> None:
+    """Delete least-recently-used files until the cache is under 90 % of its size limit."""
     root = _root()
     if root is None:
         return

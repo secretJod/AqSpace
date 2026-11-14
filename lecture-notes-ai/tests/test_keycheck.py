@@ -37,11 +37,25 @@ def test_whitespace_and_quotes_stripped_and_warned_once(caplog):
     assert len(caplog.records) == 1
 
 
-def test_inner_whitespace_and_prefix(caplog):
-    env = {"GROQ_API_KEY": "gsk_ab cd", "NVIDIA_API_KEY": "sk-wrong"}
+def test_inner_whitespace_flagged(caplog):
+    env = {"GROQ_API_KEY": "gsk_ab cd"}
     found, _ = run(env, caplog)
     assert found["GROQ_API_KEY"] == ["inner whitespace"]
-    assert found["NVIDIA_API_KEY"] == ["unexpected prefix (expected nvapi-...)"]
+
+
+def test_unfamiliar_prefix_is_not_flagged(caplog):
+    """#127: a working key with another prefix (providers change formats) must not be called malformed."""
+    env = {"GEMINI_API_KEY": "AQ.Ab8RN6working-key", "NVIDIA_API_KEY": "sk-other-format", "GROQ_API_KEY": "x" * 40}
+    found, text = run(env, caplog)
+    assert found == {} and text == ""
+    assert env["GEMINI_API_KEY"] == "AQ.Ab8RN6working-key"
+
+
+def test_unfamiliar_prefix_still_cleaned(caplog):
+    env = {"GEMINI_API_KEY": ' "AQ.Ab8RN6working-key" '}
+    found, _ = run(env, caplog)
+    assert env["GEMINI_API_KEY"] == "AQ.Ab8RN6working-key"
+    assert found["GEMINI_API_KEY"] == ["surrounding whitespace", "quotes"]
 
 
 def test_never_logs_value_or_length(caplog):

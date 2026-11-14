@@ -15,6 +15,18 @@ Building blocks (re-exported, imported lazily so ``import notes_engine`` stays c
     render_html(notes) / render_pdf(notes, path)
     IngestError, LLMError, PdfError          # user-safe exceptions
     PROVIDERS                                # {id: {label, default_model, key_hint, ...}}
+
+Package map (see docs/ARCHITECTURE.md, section "AI engine")::
+
+    ingest.py        YouTube -> transcript (helpers in transcripts/)
+    llm.py           transcript -> notes JSON via an AI provider (helpers in ai/)
+    prompts.py       the prompt texts and JSON schemas sent to the model
+    notes_schema.py  validate / repair the model's JSON
+    cache.py         optional disk cache (transcripts, LLM answers)
+    smart_playlist.py  AI analysis of a whole playlist
+    pdf.py           notes JSON -> HTML / PDF
+
+Read next: ``generate()`` below, then ``ingest.get_transcript`` and ``llm.generate_notes``.
 """
 from __future__ import annotations
 

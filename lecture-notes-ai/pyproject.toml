@@ -34,7 +34,7 @@ whisper = ["faster-whisper>=1.0", "imageio-ffmpeg>=0.5"]
 lecture-notes = "notes_engine.__main__:main"
 
 [tool.setuptools]
-packages = ["notes_engine"]
+packages = ["notes_engine", "notes_engine.render"]
 
 [tool.setuptools.package-data]
 notes_engine = ["templates/*", "templates/vendor/*", "static/fonts/*"]

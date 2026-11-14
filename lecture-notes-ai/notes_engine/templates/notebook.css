@@ -1,4 +1,19 @@
-/* Lecture Notes AI - field-notebook stylesheet (screen preview + A4 print). */
+/* Lecture Notes AI - field-notebook stylesheet (screen preview + A4 print).
+
+   How it fits: notes_engine/render/page_layout.py inlines this file into every notebook page.
+   Class names come from the Python renderer (render/blocks.py, sections.py, cover.py, diagrams.py)
+   and from notebook.js (.page, .content, .foot-l/.foot-r, .cont-head, .cut-before/.cut-after).
+   Page size is fixed at 794 x 1122 px (= A4 at 96 dpi); notebook.js measures against it, so
+   changing sizes here changes where pages break.
+
+   Sections:
+     1. Theme variables         5. Diagrams
+     2. Page and print setup    6. Takeaways / recall
+     3. Section headers         7. Glossary & recap
+     4. Content blocks          8. Cover
+*/
+
+/* ---------- 1. theme variables (colours, fonts, wobbly border radii) ---------- */
 :root{
   --ink:#2b2622; --ink-soft:#5a5148; --paper:#f6f1e3; --paper-edge:#ece4cf; --card:#fffdf6;
   --yellow:#fbeb9a; --yellow-edge:#b8960f; --red:#b03a2e; --green:#2e7d4f; --blue:#2f5f8f;
@@ -10,6 +25,7 @@
   --wob:255px 18px 225px 18px / 18px 225px 18px 255px;
   --wob2:18px 235px 16px 245px / 245px 16px 235px 18px;
 }
+/* ---------- 2. page and print setup (paper, dot grid, rings column, footer) ---------- */
 @page{ size:A4; margin:0 }
 *{ box-sizing:border-box }
 html,body{ margin:0; padding:0 }
@@ -38,7 +54,7 @@ body{ background:#cfc8b5; font-family:var(--f-body); color:var(--ink); -webkit-p
   #pages{ zoom:1 !important; transform:none !important }
 }
 
-/* ---------- section header ---------- */
+/* ---------- 3. section header (and the "… continued" header on follow-up pages) ---------- */
 .item{ position:relative }
 .sec-head{ display:flex; align-items:baseline; flex-wrap:wrap; column-gap:12px; padding:2px 0 0; margin:0 0 8px; position:relative }
 .content > .sec-head:not(:first-child){ margin-top:16px; padding-top:12px; border-top:1.5px dashed rgba(43,38,34,.22) }
@@ -51,7 +67,8 @@ body{ background:#cfc8b5; font-family:var(--f-body); color:var(--ink); -webkit-p
 .cont-head em{ font:italic 300 16px 'NB Kalam Light','NB Kalam',cursive; color:var(--ink-soft) }
 .cont-head svg.ul{ display:block; width:100%; height:7px; margin-top:-3px }
 
-/* ---------- blocks ---------- */
+/* ---------- 4. blocks: paragraph, bullets, steps, definition, example, callout, code, table, formula ----------
+   .cut-after / .cut-before mark the two halves of a block that notebook.js split across pages. */
 .blk{ margin:0 0 9px }
 .blk p, .blk .sb.para{ margin:0; font-size:15.5px; line-height:1.45 }
 .blk b{ font-weight:400; font-family:'NB Kalam',cursive; font-weight:700; font-size:.94em }
@@ -96,9 +113,9 @@ code{ font:400 12.6px/1.2 var(--f-mono); background:rgba(70,60,40,.08); border:1
 .cut-after .box{ border-bottom-style:dashed }
 .cut-before .box{ border-top-style:dashed }
 .cut-before.b-code .lang{ display:none }
-.cut-after::after{ content:"â€¦ continues on next page"; display:block; text-align:right; font:300 italic 14px 'NB Kalam Light','NB Kalam',cursive; color:var(--ink-soft); margin-top:2px }
+.cut-after::after{ content:"… continues on next page"; display:block; text-align:right; font:300 italic 14px 'NB Kalam Light','NB Kalam',cursive; color:var(--ink-soft); margin-top:2px }
 
-/* ---------- diagrams ---------- */
+/* ---------- 5. diagrams (svg.d) and the font classes used on SVG text ---------- */
 .dgm{ margin:2px 0 10px; text-align:center; break-inside:avoid }
 .dgm .dt{ font:700 18px/1.2 'NB Kalam',cursive; text-align:left; margin:0 0 2px 2px }
 .dgm svg.d{ display:block; width:100%; height:auto; max-height:400px; margin:0 auto; overflow:visible }
@@ -112,7 +129,7 @@ svg .kr{ font-family:'NB Kalam',cursive }
 svg .ph{ font-family:'NB Patrick','NB Kalam',sans-serif }
 svg .cv{ font-family:'NB Caveat',cursive }
 
-/* ---------- takeaways / recall ---------- */
+/* ---------- 6. takeaways / recall ---------- */
 .take{ margin:4px 0 9px; padding:1px 0 0 12px; border-left:3px solid rgba(46,125,79,.55); border-radius:0 0 0 14px }
 .take .tt{ font:700 15px/1 'NB Kalam',cursive; color:var(--green); letter-spacing:.4px; margin-bottom:3px }
 .take ul{ margin:0; padding:0; list-style:none }
@@ -125,7 +142,7 @@ svg .cv{ font-family:'NB Caveat',cursive }
 .recall .a{ font:400 15px/1.4 'NB Patrick','NB Kalam',sans-serif }
 .recall .a b.al{ font-family:'NB Patrick',sans-serif; font-size:1em }
 
-/* ---------- glossary & recap ---------- */
+/* ---------- 7. glossary & recap ---------- */
 .gl-row{ display:grid; grid-template-columns:170px 1fr; column-gap:14px; padding:4px 4px; border-bottom:1.3px dashed rgba(43,38,34,.3); font-size:15px; line-height:1.35 }
 .gl-row .t{ font:700 16px/1.25 'NB Kalam',cursive }
 .gl-row:nth-child(odd){ background:rgba(255,253,246,.5) }
@@ -133,7 +150,7 @@ svg .cv{ font-family:'NB Caveat',cursive }
 .recap-pts li .num{ position:absolute; left:2px; top:-2px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; font:700 15px/1 'NB Kalam',cursive;
   border:2.2px solid var(--red); color:var(--red); border-radius:48% 52% 45% 55%/55% 45% 55% 45%; background:var(--card); transform:rotate(3deg); padding-top:2px }
 
-/* ---------- cover ---------- */
+/* ---------- 8. cover (one fixed page, never split) ---------- */
 .page.cover .border{ position:absolute; left:0; top:0; width:794px; height:1122px; pointer-events:none }
 .page.cover .cv-in{ position:absolute; left:94px; right:84px; top:92px; bottom:112px; display:flex; flex-direction:column }
 .cv-tag{ text-align:center; font:italic 300 24px/1.2 'NB Kalam Light','NB Kalam',cursive; color:var(--ink-soft); margin-top:6px }
@@ -156,7 +173,7 @@ svg .cv{ font-family:'NB Caveat',cursive }
 .cv-idea::before{ content:""; position:absolute; top:-7px; left:50%; width:12px; height:12px; margin-left:-6px; border-radius:50%; background:#8d6a1e; box-shadow:1px 2px 0 rgba(0,0,0,.3) }
 .cv-how{ background:var(--yellow); border:2px solid #9c7d0b; border-radius:4px 3px 5px 3px; padding:9px 14px 12px; box-shadow:0 3px 0 -1px #b8960f, 2px 3px 0 rgba(60,45,0,.3); font:400 15px/1.4 'NB Patrick',sans-serif }
 .cv-how .rt{ font:italic 400 14px 'NB Kalam',cursive; color:var(--red) } .cv-how .q{ font:700 16px/1.3 'NB Kalam',cursive }
-.cv-sum{ font:italic 300 15px/1.45 'NB Kalam Light','NB Kalam',cursive; color:var(--ink-soft); text-align:right; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden }
+.cv-sum{ font:italic 300 15px/1.45 'NB Kalam Light','NB Kalam',cursive; color:var(--ink-soft); text-align:right; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:7; -webkit-box-orient:vertical; overflow:hidden }  /* #128: room for the whole sentence-trimmed summary */
 .cv-date{ position:absolute; left:112px; bottom:84px; font:italic 300 17px 'NB Kalam Light','NB Kalam',cursive; color:var(--ink-soft) }
 
 /* full contents list for long notes (40-80 sections) */
