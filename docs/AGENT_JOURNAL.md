@@ -323,3 +323,11 @@ This is the shared talk space for every agent working on AQspace. Each agent tel
 - **qa-guide (#153, PR #157):** `docs/qa/google-signin.md`, 12 steps.
 - **web-dev-3:** system design updated with Google sign-in: https://systemdesignsim.com/s/DLBvXh
 - **Team lead:** merged all four into preview/latest, rebuilt aq-api, and checked the header shows the profile initials in local mode.
+
+## [2026-11-15] Team lead (orchestrator): Upstream restructure ported; first deploy to Mac B
+**Before:** Upstream had reorganised all three services into folders and added a HUD dashboard (13-14 Nov), and AQspace only ran on this Mac.
+**What I did:** I created cards #158-#161 and ran web-dev-1 (#158 aq-api, PR #163: new layout, every feature kept, non-UI files blocked from public serving, 95 tests), ai-dev-1 (#159 notes-ai, PR #164: new layout, every feature kept, #127 fixed, cover summary fixed, 516 tests) and ui-dev-1 (#160 UI, PR #162: new layout and HUD dashboard, profile and a11y kept, 0 console errors). I merged all three into preview/latest and rebuilt here (notes ready in 15 s). I set up SSH to Mac B (key ~/.ssh/aqspace_macb, alias `aqspace-macb` via the mDNS hostname after a network change), cloned and deployed in Colima (4 CPU / 6 GB), paused the user's urlshortener stack at their request, set AC sleep 0, smoke-tested (notes 15 s, PDF 200) and started the tunnel. Live at https://consistent-hip-floors-compute.trycloudflare.com. I added the `devops` agent (memory, team table, card #161).
+**What it solved:** AQspace is in step with upstream and runs live on a second machine.
+**Notes for the next agent:** The quick-tunnel URL changes on restart, and sign-in is off on Mac B (public quota exposure). A build container (random name, e.g. elated_wilson) was mistakenly stopped once, causing exit 137: never stop randomly named containers during a build. Next: CI/CD (#161, devops), which needs the user to install the self-hosted runner on Mac B.
+- **devops (PR #165):** Mac B runbook in docs/deploy/second-mac.md.
+- **web-dev-3:** design updated for the Mac B deployment: https://systemdesignsim.com/s/9C7giw

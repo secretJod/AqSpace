@@ -56,3 +56,4 @@ Run with Docker only: `docker compose up --build`.
 | 2026-11-09 | Added R8: upstream db9ac6b import, second-Mac deploy, AWS architecture, analytics pipeline (epic #134) | User request | User |
 | 2026-11-11 | Removed the legacy Google sign-in app (backend/, frontend/, Postgres) from preview/latest; compose now runs notes-ai + aq-api only | User approved (card #132, ADR-0001) | User |
 | 2026-11-11 | Added R9: Next.js, FastAPI, PostgreSQL + pgvector, Celery + RabbitMQ, Redis, Kafka | User wants these technologies in the product for their resume | User |
+| 2026-11-15 | Upstream 13-14 Nov restructure ported (aq-api, notes-ai, UI with new HUD dashboard); AQspace deployed live on Mac B (Colima + Cloudflare tunnel); devops agent added | User request | User |
