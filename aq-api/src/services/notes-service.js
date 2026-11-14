@@ -8,8 +8,13 @@
        (a partial unique index in the DB + an in-process lock);
      - start(): a ready video returns immediately (cached); a running one returns its progress;
        otherwise a new job is started in the worker;
-     - worker job ids are lost when the worker restarts: a 404 from it marks the record
-       "expired" (a new job may then be started).
+     - jobs on the local model can run for hours (24h videos): nothing here expires or times out a
+       queued/running record by age. pyTimeoutMs is only the per-request HTTP timeout;
+     - worker job ids are lost when the worker restarts. For a queued/running record a 404 re-submits
+       the same video (the worker resumes from its per-video chunk checkpoints) up to maxAutoResumes
+       times, then the record becomes an error. A 404 for a ready record (files gone) still marks it
+       "expired" (a new job may then be started);
+     - progress messages carry "(chunk i/N)" when the worker reports chunk counters.
    States: DB status queued/running/done/error/expired -> UI state queued/running/ready/error/none.
    Read next: services/smart-service.js */
 import { HttpError } from "../utils/http-errors.js";
@@ -52,7 +57,7 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
     const state = PUBLIC_STATE[row.status];
     return {
       videoId, state, pct: state === "ready" ? 100 : row.pct, stage: row.stage, message: row.message,
-      error: row.error, jobId: row.status === "expired" ? null : row.job_id, ...extra
+      error: row.error, jobId: row.status === "expired" ? null : row.job_id, resumes: row.resumes || 0, ...extra
     };
   }
 
@@ -60,12 +65,49 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
   // 2. Asking the worker
   // -------------------------------------------------------------------------
 
+  const maxResumes = () => (Number.isInteger(timings.maxAutoResumes) ? timings.maxAutoResumes : 3);
+  const jobBody = (videoId) => ({ url: "https://www.youtube.com/watch?v=" + videoId, provider: config.pyProvider });
+
+  /** The worker lost a queued/running job (restart): submit the same video again so it resumes from its checkpoints. */
+  function resume(row) {
+    return withLock(row.video_id, async () => {
+      const cur = findRowById(row.id);
+      if (cur.job_id !== row.job_id || (cur.status !== "queued" && cur.status !== "running")) return cur;   // already handled
+      if (cur.resumes >= maxResumes()) {
+        const msg = `The notes service restarted ${cur.resumes + 1} times during this job. Generate the notes again.`;
+        updateRow(cur.id, { status: "error", error: msg, message: "Stopped after repeated restarts", checked_at: clock() });
+        return findRowById(cur.id);
+      }
+      let answer;
+      try { answer = await py.json("/api/jobs", { method: "POST", timeout: timings.pyTimeoutMs, body: jobBody(cur.video_id) }); }
+      catch { return cur; }                                              // worker down again: try on the next poll
+      if (answer.status === 202 && answer.json && JOB_ID_RE.test(String(answer.json.job_id || ""))) {
+        updateRow(cur.id, { job_id: answer.json.job_id, status: "queued", resumes: cur.resumes + 1, stage: "resume", message: "Resuming after restart", checked_at: clock() });
+      } else if (answer.status === 429 || answer.status >= 500) {
+        updateRow(cur.id, { message: "Waiting to resume after restart", checked_at: clock() });   // busy / failing: retry on a later poll
+      } else {
+        const msg = short(answer.json && answer.json.error) || `The notes service refused to resume (status ${answer.status}).`;
+        updateRow(cur.id, { status: "error", error: msg, message: short(msg, 160), checked_at: clock() });
+      }
+      return findRowById(cur.id);
+    });
+  }
+
+  /** "message (chunk i/N)" when the worker reports chunk counters that its message does not already show. */
+  function progressMessage(job) {
+    const msg = short(job.message, 160);
+    const i = Number(job.chunk), n = Number(job.chunks);
+    if (job.chunk == null || job.chunks == null || !Number.isInteger(i) || !Number.isInteger(n) || n <= 0 || i < 0 || i > n || /\d+\s*\/\s*\d+/.test(msg)) return msg;
+    const tag = `chunk ${i}/${n}`;
+    return msg ? `${msg.slice(0, 160 - tag.length - 3)} (${tag})` : tag;
+  }
+
   /** Ask the worker how a queued/running job is doing (throttled). Network trouble keeps the record as it is. */
   async function refresh(row) {
     if (clock() - row.checked_at < timings.pollMinMs) return row;
     let answer;
     try { answer = await py.json(`/api/jobs/${row.job_id}`); } catch { return row; }
-    if (answer.status === 404) { markExpired(row); return findRowById(row.id); }
+    if (answer.status === 404) return resume(row);
     if (answer.status !== 200 || !answer.json) return row;
 
     const job = answer.json;
@@ -74,7 +116,7 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
     } else if (job.status === "error") {
       updateRow(row.id, { status: "error", error: short(job.error || "The notes engine reported an error."), message: short(job.error || "Error"), checked_at: clock() });
     } else {
-      updateRow(row.id, inProgressFields(row, job, clock));
+      updateRow(row.id, { ...inProgressFields(row, job, clock), message: progressMessage(job) });
     }
     return findRowById(row.id);
   }
@@ -159,10 +201,7 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
 
   /** POST /api/jobs on the worker. Returns the new job id or throws an HttpError. */
   async function startWorkerJob(videoId) {
-    const answer = await py.json("/api/jobs", {
-      method: "POST", timeout: timings.pyTimeoutMs,
-      body: { url: "https://www.youtube.com/watch?v=" + videoId, provider: config.pyProvider }
-    });
+    const answer = await py.json("/api/jobs", { method: "POST", timeout: timings.pyTimeoutMs, body: jobBody(videoId) });
     if (answer.status === 429) throw new HttpError(429, "The notes service is busy. Try again in a few seconds.", { retryAfter: 6 });
     if (answer.status !== 202 || !answer.json || !JOB_ID_RE.test(String(answer.json.job_id || ""))) {
       throw startFailedError(answer, `The notes service answered with status ${answer.status}.`);

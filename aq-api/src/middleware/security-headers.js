@@ -9,13 +9,13 @@
 // 1. Content-Security-Policy values
 // ---------------------------------------------------------------------------
 
-/** The UI is plain JS + Google Fonts + YouTube embeds/thumbnails/oEmbed; nothing else is allowed. */
+/** The UI is plain JS + Google Fonts + YouTube embeds/thumbnails/oEmbed + Google profile pictures; nothing else is allowed. */
 export const CSP_APP = [
   "default-src 'self'",
   "script-src 'self' https://www.youtube.com https://s.ytimg.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.ytimg.com https://*.ggpht.com",
+  "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.ytimg.com https://*.ggpht.com https://lh3.googleusercontent.com",
   "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com",
   "connect-src 'self' https://www.youtube.com",
   "media-src 'self' blob:",

@@ -5,7 +5,8 @@
    Order matters:
      1. general rate limit
      2. /health                 (no login)
-     3. authenticate            (sets req.user)
+        /auth/google/*, /auth/logout (AUTH_MODE=google), /auth/status   (no login)
+     3. authenticate            (sets req.user; 401 code "auth_required" when signed out)
      4. /me, /sync/import       (sync has its own 2mb JSON parser, so it comes before the shared one)
      5. express.json()          (shared body parser, config.bodyLimit)
      6. playlists, progress, notes, smart, YouTube import
@@ -15,6 +16,7 @@ import express from "express";
 import { notFoundHandler } from "../middleware/error-handler.js";
 import { healthRoutes } from "./health.js";
 import { meRoutes } from "./me.js";
+import { authStatusRoutes } from "./auth-status.js";
 import { syncRoutes } from "./sync.js";
 import { playlistRoutes } from "./playlists.js";
 import { progressRoutes } from "./progress.js";
@@ -22,11 +24,13 @@ import { notesRoutes } from "./notes.js";
 import { smartRoutes } from "./smart.js";
 import { youtubeImportRoutes } from "./youtube-import.js";
 
-export function createApiRouter({ db, repo, py, notes, smart, config, authenticate, generalLimiter, heavyLimiter, version }) {
+export function createApiRouter({ db, repo, py, notes, smart, config, authenticate, google, localUserId, generalLimiter, heavyLimiter, version }) {
   const api = express.Router();
 
   api.use(generalLimiter);
   api.use(healthRoutes({ db, py, version }));
+  if (google) api.use(google.routes);                          // login / callback / logout need no user
+  api.use(authStatusRoutes(repo, config.authMode, google ? google.currentUser : () => localUserId));
   api.use(authenticate);
   api.use(meRoutes(repo));
   api.use(syncRoutes(repo));

@@ -2,10 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { startApp, startMockPython } from "./helpers.js";
-import { openDb } from "../src/db.js";
-import { loadConfig } from "../src/config.js";
-import { assertPyUrl } from "../src/pyclient.js";
-import { rateLimit, originMatcher, clientKey } from "../src/middleware/security.js";
+import { openDb } from "../src/db/database.js";
+import { loadConfig } from "../src/config/load-config.js";
+import { assertPyUrl } from "../src/services/worker-client.js";
+import { rateLimit, clientKey } from "../src/middleware/rate-limit.js";
+import { originMatcher } from "../src/middleware/local-only.js";
 
 test("health, security headers, JSON 404s", async () => {
   const t = await startApp();
@@ -160,7 +161,7 @@ test("migrations are idempotent and create the expected tables", async () => {
   const names = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
   for (const n of ["users", "videos", "playlists", "playlist_videos", "watch_progress", "notes_jobs", "smart_runs", "schema_migrations"]) assert.ok(names.includes(n), n);
   assert.equal(db.prepare("SELECT name FROM users WHERE id = 1").get().name, "local");
-  const { migrate } = await import("../src/db.js");
+  const { migrate } = await import("../src/db/database.js");
   migrate(db, cfg.sqlDir);
   const fs = await import("node:fs");
   const files = fs.readdirSync(cfg.sqlDir).filter((f) => /^\d+.*\.sql$/.test(f)).length;

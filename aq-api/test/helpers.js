@@ -2,7 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig } from "../src/config.js";
+import { loadConfig } from "../src/config/load-config.js";
 import { createApp } from "../src/app.js";
 
 export const VID = (n) => String(n).padStart(11, "a");      // valid 11-char ids: aaaaaaaaaa1 ...

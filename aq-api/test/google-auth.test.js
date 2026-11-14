@@ -111,7 +111,7 @@ test("tampered or foreign session cookies are rejected", async () => {
 });
 
 test("google mode refuses to start without credentials / secret", async () => {
-  const { loadConfig } = await import("../src/config.js");
+  const { loadConfig } = await import("../src/config/load-config.js");
   const { createApp } = await import("../src/app.js");
   assert.throws(() => createApp(loadConfig({ AUTH_MODE: "google" }, { dbFile: ":memory:", uiDir: "" })), /SESSION_SECRET/);
   assert.equal(loadConfig({}).authMode, "local");

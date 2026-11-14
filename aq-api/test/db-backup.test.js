@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { openDb, tx, dbBusy } from "../src/db.js";
+import { openDb, tx, dbBusy } from "../src/db/database.js";
 import { startApp, startMockPython } from "./helpers.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

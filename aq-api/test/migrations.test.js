@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { openDb } from "../src/db.js";
+import { openDb } from "../src/db/database.js";
 
 const SQL = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "sql");
 const ALL = fs.readdirSync(SQL).filter((f) => f.endsWith(".sql")).sort();
@@ -89,4 +89,19 @@ test("older db without a records table: existing schema is baselined, missing mi
     assert.ok(tables(db).includes("smart_runs"));
     db.close();
   }
+});
+
+test("#158 db made by upstream (smart_runs recorded as 002_smart_runs.sql): 003 is recorded, not re-run; 002/004/005 apply", () => {
+  const f = tmp();
+  const raw = new DatabaseSync(f);
+  raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+  run(raw, "001_init.sql"); raw.prepare("INSERT INTO schema_migrations VALUES ('001_init.sql', 'x')").run();
+  run(raw, "003_smart_runs.sql"); raw.prepare("INSERT INTO schema_migrations VALUES ('002_smart_runs.sql', 'x')").run();
+  raw.close();
+  const db = openDb(f, SQL);
+  assert.deepEqual(names(db), [...ALL, "002_smart_runs.sql"].sort());
+  assert.equal(db.prepare("SELECT applied_at FROM schema_migrations WHERE name = '003_smart_runs.sql'").get().applied_at, "renamed:002_smart_runs.sql");
+  assert.ok(cols(db, "notes_jobs").includes("resumes"));
+  assert.ok(cols(db, "users").includes("picture"));
+  db.close();
 });

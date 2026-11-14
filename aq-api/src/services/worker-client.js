@@ -65,6 +65,6 @@ function offlineError(e) {
   const timedOut = e && (e.name === "TimeoutError" || e.name === "AbortError");
   const message = timedOut
     ? "The notes service took too long to answer."
-    : "The notes service is not running. Start it (start.ps1) and try again.";
+    : "The notes service is not running. Start it (docker compose up) and try again.";
   return new HttpError(503, message, { code: "py_offline" });
 }

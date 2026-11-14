@@ -1,4 +1,4 @@
-﻿/* AQ Learning - developer "how it works" scene.
+﻿/* AQspace - developer "how it works" scene.
    Hand-written 3D: points are rotated (yaw/pitch orbit camera), perspective-projected and drawn with Canvas 2D,
    painter-sorted by depth. No libraries, no inline script, all API data goes through textContent. */
 "use strict";
@@ -28,11 +28,11 @@
       port: "loaded from 127.0.0.1:5180", io: ["In: JSON from /api/v1/*, notes HTML/PDF", "Out: fetch() calls to /api/v1/*"] },
     { id: "api", layer: "server", x: -30, y: 220, label: "aq-api", sub: "Express 5", kind: "Node server", health: "api",
       desc: "Express 5 app. Security headers, host guard, CORS, then /api/v1 routes (playlists, progress, notes, smart, misc). Serves the UI as static files and proxies heavy work to the Python worker. Job rows in SQLite are refreshed from the worker on poll (throttled).",
-      files: ["aq-api/src/app.js", "aq-api/src/server.js", "aq-api/src/routes/*.js", "aq-api/src/notes-service.js", "aq-api/src/smart-service.js", "aq-api/src/pyclient.js", "aq-api/src/repo.js"],
+      files: ["aq-api/src/app.js", "aq-api/src/server.js", "aq-api/src/routes/*.js", "aq-api/src/middleware/*.js", "aq-api/src/services/*.js", "aq-api/src/db/repository.js"],
       port: "127.0.0.1:5180", io: ["In: HTTP from the UI", "Out: SQL to SQLite, HTTP to the worker /api/*"] },
     { id: "db", layer: "server", x: 250, y: 220, label: "SQLite", sub: "node:sqlite", kind: "Database",
       desc: "Embedded database via node:sqlite. Stores playlists, videos, progress, notes_jobs (queued/running/done/error/expired, stage, pct) and smart runs.",
-      files: ["aq-api/src/db.js", "aq-api/sql/001_init.sql", "aq-api/sql/002_smart_runs.sql"],
+      files: ["aq-api/src/db/database.js", "aq-api/src/db/*-repo.js", "aq-api/sql/*.sql"],
       port: "file (in-process)", io: ["In: queries from repo / services", "Out: rows"] },
     { id: "worker", layer: "worker", x: -40, y: 10, label: "Python worker", sub: "Flask", kind: "Job server", health: "worker",
       desc: "Flask server. POST /api/jobs starts a notes job in a background thread, POST /api/smart starts a Smart run; GET /api/jobs/<id> and /api/smart/<id> report status, stage and pct. Serves notes.html / notes.pdf / notes.json.",

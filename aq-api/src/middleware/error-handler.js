@@ -20,7 +20,7 @@ export function notFoundHandler(_req, _res, next) {
 // ---------------------------------------------------------------------------
 
 // Error codes the UI understands; only these are sent back as `code`.
-const PUBLIC_CODES = new Set(["py_offline", "not_in_playlist"]);
+const PUBLIC_CODES = new Set(["py_offline", "not_in_playlist", "auth_required"]);
 
 // Four arguments tell Express this is an error handler.
 export function errorHandler(err, req, res, _next) {

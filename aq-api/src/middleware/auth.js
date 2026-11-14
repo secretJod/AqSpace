@@ -2,8 +2,9 @@
 
    What:  every /api/v1 route (except /health) runs `authenticate(req, res, next)` and may rely
           on `req.user = { id, name }` afterwards. All data access is scoped by req.user.id.
-          Today there is a single built-in local user (id 1).
-   How it fits: app.js passes `deps.authenticate || localAuth` to routes/index.js.
+          AUTH_MODE=local (default): a single built-in local user (id 1), localAuth below.
+          AUTH_MODE=google: middleware/google-auth.js (server-side sessions, 401 code "auth_required").
+   How it fits: app.js passes `deps.authenticate || google.authenticate || localAuth` to routes/index.js.
 
    To plug in the OAuth app later, pass a different authenticator to createApp({ authenticate }) (see README):
      - read the session cookie / bearer token the OAuth app issued and verify it,

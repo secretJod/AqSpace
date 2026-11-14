@@ -19,9 +19,8 @@ export function createRepo(db) {
   const syncImport = createSyncImportRepo(db, helpers, { listPlaylists: playlists.listPlaylists, allProgress: progress.allProgress });
 
   return {
-    // users
-    getUser: users.getUser,
-    upsertExternalUser: users.upsertExternalUser,
+    // users and sign-in sessions
+    ...users,
     ensureVideo: helpers.ensureVideo,
     // playlists and their videos
     ...playlists,

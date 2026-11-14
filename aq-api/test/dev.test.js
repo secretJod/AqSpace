@@ -5,7 +5,7 @@ import { startApp, startMockPython, VID } from "./helpers.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createTracker, createDevLog, maskPath, toCsv, computeStats, percentile, redactLine, filterEntries } from "../src/dev.js";
+import { createTracker, createDevLog, maskPath, toCsv, computeStats, percentile, redactLine, filterEntries } from "../src/dev/index.js";
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 

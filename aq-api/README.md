@@ -15,6 +15,71 @@ notes service (Python / Flask) :5055   transcribe + generate notes (jobs live in
 
 Not related to `D:\AQspace\backend` / `frontend` (the separate OAuth app) - see "Plugging in OAuth" below.
 
+## How the code is organized
+
+Every file starts with a short header saying **what** it does, **how it fits**, and **what to read next**.
+
+```
+src/
+  server.js              entry point (npm start): load config, listen, shut down cleanly
+  app.js                 builds the Express app: wires services + middleware + routers in order
+  config/
+    load-config.js       every setting / environment variable in one place
+  middleware/
+    security-headers.js  CSP and other security headers
+    request-logger.js    one console line per request
+    local-only.js        host guard (DNS rebinding) + CORS (local + TUNNEL_ORIGINS), viaProxy, localOnly (/dev guard)
+    rate-limit.js        per-visitor fixed-window limiter ("general" and "heavy"; clientKey, TRUST_CF_HEADERS)
+    auth.js              sets req.user (single local user, AUTH_MODE=local)
+    google-auth.js       Google sign-in (AUTH_MODE=google): login/callback/logout, server-side sessions
+    error-handler.js     404 fallback + JSON error replies
+  routes/
+    index.js             builds /api/v1 and shows the middleware order
+    health.js me.js auth-status.js sync.js playlists.js progress.js notes.js smart.js youtube-import.js
+    fonts.js             /static/fonts/* proxied from the worker
+    ui-static.js         serves lecture-notes-ui (web assets only, no "." / "_" path parts)
+  services/
+    worker-client.js     HTTP client for the Python worker (127.0.0.1:5055)
+    notes-service.js     notes jobs: start, poll, cache, auto-resume after a worker restart, expire, stream files
+    smart-service.js     smart playlist runs: fingerprint, poll, store result
+    job-helpers.js       shared per-key lock, progress mapping, error mapping
+  db/
+    database.js          open SQLite, run sql/*.sql migrations (recorded, baselined), tx() + dbBusy counter
+    repository.js        combines the repo files into one `repo` object
+    users-repo.js        users, profile, first-sign-in data claim (USER_KEYED), sessions
+    playlists-repo.js progress-repo.js sync-import-repo.js
+    playlist-helpers.js  shared row lookups / JSON shaping / appendVideos
+  dev/                   developer tools under /dev (index.js lists the files)
+    tracker.js ring-buffer.js dev-log-store.js mask-path.js history-tools.js service-logs.js dev-router.js
+  utils/
+    http-errors.js       HttpError + bad / notFound / conflict
+    validate.js          input checks (ids, names, durations, videos)
+    pipe-file.js         stream a worker response to the browser
+dev-ui/                  static pages for /dev
+sql/                     database migrations
+test/                    node:test suites (npm test)
+```
+
+### Request lifecycle
+
+```
+request
+  -> middleware   security-headers -> request-logger -> local-only (host guard, CORS) -> dev tracker
+  -> router       /api/v1 (routes/index.js): rate limit -> health | auth/* + auth/status | auth -> JSON parser -> area router
+  -> service      notes-service / smart-service (or the repository directly for playlists/progress)
+  -> worker / db  worker-client.js (Python on :5055) and db/*-repo.js (SQLite)
+  <- reply        JSON; any thrown HttpError is turned into {error, code?} by error-handler.js
+```
+
+Anything outside `/api` goes to `/dev` (developer tools), `/static/fonts` (from the worker) or the UI files.
+
+### Where to start reading
+
+1. `src/server.js` -> `src/app.js` (the whole wiring on one screen)
+2. `src/routes/index.js` (every API area and the middleware order)
+3. One area end to end, e.g. `routes/notes.js` -> `services/notes-service.js` -> `services/worker-client.js`
+4. `src/db/repository.js` and the repo files for the data side
+
 ## Run
 
 Needs Node 24+ (uses `node:sqlite`, `fetch`). Only dependency: `express`.
@@ -88,7 +153,7 @@ Notes records expire when Python forgets a job (restart): a definitive 404 from 
 Video id `[A-Za-z0-9_-]{11}`; playlist id (slug) `[a-z0-9][a-z0-9-]{0,47}` (generated from the name, kept stable on rename); name 1-60,
 description 0-160, title 150, channel 80 (long titles are truncated, long names are rejected); durations `m:ss` / `h:mm:ss` or seconds, < 100 h.
 
-## Schema (`sql/001_init.sql`, applied by `src/db.js`, tracked in `schema_migrations`)
+## Schema (`sql/001_init.sql`, applied by `src/db/database.js`, tracked in `schema_migrations`)
 
 | Table | Columns / notes |
 |---|---|
@@ -106,7 +171,7 @@ All SQL is parameterized (`?`); there is no string-built SQL with user input. Ne
 
 - Binds `127.0.0.1` only; `Host` must be `localhost` / `127.0.0.1` / `[::1]` (DNS-rebinding guard).
 - CORS: only `http://localhost|127.0.0.1[:port]` origins; a non-local `Origin` on POST/PUT/PATCH/DELETE is rejected (403). Bodies must be `application/json` (forms are not parsed).
-- Headers written by hand (`src/middleware/security.js`): nosniff, frame options, referrer policy, CORP/COOP, permissions policy, CSP (strict for the API; the UI gets a CSP that allows only itself, Google Fonts, YouTube embeds/thumbnails/oEmbed), `Cache-Control: no-store` on `/api`.
+- Headers written by hand (`src/middleware/security-headers.js`, `local-only.js`, `rate-limit.js`): nosniff, frame options, referrer policy, CORP/COOP, permissions policy, CSP (strict for the API; the UI gets a CSP that allows only itself, Google Fonts, YouTube embeds/thumbnails/oEmbed, Google profile pictures), `Cache-Control: no-store` on `/api`.
 - In-memory per-IP rate limit (general + a stricter one for notes start / imports); JSON body limits; errors never include stack traces.
 - Static serving only for web asset extensions, never dot-files, `_landing-backup`, `*.ps1` or docs.
 - Python is called only on fixed paths with validated ids; `PY_NOTES_URL` must be loopback; redirects from Python are refused.
