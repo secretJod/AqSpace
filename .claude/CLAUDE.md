@@ -13,6 +13,9 @@ Read this at the start of every session. These rules apply to every agent and su
 ## Company team
 AQspace runs as a fixed agent team (`.claude/agents/`) with a kanban board and daily standups. The user is the QA tester and the only one who moves cards to Done. Read `.claude/rules/team.md`, route work to the owning agent, and keep `docs/daily/` up to date.
 
+## Deployment
+AQspace is deployed to a second Mac (Mac B, SSH alias `aqspace-macb`, Docker in Colima). The `devops` agent owns that machine, CI/CD and every deploy and rollback. Route all deployment work to `devops`.
+
 ## System design
 After any change to services, ports, data flow, storage or AI providers, assign `web-dev-3` to update the design on systemdesignsim.com with Playwright, then delete `.playwright-mcp/` (no screenshots kept). Details: `.claude/rules/team.md`.
 
