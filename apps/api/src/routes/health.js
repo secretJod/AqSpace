@@ -2,24 +2,32 @@
 
    What:  reports whether the database works; with ?deep=1 it also asks the Python worker and adds
           `notesService`, `localModel` (is the local LLM up, as the worker reports it) and `dbBusy`
-          (the SQLite write-contention counter, ADR-0002).
+          (the SQLite write-contention counter, see db/database.js).
    How it fits: mounted in routes/index.js before the authentication middleware.
    Read next: routes/me.js */
 import { Router } from "express";
 import { dbBusy } from "../db/database.js";
 
-/** The worker's /api/providers lists {id: "local", online: bool, ...}; "ok" only when the worker says llama-server answers.
-    aq-api never calls llama-server (8081) itself. */
-export function localModelState(json) {
+/* The worker's /api/providers lists {id: "local", online: bool, ...}; "ok" only when the worker says its local
+   model server answers. The API never calls the model server itself: the worker is its only client. */
+function localModelState(json) {
   const list = json && Array.isArray(json.providers) ? json.providers : [];
   const p = list.find((x) => x && x.id === "local");
   if (!p) return "offline";
   return p.online === true || p.available === true || p.ok === true || p.status === "ok" ? "ok" : "offline";
 }
 
+/**
+ * @param {object} deps
+ * @param {import("node:sqlite").DatabaseSync} deps.db
+ * @param {object} deps.py  the worker client
+ * @param {string} deps.version  reported as `version`
+ * @returns {import("express").Router}
+ */
 export function healthRoutes({ db, py, version }) {
   const router = Router();
 
+  /** GET /health[?deep=1] - 200 {ok: true, ...} when the database answers, 503 when it does not. */
   router.get("/health", async (req, res) => {
     let dbOk = true;
     try {

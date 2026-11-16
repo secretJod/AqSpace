@@ -8,9 +8,14 @@ import { pipeFile } from "../utils/pipe-file.js";
 
 const FONT_FILE_RE = /^[A-Za-z0-9._-]{1,100}$/;
 
+/**
+ * @param {object} py  the worker client (services/worker-client.js)
+ * @returns {import("express").Router}
+ */
 export function fontRoutes(py) {
   const router = Router();
 
+  /** GET /static/fonts/:file - a font file, cached for a day. Only plain file names are forwarded; anything else is 404. */
   router.get("/static/fonts/:file", async (req, res) => {
     const file = req.params.file;
     if (!FONT_FILE_RE.test(file) || file.includes("..")) return res.status(404).end();

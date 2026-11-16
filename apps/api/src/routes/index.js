@@ -24,6 +24,13 @@ import { notesRoutes } from "./notes.js";
 import { smartRoutes } from "./smart.js";
 import { youtubeImportRoutes } from "./youtube-import.js";
 
+/**
+ * Builds the /api/v1 router.
+ *
+ * @param {object} deps  everything app.js built: db, repo, py (worker client), notes and smart services, config,
+ *        authenticate (middleware), google (null in AUTH_MODE=local), localUserId, the two rate limiters, version
+ * @returns {import("express").Router}
+ */
 export function createApiRouter({
   db,
   repo,

@@ -6,8 +6,13 @@
    Read next: db/sync-import-repo.js */
 import express, { Router } from "express";
 
+/**
+ * @param {object} repo  the repository (importState)
+ * @returns {import("express").Router}
+ */
 export function syncRoutes(repo) {
   const router = Router();
+  /** POST /sync/import - body {mode?, playlists, progress}; returns {playlists, progress}. 400 for a bad body. */
   router.post("/sync/import", express.json({ limit: "2mb" }), (req, res) => {
     res.json(repo.importState(req.user.id, req.body));
   });

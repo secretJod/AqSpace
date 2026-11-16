@@ -9,9 +9,19 @@ import { Router } from "express";
 import { HttpError } from "../utils/http-errors.js";
 import { LIST_ID_RE } from "../utils/validate.js";
 
+/**
+ * @param {object} py  the worker client
+ * @param {object} config  uses config.notes.importTimeoutMs
+ * @param {import("express").RequestHandler} heavyLimiter
+ * @returns {import("express").Router}
+ */
 export function youtubeImportRoutes(py, config, heavyLimiter) {
   const router = Router();
 
+  /**
+   * GET /import/youtube?url=<playlist link> - the worker's playlist JSON {id, title, channel, videos, ...}.
+   * Errors: 400 not a playlist link, 422 the worker refused it, 502 the worker failed, 503 py_offline.
+   */
   router.get("/import/youtube", heavyLimiter, async (req, res) => {
     const listId = listIdFromUrl(req.query.url);
     const canonical = "https://www.youtube.com/playlist?list=" + listId;

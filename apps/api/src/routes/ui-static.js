@@ -4,7 +4,7 @@
           Only what the UI loads is served: html, css, js (incl. vendored Chart.js), images, fonts.
           Dot-files, folders starting with "_" (e.g. _landing-backup), tooling/docs (package.json,
           package-lock.json, eslint.config.mjs, README.md, any .json/.txt/.md/.mjs) and the
-          screenshots/, node_modules/, test(s)/ folders are 404 (#158).
+          screenshots/, node_modules/, test(s)/ folders are 404, so nothing but the app itself is public.
    How it fits: mounted in app.js after the API, only when config.uiDir exists.
    Read next: middleware/error-handler.js */
 import express from "express";
@@ -16,7 +16,10 @@ const ALLOWED_FILE_RE = /\.(html|js|css|png|jpe?g|gif|webp|svg|ico|woff2?|ttf)$/
 const DENIED_FILE_RE = /^(eslint|prettier|vite|webpack|rollup|playwright|jest|vitest)\.config\.[a-z]+$/i;
 const DENIED_DIRS = new Set(["node_modules", "screenshots", "test", "tests", "scripts"]);
 
-/** Returns two middlewares: [filter, static file server]. */
+/**
+ * @param {string} uiDir  the web app folder (config.uiDir)
+ * @returns {import("express").RequestHandler[]} two middlewares: [filter, static file server]
+ */
 export function uiStaticRoutes(uiDir) {
   const root = path.resolve(uiDir);
 
