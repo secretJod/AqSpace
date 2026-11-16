@@ -4,11 +4,12 @@
    What this file does:
      Earlier builds had `?demo=dashboard` / `?demo=streak` switches that wrote sample ("demo") data into
      localStorage. This file removes what they left behind, so the dashboard only shows real usage.
-     It runs once per browser (the `aq.demo-cleanup.v1` key records that it ran) and is cheap afterwards.
+     It runs once per browser and account (the `aq.demo-cleanup.v1` key records that it ran), cheap afterwards.
 
    How it fits:
-     Loaded first, before util.js, store.js and the dashboard scripts, because those read localStorage
-     when they load. It only edits localStorage (no DOM, no network, no AQ.* dependency). Removing demo
+     The first app script boot.js loads, before util.js, store.js and the dashboard scripts, because those
+     read storage when they load. It only edits browser storage through AQ.storage, so it cleans the
+     signed-in account's own data (no DOM, no network, no other AQ.* dependency). Removing demo
      watch progress here also stops this browser from uploading it to the server on the next sync.
 
    How demo data is recognised (real data is never matched):
@@ -38,7 +39,7 @@
 
   function read(key) {
     try {
-      var s = localStorage.getItem(key);
+      var s = AQ.storage.get(key);
       return s ? JSON.parse(s) : null;
     } catch {
       return null;
@@ -46,7 +47,7 @@
   }
   function write(key, v) {
     try {
-      localStorage.setItem(key, JSON.stringify(v));
+      AQ.storage.set(key, JSON.stringify(v));
     } catch {
       /* storage blocked: nothing to clean */
     }
@@ -138,7 +139,7 @@
 
   function run() {
     try {
-      if (localStorage.getItem(DONE_KEY)) return;
+      if (AQ.storage.get(DONE_KEY)) return;
     } catch {
       return;
     }
@@ -149,13 +150,13 @@
       watch = cleanWatch();
     if (act.removed || streak || goals || notes) {
       try {
-        localStorage.removeItem(K.seen);
+        AQ.storage.remove(K.seen);
       } catch {
         /* ignore */
       }
     }
     try {
-      localStorage.setItem(DONE_KEY, new Date().toISOString());
+      AQ.storage.set(DONE_KEY, new Date().toISOString());
     } catch {
       /* ignore */
     }

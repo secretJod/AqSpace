@@ -71,7 +71,7 @@
         if (e.state === "ready" || e.state === "queued" || e.state === "running")
           out[id] = { jobId: e.jobId || null, state: e.state };
       });
-      localStorage.setItem(KEY, JSON.stringify(out));
+      AQ.storage.set(KEY, JSON.stringify(out));
     } catch {
       /* storage blocked: keep working in memory */
     }
@@ -94,7 +94,7 @@
   function load() {
     var o = {};
     try {
-      o = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
+      o = JSON.parse(AQ.storage.get(KEY) || "{}") || {};
     } catch {
       o = {};
     }

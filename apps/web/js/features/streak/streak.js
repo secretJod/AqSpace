@@ -76,7 +76,7 @@ window.AQ = window.AQ || {};
   }
   function load() {
     try {
-      var s = localStorage.getItem(KEY);
+      var s = AQ.storage.get(KEY);
       if (s) data = sanitize(JSON.parse(s));
     } catch {
       storageOk = false;
@@ -84,7 +84,7 @@ window.AQ = window.AQ || {};
   }
   function save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify(data));
+      AQ.storage.set(KEY, JSON.stringify(data));
       storageOk = true;
     } catch {
       storageOk = false;
@@ -224,7 +224,7 @@ window.AQ = window.AQ || {};
   load();
   // another tab changed the streak: reload it so every open tab shows the same numbers
   window.addEventListener("storage", function (e) {
-    if (e.key === KEY) {
+    if (e.key === AQ.storage.key(KEY)) {
       load();
       emit({ type: "sync" });
     }

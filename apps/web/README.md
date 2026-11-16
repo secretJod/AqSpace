@@ -40,16 +40,18 @@ runtime file must be one of those types and live under `css/` or `js/`; config a
 ## How the UI is organised
 
 ```
-index.html            the only page: page shell, modal markup, and every <link> and <script> in load order
+index.html            the only page: page shell, modal markup, every <link>, and the two start-up scripts
 css/
   styles.css          base: design tokens, top bar, buttons, dialog, playlist grid and rows, split view
   <feature>.css       one file per feature (streak, goals, dashboard, navbar, profile, ...)
   mirror.css          the glass finish for dashboard panels; loaded late because it overrides dashboard.css
 js/
   core/               data and helpers, no screens
-    demo-cleanup.js   one-time removal of old sample data from this browser's localStorage
+    storage.js        AQ.storage browser storage, kept separate per signed-in account (loaded first)
+    boot.js           AQ.boot    finds the API, asks who is signed in, then loads every other script in order
+    demo-cleanup.js   one-time removal of old sample data from this browser's storage
     util.js           AQ.util    creates window.AQ; el(), icons, YouTube ids, durations, "3 days ago"
-    store.js          AQ.store   playlists, videos and watch progress (localStorage + subscribe)
+    store.js          AQ.store   playlists, videos and watch progress (AQ.storage + subscribe)
     api.js            AQ.api     talks to apps/api: initial load, write-through queue, request()
   ui/                 widgets that are not tied to one feature
     dialog.js         AQ.dialog  the one accessible modal (focus trap, Esc, confirm)
@@ -80,7 +82,9 @@ so on. Public functions carry JSDoc.
 
 ### Load order
 
-`index.html` loads scripts top to bottom, in five commented groups: core, playlist features, dashboard effects and
+`index.html` loads only `js/core/storage.js` and `js/core/boot.js`. boot.js finds the API, asks who is signed in
+(`GET /api/v1/auth/status`), lets `AQ.storage` pick that account's storage, and only then loads every other script
+from its `APP_SCRIPTS` list, top to bottom, in five commented groups: core, playlist features, dashboard effects and
 streak, the dashboard, and finally `app.js`. While a file loads it may only use `AQ.*` pieces from files above it.
 Inside event handlers and render functions anything is fine, because by then every file has loaded. Optional pieces
 are checked before use (`if (AQ.split) AQ.split.reset();`), so a missing feature never breaks the page.
@@ -91,7 +95,7 @@ CSS order matters too: a later file may override an earlier one.
 
 ```
 user action -> AQ.store.addVideo(...)          (or create, moveVideo, watchSave, ...)
-                 |  store.js: update memory -> save to localStorage -> AQ.api.record(...)
+                 |  store.js: update memory -> save via AQ.storage -> AQ.api.record(...)
                  v
                every AQ.store.subscribe(fn) listener runs
                  v
@@ -101,7 +105,24 @@ user action -> AQ.store.addVideo(...)          (or create, moveVideo, watchSave,
 - `AQ.store` is the single source of truth for playlists and progress. Screens never keep their own copy.
 - `AQ.notesJobs`, `AQ.activity`, `AQ.goals`, `AQ.sticky` and `AQ.streak` follow the same pattern: read, write,
   `subscribe(fn)`.
-- localStorage is the offline cache. If storage is blocked the app keeps working in memory and shows a banner.
+- Browser storage is the offline cache. If storage is blocked the app keeps working in memory and shows a banner.
+
+### Browser storage and accounts (`AQ.storage`)
+
+Every feature reads and writes browser storage through `AQ.storage.get / set / remove`, never through
+`localStorage` directly. With Google sign-in several people can share one browser, so each account gets its own
+namespace; otherwise the next person would see, or upload, the previous person's data.
+
+| Mode                     | Where `aq.goals.v1` is stored |
+| ------------------------ | ----------------------------- |
+| Sign-in off (local mode) | `aq.goals.v1` (unchanged)     |
+| Google, signed in        | `aq.u<userId>.goals.v1`       |
+| Google, signed out       | memory only, nothing kept     |
+
+Data is never moved between namespaces: signing out leaves it in place for that account's next sign-in. Before
+syncing, `api.js` checks that the server's session is still the account the page started with and reloads the page
+otherwise, so offline edits are only uploaded to the account they were made in. A new feature that saves data just
+picks a versioned key (`aq.<name>.v1`) and uses `AQ.storage`; the namespace is handled for it.
 
 ### Talking to the API (`AQ.api`)
 
@@ -128,7 +149,7 @@ sign-in screen. Features never handle sign-out themselves.
   announcements go to the `#live` region, the dialog traps focus and returns it to the opener.
 - **Reduced motion.** Animations check `prefers-reduced-motion` (in CSS, and in JS for canvas or timer
   effects) and shows the final state at once.
-- **Storage.** Every `localStorage` access is wrapped in `try`, keys are versioned (`aq.playlists.v1`), and data read
+- **Storage.** Every `AQ.storage` access is wrapped in `try`, keys are versioned (`aq.playlists.v1`), and data read
   back is sanitised before use.
 
 ## How to add a feature
@@ -224,15 +245,17 @@ text through `textContent`, a JSDoc on every public function.
 }
 ```
 
-### 3. Link both in `index.html`
+### 3. Link both: the stylesheet in `index.html`, the script in `js/core/boot.js`
 
-Add the stylesheet before `profile.css`, and the script anywhere after `api.js` and before `app.js` (group 2 is a
-good place, because the file only needs core pieces):
+Add the stylesheet before `profile.css` in `index.html`. Add the script to `APP_SCRIPTS` in `js/core/boot.js`,
+anywhere after `api.js` and before `app.js` (group 2 is a good place, because the file only needs core pieces):
 
 ```html
 <link rel="stylesheet" href="css/library.css" />
-...
-<script src="js/features/library/library.js"></script>
+```
+
+```js
+"js/features/library/library.js",
 ```
 
 ### 4. Add the route in `js/app.js` (section "router")
@@ -264,7 +287,7 @@ If the feature needs a new endpoint, that work happens in `apps/api` first; the 
 
 ## Where to start reading
 
-1. `index.html`: the page shell and the script list.
+1. `index.html`: the page shell; then `js/core/boot.js` for the script list and start-up order.
 2. `js/core/store.js`: the data model is in its header.
 3. `js/app.js`: from `render()` at the bottom up to `renderHome()` and `renderDetail()`.
 4. Then whichever feature folder you need.

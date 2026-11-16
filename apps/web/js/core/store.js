@@ -3,10 +3,10 @@
 
    What this file does:
      Holds all playlists, their videos and the watch progress of each video. It saves everything in
-     localStorage and tells the screens when something changed. No DOM code here.
+     browser storage (AQ.storage, one namespace per signed-in account) and tells the screens when something changed. No DOM code here.
 
    How it fits:
-     Loaded right after util.js (needs AQ.util). Screens READ with `AQ.store.all()` / `get(id)` and WRITE
+     Loaded by boot.js right after util.js (needs AQ.util and AQ.storage), once the account is known. Screens READ with `AQ.store.all()` / `get(id)` and WRITE
      with `create`, `addVideo`, `moveVideo`, ... Every write calls `changed()`, which saves and then calls
      the functions registered with `AQ.store.subscribe(fn)` (app.js re-renders the screen there).
      Every write is also passed to api.js (`remote(...)`) so the server gets a copy.
@@ -151,7 +151,7 @@
   function load() {
     var raw = null;
     try {
-      raw = window.localStorage.getItem(KEY);
+      raw = AQ.storage.get(KEY);
     } catch {
       storageOk = false;
     }
@@ -169,7 +169,7 @@
   }
   function persist() {
     try {
-      window.localStorage.setItem(KEY, JSON.stringify(playlists));
+      AQ.storage.set(KEY, JSON.stringify(playlists));
       storageOk = true;
       return true;
     } catch {
@@ -191,7 +191,7 @@
 
   // another tab changed the data: reload and tell the UI
   window.addEventListener("storage", function (e) {
-    if (e.key !== KEY) return;
+    if (e.key !== AQ.storage.key(KEY)) return;
     try {
       playlists = e.newValue == null ? [] : cleanPlaylists(JSON.parse(e.newValue));
     } catch {
@@ -486,7 +486,7 @@
   }
   function persistWatch() {
     try {
-      window.localStorage.setItem(WATCH_KEY, JSON.stringify(watch));
+      AQ.storage.set(WATCH_KEY, JSON.stringify(watch));
       return true;
     } catch {
       return false;
@@ -494,13 +494,13 @@
   }
   (function loadWatch() {
     try {
-      watch = cleanWatch(JSON.parse(window.localStorage.getItem(WATCH_KEY) || "{}"));
+      watch = cleanWatch(JSON.parse(AQ.storage.get(WATCH_KEY) || "{}"));
     } catch {
       watch = {};
     }
     // the legacy `aq.watched.v1` list only meant "opened once", not "finished": drop it instead of marking videos done
     try {
-      window.localStorage.removeItem(OLD_WATCHED_KEY);
+      AQ.storage.remove(OLD_WATCHED_KEY);
       persistWatch();
     } catch {
       /* storage unavailable */
@@ -508,7 +508,7 @@
   })();
 
   window.addEventListener("storage", function (e) {
-    if (e.key !== WATCH_KEY) return;
+    if (e.key !== AQ.storage.key(WATCH_KEY)) return;
     try {
       watch = cleanWatch(JSON.parse(e.newValue || "{}"));
     } catch {

@@ -4,21 +4,28 @@
    What this file does:
      Talks to the HTTP API (apps/api, under /api/v1). It loads playlists and watch progress from the
      server on start and sends every later change to the server, one after the other, in order.
-     The UI keeps working without a server: localStorage stays the offline cache and every store
-     function stays synchronous.
+     The UI keeps working without a server: browser storage (AQ.storage) stays the offline cache and
+     every store function stays synchronous.
 
      When the API is reachable (the same origin when apps/api serves this page, otherwise
      http://127.0.0.1:5180 for a page opened another way) this file
        1. loads playlists and watch progress on start and hands them to the store, which re-renders,
-       2. uploads what was in localStorage once (the server's `bootstrapped` flag decides, so it happens
+       2. uploads what was in browser storage once (the server's `bootstrapped` flag decides, so it happens
           only the first time),
        3. writes every later change through to the server in order (AQ.store calls AQ.api.record(...)),
-       4. sets `aq.dirty.v1` in localStorage when a write cannot be sent; the next successful connection
+       4. sets `aq.dirty.v1` in browser storage when a write cannot be sent; the next successful connection
           then pushes the whole local state, so offline edits are never lost.
 
+     Accounts on a shared browser:
+       Before it syncs, this file checks that the server still talks about the account whose storage this
+       page uses (AQ.storage.matches). Local data is only ever uploaded to the account it was saved for: if
+       someone else signed in meanwhile (in another tab, or while this page was offline), the page reloads
+       into the new account's own, separate storage instead of uploading the previous person's edits.
+
    How it fits:
-     Loaded after store.js (needs AQ.store). store.js calls `AQ.api.record(name, args)` after each local
-     change. notes-jobs.js, import-playlist.js, smart-arrange.js and profile.js use `AQ.api.request(...)`
+     Loaded by boot.js after store.js (needs AQ.store), once the account is known. boot.js has already
+     found the server (AQ.boot.base) and asked who is signed in (AQ.boot.status). store.js calls
+     `AQ.api.record(name, args)` after each local change. notes-jobs.js, import-playlist.js, smart-arrange.js and profile.js use `AQ.api.request(...)`
      and ask `AQ.api.available()` whether the server is there. A 401 {code:"auth_required"} stops all
      traffic once and calls AQ.profile.authRequired() (profile.js shows the sign-in screen).
 
@@ -38,8 +45,7 @@
 (function () {
   "use strict";
 
-  var FALLBACK = "http://127.0.0.1:5180"; // the API's default local address, for a page not served by it
-  var DIRTY_KEY = "aq.dirty.v1"; // localStorage flag: "there are local changes the server has not seen"
+  var DIRTY_KEY = "aq.dirty.v1"; // stored flag, per account: "there are local changes the server has not seen"
   var WATCH_DELAY_MS = 2000;
 
   var api = { base: "" };
@@ -51,21 +57,21 @@
   // ===== 1. tiny helpers =====
   function isDirty() {
     try {
-      return localStorage.getItem(DIRTY_KEY) === "1";
+      return AQ.storage.get(DIRTY_KEY) === "1";
     } catch {
       return false;
     }
   }
   function markDirty() {
     try {
-      localStorage.setItem(DIRTY_KEY, "1");
+      AQ.storage.set(DIRTY_KEY, "1");
     } catch {
       /* storage blocked */
     }
   }
   function clearDirty() {
     try {
-      localStorage.removeItem(DIRTY_KEY);
+      AQ.storage.remove(DIRTY_KEY);
     } catch {
       /* storage blocked */
     }
@@ -132,29 +138,31 @@
     );
   }
 
-  // ===== 2. finding the server =====
-  function probe(base) {
-    return req("GET", "/api/v1/health", undefined, { base: base, timeout: 1500 }).then(
-      function (r) {
-        return r.status === 200 && r.json && r.json.service === "aq-api"; // the name apps/api reports
-      },
-      function () {
-        return false;
-      }
-    );
+  // ===== 2. finding the server and checking the account =====
+  // On the first connection boot.js has already found the server; later attempts (after being offline) probe again.
+  function detect(first) {
+    if (first) return Promise.resolve(AQ.boot.base);
+    return AQ.boot.findServer();
   }
-  function detect() {
-    var cands = [];
-    if (/^https?:$/.test(location.protocol)) cands.push("");
-    if (location.port !== "5180") cands.push(FALLBACK);
-    return cands.reduce(function (p, base) {
-      return p.then(function (found) {
-        if (found !== null) return found;
-        return probe(base).then(function (ok) {
-          return ok ? base : null;
-        });
-      });
-    }, Promise.resolve(null));
+
+  /* Privacy between accounts on a shared browser: the local copy (and its offline edits) belongs to the account
+     this page started with. Before syncing, make sure the server's session is still that account. If it is not
+     (someone signed out and another person signed in, in another tab or while this page was offline), never push
+     this copy: reload, so the page opens with the signed-in account's own storage.
+     Resolves true when it is safe to sync. */
+  var switching = false;
+  function sameAccount(first) {
+    if (first && AQ.boot.status) return Promise.resolve(true); // boot.js picked the storage from this very answer
+    return req("GET", "/api/v1/auth/status", undefined, { authFree: true, timeout: 5000 }).then(function (r) {
+      if (r.status !== 200 || !r.json) throw new Error("status failed");
+      if (AQ.storage.matches(r.json)) return true;
+      if (!switching) {
+        switching = true;
+        state.ok = false;
+        location.reload();
+      }
+      return false;
+    });
   }
 
   // ===== 3. server -> store =====
@@ -205,24 +213,29 @@
       });
   }
 
-  function connect() {
-    return detect().then(function (base) {
+  function connect(first) {
+    return detect(first).then(function (base) {
       if (base === null) {
         state.reconciled = true;
         state.ok = false;
         return false;
       }
       api.base = base;
-      return reconcile().then(
-        function () {
-          return true;
-        },
-        function () {
-          state.reconciled = true;
-          state.ok = false;
-          return false;
-        }
-      );
+      return sameAccount(first)
+        .then(function (same) {
+          if (!same) throw new Error("account changed");
+          return reconcile();
+        })
+        .then(
+          function () {
+            return true;
+          },
+          function () {
+            state.reconciled = true;
+            state.ok = false;
+            return false;
+          }
+        );
     });
   }
 
@@ -410,19 +423,31 @@
     if (authLost) return;
     if (state.ok || !state.reconciled || (readyP && state.connecting)) return;
     state.connecting = true;
-    readyP = connect().then(function (ok) {
+    readyP = connect(false).then(function (ok) {
       state.connecting = false;
       return ok;
+    });
+  }
+  /* With Google sign-in, another tab may have signed out and signed someone else in while this tab was hidden.
+     The session cookie is shared by all tabs, so this tab's next write would land in that other account.
+     Check when the tab is shown again; sameAccount() reloads into the right account if it changed. */
+  function recheckAccount() {
+    if (authLost || !state.ok || !AQ.boot.status || AQ.boot.status.authMode !== "google") return;
+    sameAccount(false).catch(function () {
+      /* server busy or offline: the next sync checks again */
     });
   }
   window.addEventListener("online", retry);
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") flushWatch();
-    else retry();
+    else {
+      recheckAccount();
+      retry();
+    }
   });
   window.addEventListener("pagehide", flushWatch);
 
-  readyP = connect();
+  readyP = connect(true);
   window.AQ = window.AQ || {};
   AQ.api = api;
 })();
