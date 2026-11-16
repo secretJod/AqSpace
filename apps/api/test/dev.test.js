@@ -5,16 +5,11 @@ import { startApp, startMockPython, VID } from "./helpers.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  createTracker,
-  createDevLog,
-  maskPath,
-  toCsv,
-  computeStats,
-  percentile,
-  redactLine,
-  filterEntries
-} from "../src/dev/index.js";
+import { createTracker } from "../src/dev/tracker.js";
+import { createDevLog } from "../src/dev/dev-log-store.js";
+import { maskPath } from "../src/dev/mask-path.js";
+import { filterEntries, toCsv, computeStats, percentile } from "../src/dev/history-tools.js";
+import { redactLine } from "../src/dev/service-logs.js";
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
@@ -137,7 +132,7 @@ test("events + jobs: notes job state changes are recorded", async () => {
 
 test("ring buffer keeps the last N entries; maskPath", () => {
   const t = createTracker({ max: 2000 });
-  for (let i = 0; i < 2500; i++) t.request({ method: "GET", path: "/x", status: 200, ms: 1, layer: "api" });
+  for (let i = 0; i < 2500; i++) t.requests.push({ method: "GET", path: "/x", status: 200, ms: 1, layer: "api" });
   assert.equal(t.requests.size, 2000);
   assert.equal(t.requests.last, 2500);
   assert.equal(t.requests.since(0, 500)[0].seq, 501);
@@ -243,8 +238,8 @@ test("devlog retention deletes files older than keepDays; disabled log -> 404", 
 test("tracker buffers writes (no file until flush), /dev entries not persisted", async () => {
   const dir = tmp("aq-devlog-");
   const t = createTracker({ logDir: dir, flushMs: 60000 });
-  t.request({ method: "GET", path: "/x", status: 200, ms: 1, layer: "api" });
-  t.request({ method: "GET", path: "/dev/api/requests", status: 200, ms: 1, layer: "dev" });
+  t.requests.push({ method: "GET", path: "/x", status: 200, ms: 1, layer: "api" });
+  t.requests.push({ method: "GET", path: "/dev/api/requests", status: 200, ms: 1, layer: "dev" });
   assert.equal(fs.readdirSync(dir).length, 0);
   await t.log.flush();
   const f = fs.readdirSync(dir);

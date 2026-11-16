@@ -18,7 +18,7 @@ import { createRepo } from "./db/repository.js";
 import { createPyClient, assertPyUrl } from "./services/worker-client.js";
 import { createNotesService } from "./services/notes-service.js";
 import { createSmartService } from "./services/smart-service.js";
-import { localAuth, LOCAL_USER } from "./middleware/auth.js";
+import { localAuth, LOCAL_USER } from "./middleware/local-auth.js";
 import { createGoogleAuth } from "./middleware/google-auth.js";
 import { securityHeaders } from "./middleware/security-headers.js";
 import { hostGuard, cors, localOnly } from "./middleware/local-only.js";
@@ -28,11 +28,25 @@ import { notFoundHandler, errorHandler } from "./middleware/error-handler.js";
 import { createApiRouter } from "./routes/index.js";
 import { fontRoutes } from "./routes/fonts.js";
 import { uiStaticRoutes } from "./routes/ui-static.js";
-import { createTracker, devRoutes } from "./dev/index.js";
+import { createTracker } from "./dev/tracker.js";
+import { devRoutes } from "./dev/dev-router.js";
 
-export const VERSION = "0.1.0";
+/** Reported by GET /api/v1/health; keep in step with package.json. */
+const VERSION = "0.1.0";
 
-/** Builds the Express app. deps: { db?, authenticate?, fetchImpl?, googleFetch?, clock? } (all optional; used for tests and the OAuth hook). */
+/**
+ * Builds the Express app with every service wired in.
+ *
+ * @param {object} config  the result of loadConfig() (config/load-config.js)
+ * @param {object} [deps]  optional replacements, used by the tests and for a custom sign-in:
+ * @param {import("node:sqlite").DatabaseSync} [deps.db]  an already opened database (default: open config.dbFile)
+ * @param {Function} [deps.authenticate]  Express middleware that sets req.user (default: AUTH_MODE decides)
+ * @param {typeof fetch} [deps.fetchImpl]   fetch used to call the Python worker
+ * @param {typeof fetch} [deps.googleFetch] fetch used to call Google during sign-in
+ * @param {() => number} [deps.clock]       current time in ms (default Date.now)
+ * @returns {import("express").Express} the app; app.locals holds { db, repo, tracker }
+ * @throws {Error} when PY_NOTES_URL is invalid or the Google sign-in settings are incomplete
+ */
 export function createApp(config, deps = {}) {
   // -------------------------------------------------------------------------
   // 1. Building blocks: database, worker client, services
@@ -84,7 +98,8 @@ export function createApp(config, deps = {}) {
 
   if (tracker) {
     app.use(tracker.middleware);
-    // own (unrecorded) client: the tracker's health probe must not fill the request log
+    // A separate, unrecorded client: the overview page probes the worker every few seconds,
+    // and those probes would otherwise flood the request log they are shown next to.
     const quietPy = createPyClient({ baseUrl: config.pyUrl, timeoutMs: 1500, fetchImpl });
     app.use("/dev", localOnly, devRoutes({ db, py: quietPy, tracker, runDir: config.runDir }));
   }
