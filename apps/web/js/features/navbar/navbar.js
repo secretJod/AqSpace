@@ -1,25 +1,33 @@
 /* =====================================================================================================
+   navbar.js - the bottom navigation bar with a sliding "liquid glass" lens (AQ.navbar)
+
    What this file does:
-     The bottom navigation bar (Dashboard / AI / Playlists) with the sliding glass lens.
+     Builds the Dashboard / AI / Playlists bar. A glass lens sits over the active item and glides to a
+     new item with a damped spring; it can also be dragged. Inside the lens a magnified copy of the bar
+     is drawn, which gives the refraction look.
 
    How it fits:
-     app.js mounts it into #navbar-root. Works on its own too: see demo/navbar-demo.html.
+     Self-contained (no other AQ piece needed). app.js mounts it into #navbar-root, maps item ids to
+     routes, adds `has-navbar` to <body> (reserves bottom space, see css/navbar.css) and calls
+     setActive() on every route change.
+       AQ.navbar.mount(container, { items, active, onSelect }) -> { setActive(id), destroy() }
+       AQ.navbar.DEFAULT_ITEMS: dashboard / ai / playlists
+
+   Accessibility:
+     A <nav aria-label="Main"> of real buttons with aria-current on the active one. Arrow keys, Home and
+     End move focus with a roving tabindex, so the bar is one Tab stop. The magnified copy inside the lens
+     is aria-hidden. Under prefers-reduced-motion the lens jumps instead of gliding.
 
    Start reading at:
-     `mount()`.
+     `mount()`, then `go()` and the spring in `step()`. Next file: app.js (routing).
    ===================================================================================================== */
-
-/* AQspace - bottom navigation bar with a sliding "liquid glass" lens.
-   AQ.navbar.mount(container, { items, active, onSelect }) -> { setActive(id), destroy() }
-   AQ.navbar.DEFAULT_ITEMS: dashboard / ai / goals.
-   Page tip: add class `has-navbar` to <body> to reserve bottom space (see navbar.css). */
 window.AQ = window.AQ || {};
 (function () {
   "use strict";
 
   var SVG_NS = "http://www.w3.org/2000/svg";
 
-  // ===== 1. icons (createElementNS, no innerHTML) =====
+  // ===== 1. icons (built with createElementNS: no markup strings, so nothing is ever parsed as HTML) =====
   var ICON_DEFS = {
     dashboard: [
       ["rect", { x: 3.5, y: 3.5, width: 7, height: 7, rx: 2 }],
@@ -36,11 +44,6 @@ window.AQ = window.AQ || {};
       ["rect", { x: 3.5, y: 10.5, width: 13, height: 3, rx: 1.5 }],
       ["rect", { x: 3.5, y: 17, width: 8, height: 3, rx: 1.5 }],
       ["path", { d: "M15 16.2v4.6l4-2.3z", fill: "currentColor" }]
-    ],
-    goals: [
-      ["circle", { cx: 12, cy: 12, r: 8.5 }],
-      ["circle", { cx: 12, cy: 12, r: 4.5 }],
-      ["circle", { cx: 12, cy: 12, r: 1.2, fill: "currentColor" }]
     ]
   };
 
@@ -97,6 +100,15 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 2. mount =====
+  /**
+   * Build the bar and append it to `container`.
+   * @param {Element} container Where the <nav> is appended.
+   * @param {{items?: Array<{id: string, label: string, icon: string}>, active?: string,
+   *          onSelect?: function(string): void}} [opts]
+   *   `items` defaults to DEFAULT_ITEMS; `onSelect` gets the id of an item the user picks (not setActive calls).
+   * @returns {{setActive: function(?string): void, destroy: function(): void}}
+   *   setActive(id) moves the lens without calling onSelect; null or an unknown id hides the lens.
+   */
   function mount(container, opts) {
     opts = opts || {};
     var items = (opts.items && opts.items.length ? opts.items : DEFAULT_ITEMS).slice();
@@ -107,6 +119,7 @@ window.AQ = window.AQ || {};
         return it.id === opts.active;
       })
     );
+    // reduced motion: the lens jumps to its target instead of gliding (checked on every move)
     var mq = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 
     var root = el("nav", "nb-bar nb-settled");
@@ -142,11 +155,7 @@ window.AQ = window.AQ || {};
       cloneWrap.style.height = g.h + "px";
     }
     function targetFor(i) {
-      var c = g.centers[i] || 0;
-      var push = 0; // end items drift past the pill edge
-      if (i === 0 && items.length > 1) c -= push;
-      if (i === items.length - 1 && items.length > 1) c += push;
-      return c;
+      return g.centers[i] || 0;
     }
 
     /* spring state */

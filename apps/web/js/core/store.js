@@ -1,26 +1,31 @@
 /* =====================================================================================================
+   store.js - the data store (AQ.store)
+
    What this file does:
-     The data store: all playlists, their videos and the watch progress of each video.
-     It saves everything in localStorage and tells the screens when something changed. No DOM code here.
+     Holds all playlists, their videos and the watch progress of each video. It saves everything in
+     localStorage and tells the screens when something changed. No DOM code here.
 
    How it fits:
-     Loaded right after util.js. Screens READ with `AQ.store.all()` / `get(id)` and WRITE with
-     `create`, `addVideo`, `moveVideo`, ... Every write calls `changed()`, which saves and then calls the
-     functions registered with `AQ.store.subscribe(fn)` (app.js re-renders the screen there).
+     Loaded right after util.js (needs AQ.util). Screens READ with `AQ.store.all()` / `get(id)` and WRITE
+     with `create`, `addVideo`, `moveVideo`, ... Every write calls `changed()`, which saves and then calls
+     the functions registered with `AQ.store.subscribe(fn)` (app.js re-renders the screen there).
      Every write is also passed to api.js (`remote(...)`) so the server gets a copy.
 
-   Start reading at:
-     The data model in the comment below, then `load()` and the "playlist CRUD" section.
-   ===================================================================================================== */
-
-/* AQspace - playlist store (CRUD + persistence). No DOM code in here.
-
    Data model (localStorage key `aq.playlists.v1`, JSON array):
-   Playlist = { id, name, description, created, updated, videos: [Video], source?: { type:"youtube", listId, url, importedAt } }
-   Video   = { id (11-char YouTube id), title, channel, duration ("m:ss" | "h:mm:ss" | ""), added }
-   Dates are ISO strings. Playlist ids are slugs matching PLAYLIST_ID_RE (used in the #/playlist/<id> route).
+     Playlist = { id, name, description, created, updated, videos: [Video],
+                  source?: { type:"youtube", listId, url, importedAt } }
+     Video    = { id (11-char YouTube id), title, channel, duration ("m:ss" | "h:mm:ss" | ""), added }
+     Dates are ISO strings. Playlist ids are slugs matching PLAYLIST_ID_RE (used in the #/playlist/<id> route).
 
-   If localStorage is unavailable (or a write fails) the app keeps working in memory; AQ.store.storageOk() turns false. */
+   Storage:
+     localStorage is the offline cache, so the app works with no server at all. Everything read from it
+     (or from the server) is sanitised first, because another tab, an extension or an older build may
+     have written it. If localStorage is unavailable or a write fails, the app keeps working in memory
+     and AQ.store.storageOk() turns false (app.js then shows a warning banner).
+
+   Start reading at:
+     `load()` and the "playlist CRUD" section. Next file: core/api.js (server sync).
+   ===================================================================================================== */
 (function () {
   "use strict";
 
@@ -33,7 +38,7 @@
   var storageOk = true;
   var listeners = [];
 
-  /* write-through to the aq-api backend (api.js, loaded after this file); a no-op when it is absent or unreachable */
+  /* Write-through to the API (api.js, loaded after this file); a no-op when it is absent or unreachable. */
   function remote(name) {
     var A = window.AQ && AQ.api;
     if (A && A.record) {
@@ -202,19 +207,38 @@
   });
 
   // ===== 4. queries =====
+  /**
+   * @returns {Array<object>} Every playlist, in display order. Treat it as read-only: change data through the
+   *   write functions so the change is saved, synced and shown.
+   */
   function all() {
     return playlists;
   }
+  /**
+   * @param {string} id Playlist id.
+   * @returns {object|null} The playlist, or null when there is none with that id.
+   */
   function get(id) {
     for (var i = 0; i < playlists.length; i++) if (playlists[i].id === id) return playlists[i];
     return null;
   }
+  /**
+   * Case-insensitive check for a playlist name already in use.
+   * @param {string} name
+   * @param {string} [exceptId] A playlist to ignore (the one being renamed).
+   * @returns {boolean}
+   */
   function nameTaken(name, exceptId) {
     var n = String(name).trim().toLowerCase();
     return playlists.some(function (p) {
       return p.id !== exceptId && p.name.toLowerCase() === n;
     });
   }
+  /**
+   * @param {object} p A playlist.
+   * @param {string} vid A video id.
+   * @returns {number} The video's index in the playlist, or -1.
+   */
   function indexOfVideo(p, vid) {
     for (var i = 0; i < p.videos.length; i++) if (p.videos[i].id === vid) return i;
     return -1;
@@ -236,7 +260,12 @@
     }
     return id;
   }
-  /** Returns the new playlist, or null when the name is empty/too long/taken. */
+  /**
+   * Create an empty playlist.
+   * @param {string} name Up to LIMITS.name characters, unique (case-insensitive).
+   * @param {string} [description] Trimmed to LIMITS.description characters.
+   * @returns {object|null} The new playlist, or null when the name is empty, too long or taken.
+   */
   function create(name, description) {
     name = String(name || "").trim();
     if (!name || name.length > LIMITS.name || nameTaken(name)) return null;
@@ -256,9 +285,15 @@
     remote("create", p);
     return p;
   }
-  /** Batch create: a playlist with all `videos` (cleaned, duplicates skipped) in ONE write.
-      `source` (optional) = { type:"youtube", listId } is recorded as playlist.source.
-      Returns { playlist, added, skipped }, or null when the name is empty/too long/taken. */
+  /**
+   * Create a playlist with all its videos in one write (used by the YouTube import).
+   * Invalid and duplicate videos are skipped.
+   * @param {string} name Up to LIMITS.name characters, unique (case-insensitive).
+   * @param {string} [description]
+   * @param {Array<object>} videos Raw video objects; each is cleaned like data from storage.
+   * @param {{type: "youtube", listId: string}} [source] Recorded as playlist.source when valid.
+   * @returns {{playlist: object, added: number, skipped: number}|null} null when the name is empty, too long or taken.
+   */
   function createWithVideos(name, description, videos, source) {
     name = String(name || "").trim();
     if (!name || name.length > LIMITS.name || nameTaken(name)) return null;
@@ -292,6 +327,13 @@
     remote("create", p);
     return { playlist: p, added: vids.length, skipped: skipped };
   }
+  /**
+   * Rename a playlist and change its description.
+   * @param {string} id
+   * @param {string} name
+   * @param {string} [description]
+   * @returns {boolean} False when the playlist is unknown or the name is empty, too long or taken.
+   */
   function update(id, name, description) {
     var p = get(id);
     name = String(name || "").trim();
@@ -305,6 +347,11 @@
     remote("update", id, p.name, p.description);
     return true;
   }
+  /**
+   * Delete a playlist.
+   * @param {string} id
+   * @returns {boolean} False when there is no such playlist.
+   */
   function remove(id) {
     var i = playlists.indexOf(get(id));
     if (i < 0) return false;
@@ -318,7 +365,13 @@
   function touch(p) {
     p.updated = new Date().toISOString();
   }
-  /** Returns the stored video, or null (invalid id / duplicate in this playlist / unknown playlist). */
+  /**
+   * Add one video to a playlist.
+   * @param {string} pid Playlist id.
+   * @param {object} data Raw video ({id, title, channel, duration}); cleaned before it is stored.
+   * @param {number} [atIndex] Insert position; appended when omitted.
+   * @returns {object|null} The stored video, or null (invalid id, duplicate in this playlist, unknown playlist).
+   */
   function addVideo(pid, data, atIndex) {
     var p = get(pid),
       v = cleanVideo(data);
@@ -330,31 +383,12 @@
     remote("addVideo", pid, v, i === p.videos.length - 1 ? undefined : i);
     return v;
   }
-  /** Batch add: appends every valid, non-duplicate video of `list` with ONE write.
-      Returns { added, skipped } or null for an unknown playlist. */
-  function addVideos(pid, list) {
-    var p = get(pid);
-    if (!p) return null;
-    var added = 0,
-      skipped = 0,
-      addedList = [];
-    (Array.isArray(list) ? list : []).forEach(function (raw) {
-      var v = cleanVideo(raw);
-      if (!v || indexOfVideo(p, v.id) >= 0) {
-        skipped++;
-        return;
-      }
-      p.videos.push(v);
-      added++;
-      addedList.push(v);
-    });
-    if (added) {
-      touch(p);
-      changed();
-      remote("addVideos", pid, addedList);
-    }
-    return { added: added, skipped: skipped };
-  }
+  /**
+   * Remove a video from a playlist.
+   * @param {string} pid Playlist id.
+   * @param {string} vid Video id.
+   * @returns {boolean} False when the playlist or video is unknown.
+   */
   function removeVideo(pid, vid) {
     var p = get(pid);
     if (!p) return false;
@@ -366,6 +400,13 @@
     remote("removeVideo", pid, vid);
     return true;
   }
+  /**
+   * Edit a video's title, channel or duration (fields left null keep their value).
+   * @param {string} pid Playlist id.
+   * @param {string} vid Video id.
+   * @param {{title?: string, channel?: string, duration?: string}} patch
+   * @returns {boolean} False when the playlist or video is unknown.
+   */
   function updateVideo(pid, vid, patch) {
     var p = get(pid);
     if (!p) return false;
@@ -385,6 +426,13 @@
     remote("updateVideo", pid, vid, next);
     return true;
   }
+  /**
+   * Move a video to another position in its playlist.
+   * @param {string} pid Playlist id.
+   * @param {number} from Current index.
+   * @param {number} to New index.
+   * @returns {boolean} False when nothing moved (unknown playlist, same or out-of-range index).
+   */
   function moveVideo(pid, from, to) {
     var p = get(pid);
     if (!p) return false;
@@ -402,14 +450,19 @@
     return true;
   }
 
+  /**
+   * Register a function called after every change (local writes, other tabs, server sync).
+   * @param {function(): void} fn
+   */
   function subscribe(fn) {
     listeners.push(fn);
   }
 
-  /* ----- watch progress (A2): real playback position per video -----
+  /* ----- watch progress: the real playback position per video -----
      localStorage `aq.watch.v1` = { videoId: { pos, dur, done, updated } }   (seconds; done = >= 95% or ended)
-     The old `aq.watched.v1` id list ("opened once") is discarded, not treated as finished. Memory is the source of truth,
-     storage failures are swallowed. Progress is time-based: watched seconds / total seconds. */
+     Memory is the source of truth and storage failures are swallowed, so playback never breaks because
+     storage is full or blocked. Progress is time-based: watched seconds / total seconds.
+     The legacy `aq.watched.v1` key (a list of ids that were merely opened) is deleted, not treated as finished. */
   var WATCH_KEY = "aq.watch.v1",
     OLD_WATCHED_KEY = "aq.watched.v1",
     DONE_AT = 0.95;
@@ -426,7 +479,7 @@
       var r = obj[id];
       if (!ID_RE.test(id) || !r || typeof r !== "object") return;
       var pos = num(r.pos);
-      // "done" without any real position came from the old opened-counts-as-watched migration: not finished
+      // "done" without any real position is a legacy "opened once" record, not a finished video
       out[id] = { pos: pos, dur: num(r.dur), done: !!r.done && pos >= 1, updated: num(r.updated) || Date.now() };
     });
     return out;
@@ -445,7 +498,7 @@
     } catch {
       watch = {};
     }
-    // the old `aq.watched.v1` list only meant "opened once", not "finished": drop it instead of marking videos done
+    // the legacy `aq.watched.v1` list only meant "opened once", not "finished": drop it instead of marking videos done
     try {
       window.localStorage.removeItem(OLD_WATCHED_KEY);
       persistWatch();
@@ -484,6 +537,11 @@
     }
     return 0;
   }
+  /**
+   * Format seconds as a clock: "4:05" or "1:02:03".
+   * @param {number} sec
+   * @returns {string}
+   */
   function clock(sec) {
     sec = Math.max(0, Math.floor(sec || 0));
     var h = Math.floor(sec / 3600),
@@ -491,7 +549,13 @@
       s = sec % 60;
     return h ? h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s : m + ":" + (s < 10 ? "0" : "") + s;
   }
-  /** {pos, dur, done, pct (0-100 for this video), state: "new"|"partial"|"done", updated} - dur falls back to the listed duration. */
+  /**
+   * Watch progress of one video.
+   * @param {string} id Video id.
+   * @param {number} [durHint] Duration in seconds to use when none was recorded; otherwise the listed duration is used.
+   * @returns {{pos: number, dur: number, done: boolean, pct: number, state: "new"|"partial"|"done", updated: number}}
+   *   `pct` is 0-100 and only reaches 100 when the video is finished.
+   */
   function watchInfo(id, durHint) {
     var r = watch[id],
       dur = (r && r.dur) || num(durHint) || listedDur(id),
@@ -502,7 +566,11 @@
     var state = done ? "done" : pos >= 1 ? "partial" : "new";
     return { pos: done ? dur || pos : pos, dur: dur, done: done, pct: pct, state: state, updated: r ? r.updated : 0 };
   }
-  /** Label for a video row's watch button: {label, icon, state, resumeAt} ("Play" / "Resume · 12:34" / "Replay"). */
+  /**
+   * Label for a video row's watch button: "Play", "Resume · 12:34" or "Replay".
+   * @param {string} id Video id.
+   * @returns {{label: string, icon: string, state: "new"|"partial"|"done", resumeAt: number}} resumeAt in seconds.
+   */
   function watchLabel(id) {
     var w = watchInfo(id);
     if (w.state === "done") return { label: "Replay", icon: "play", state: "done", resumeAt: 0 };
@@ -510,7 +578,15 @@
       return { label: "Resume · " + clock(w.pos), icon: "play", state: "partial", resumeAt: Math.floor(w.pos) };
     return { label: "Play", icon: "play", state: "new", resumeAt: 0 };
   }
-  /** Save playback. patch = {pos, dur, done, ended}. Persists silently; pass {notify:true} (or call notify()) to re-render the UI. */
+  /**
+   * Save playback progress. A video counts as finished at 95% or when it ended; stopping part-way through a
+   * replay makes it "partial" again. Saves silently (the player saves every few seconds, and re-rendering the
+   * page each time would be wasteful); pass {notify: true} or call notify() to re-render.
+   * @param {string} id Video id (validated; anything else is ignored).
+   * @param {{pos?: number, dur?: number, done?: boolean, ended?: boolean}} patch Seconds.
+   * @param {{notify?: boolean}} [opts]
+   * @returns {object|null} The new watchInfo(id), or null for an invalid id or patch.
+   */
   function watchSave(id, patch, opts) {
     if (typeof id !== "string" || !ID_RE.test(id) || !patch) return null;
     var r = watch[id] || (watch[id] = { pos: 0, dur: 0, done: false, updated: 0 });
@@ -531,7 +607,12 @@
     if (opts && opts.notify) emit();
     return watchInfo(id);
   }
-  /** Learn a video's real duration (seconds): fills it in where the listing has none. Silent unless opts.notify. */
+  /**
+   * Record a video's real duration (reported by the player) and fill it in wherever the listing has none.
+   * @param {string} id Video id.
+   * @param {number} sec Duration in seconds.
+   * @param {{notify?: boolean}} [opts] Silent unless notify is set.
+   */
   function learnDuration(id, sec, opts) {
     sec = Math.round(num(sec));
     if (!sec || !ID_RE.test(id)) return;
@@ -551,9 +632,10 @@
     if (touched) persist();
     if (opts && opts.notify) emit();
   }
-  function markWatched(id) {
-    watchSave(id, { done: true }, { notify: true });
-  }
+  /**
+   * @param {string} id Video id.
+   * @returns {boolean} True when the video is finished.
+   */
   function isWatched(id) {
     return !!(watch[id] && watch[id].done);
   }
@@ -587,11 +669,19 @@
     } else pct = n ? Math.round((100 * done) / n) : 0; // no known durations at all: fall back to counting videos
     return { done: done, total: n, pct: pct, watchedSec: w, totalSec: t, unknown: unknown, timed: t > 0 };
   }
-  /** Time-based progress of a playlist: {done (videos finished), total (videos), pct, watchedSec, totalSec, unknown, timed}. */
+  /**
+   * Time-based progress of a playlist.
+   * @param {object} p A playlist.
+   * @returns {{done: number, total: number, pct: number, watchedSec: number, totalSec: number, unknown: number,
+   *            timed: boolean}} `done`/`total` count videos; `timed` is false when no duration is known (pct then counts videos).
+   */
   function progress(p) {
     return sumVideos(p.videos);
   }
-  /** Progress across all playlists (each unique video counted once). */
+  /**
+   * Progress across all playlists (each unique video counted once).
+   * @returns {object} Same shape as progress().
+   */
   function overall() {
     var all = [];
     playlists.forEach(function (p) {
@@ -601,7 +691,11 @@
     });
     return sumVideos(all);
   }
-  /** "14 of 36 min" / "1 hr 2 min of 4 hr 30 min" for a progress object. */
+  /**
+   * Human text for a progress object: "14 of 36 min" or "1 hr 2 min of 4 hr 30 min".
+   * @param {object} pr A result of progress() or overall().
+   * @returns {string} "" when no duration is known.
+   */
   function progressTime(pr) {
     var h = AQ.util.humanDuration;
     if (!pr.totalSec) return "";
@@ -610,12 +704,20 @@
     return wTxt + " of " + h(pr.totalSec) + (pr.unknown ? "+" : "");
   }
 
-  // ===== 7. sync with the aq-api backend (called by api.js) =====
-  /** Everything the server needs for a full import: the playlists and the watch records. */
+  // ===== 7. sync with the API (called by api.js) =====
+  /**
+   * Everything the server needs for a full import.
+   * @returns {{playlists: Array<object>, progress: object}}
+   */
   function exportState() {
     return { playlists: playlists, progress: watch };
   }
-  /** Adopt the server's playlists + progress (sanitised like anything read from storage). A newer local watch record wins. */
+  /**
+   * Adopt the server's playlists and progress. They are sanitised like anything read from storage; for each
+   * video the newer watch record (local or server) wins. Subscribers are told only when something changed.
+   * @param {Array<object>} pls Playlists from the server.
+   * @param {object} prog Watch records from the server, keyed by video id.
+   */
   function applyRemote(pls, prog) {
     var np = cleanPlaylists(pls),
       nw = cleanWatch(prog);
@@ -635,9 +737,7 @@
   AQ.store = {
     exportState: exportState,
     applyRemote: applyRemote,
-    KEY: KEY,
     LIMITS: LIMITS,
-    PLAYLIST_ID_RE: PLAYLIST_ID_RE,
     all: all,
     get: get,
     nameTaken: nameTaken,
@@ -647,11 +747,9 @@
     update: update,
     remove: remove,
     addVideo: addVideo,
-    addVideos: addVideos,
     removeVideo: removeVideo,
     updateVideo: updateVideo,
     moveVideo: moveVideo,
-    markWatched: markWatched,
     isWatched: isWatched,
     progress: progress,
     overall: overall,
@@ -661,10 +759,12 @@
     watchSave: watchSave,
     learnDuration: learnDuration,
     clock: clock,
+    /** Tell every subscriber to re-render (after silent watchSave() calls). */
     notify: function () {
       emit();
     },
     subscribe: subscribe,
+    /** @returns {boolean} False while localStorage cannot be written (changes then live only in memory). */
     storageOk: function () {
       return storageOk;
     }

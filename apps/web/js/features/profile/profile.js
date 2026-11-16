@@ -1,10 +1,31 @@
-/* AQspace - profile menu, Google sign-in screen and expired-session screen (#130).
-   Contract (aq-api, #151):
-     GET  /api/v1/auth/status -> {authMode:"local"|"google", signedIn, user:{id,name,email,picture}|null, loginUrl}
-     POST /api/v1/auth/logout -> {ok:true}
-     any call may return 401 {code:"auth_required"}; api.js catches it once and calls AQ.profile.authRequired().
-   While the status is unknown, <html> has .auth-pending (profile.css hides the app) so a signed-out user never sees it flash.
-   User data (name, email, picture URL) is untrusted: textContent / setAttribute only, never innerHTML. */
+/* =====================================================================================================
+   profile.js - profile menu, Google sign-in screen and expired-session screen (AQ.profile)
+
+   What this file does:
+     Replaces the top bar's avatar placeholder with a profile button and menu (name, email, Sign out),
+     and shows a full-page sign-in screen when the server requires Google sign-in, or a
+     "Your session has ended" screen when a call is refused later.
+
+   How it fits:
+     Loaded right after core/api.js (needs AQ.api; uses AQ.dialog when present). Styles: css/profile.css.
+     Server contract (apps/api):
+       GET  /api/v1/auth/status -> {authMode:"local"|"google", signedIn, user:{id,name,email,picture}|null, loginUrl}
+       POST /api/v1/auth/logout -> {ok:true}
+       any call may return 401 {code:"auth_required"}; api.js catches it once and calls AQ.profile.authRequired().
+
+   Security:
+     While the status is unknown, <html> has .auth-pending (profile.css hides the app), so a signed-out user
+     never sees the app flash. User data (name, email, picture URL) is untrusted: it is set with textContent
+     and setAttribute only, never innerHTML; the picture must be https and the sign-in link must be a
+     same-site path.
+
+   Accessibility:
+     The menu follows the ARIA menu-button pattern (arrow keys, Home/End, Esc returns focus to the button).
+     The sign-in screen is a modal dialog and makes the rest of the page inert.
+
+   Start reading at:
+     `start()` at the bottom, then `buildProfile()` and `showScreen()`. Next file: ui/dialog.js.
+   ===================================================================================================== */
 (function () {
   "use strict";
   var root = document.documentElement;
@@ -78,6 +99,7 @@
         /* ignore */
       }
     }
+    // inert keeps keyboard and screen-reader users inside the sign-in card (the app behind it is unusable anyway)
     Array.prototype.forEach.call(document.body.children, function (c) {
       if (c.tagName !== "SCRIPT") c.inert = true;
     });
@@ -139,6 +161,7 @@
     var s = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : (parts[0] || "").slice(0, 2);
     return s.toUpperCase();
   }
+  // Only https image URLs are used: never a javascript:/data: URL or a mixed-content http request.
   function safePicture(url) {
     return typeof url === "string" && /^https:\/\//i.test(url) ? url : null;
   }
@@ -221,7 +244,7 @@
         /* the session ends server-side or expires anyway */
       })
       .then(function () {
-        location.reload(); // status now says signedIn:false -> sign-in screen
+        location.reload(); // the status then says signedIn:false, so the sign-in screen shows
       });
   }
 
@@ -329,7 +352,10 @@
 
   window.AQ = window.AQ || {};
   AQ.profile = {
-    /** api.js calls this once, on the first 401 auth_required. Before the status is known, start() decides instead. */
+    /**
+     * Show the "session has ended" screen. api.js calls this once, on the first 401 auth_required.
+     * Before the status is known it does nothing: start() decides which screen to show instead.
+     */
     authRequired: function () {
       if (status) showScreen(true);
     }

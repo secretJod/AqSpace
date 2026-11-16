@@ -1,29 +1,30 @@
 /* =====================================================================================================
+   water-button.js - the "liquid glass" button (AQ.water)
+
    What this file does:
-     The "liquid glass" button (used for "New playlist" and "Smart arrange").
+     Builds the glass button used for "New playlist" and "Smart arrange".
+     Material: a thick clear lens over the dark page. The page behind it is refracted through an SVG
+     feDisplacementMap driven by a displacement map generated at runtime (canvas -> data URL, sized to the
+     button), with a slight per-channel (chromatic) offset, applied with backdrop-filter: url(#id). Only
+     Chromium-based browsers support that; others fall back to a frosted blur with the same highlights.
+       Hover:  the lens swells with a spring (overshoot), the rim and a soft highlight follow the pointer,
+               and the body stretches toward it and wobbles like a viscous drop (damped springs, not noise).
+       Click:  the rim brightens briefly and the refraction swells a touch (the button never shrinks); the
+               action runs immediately and the global click spark (click-spark.js) is the click effect.
+       Idle:   no work. The spring loop stops as soon as everything has settled, even while the pointer rests
+               on it; the button rect is cached and re-read only after scroll/resize or on enter.
 
    How it fits:
-     `AQ.water.button(label, opts)` returns a normal <button>; app.js and smart-magic.js place it on the page.
+     Loaded after core/ (needs AQ.util). app.js and smart-magic.js place the returned <button> on the page.
+     Styles: the `.wbtn` rules in css/styles.css.
+
+   Accessibility:
+     It is a real <button>, so keyboard and screen readers work as usual; keyboard focus gets the same
+     highlight as hover. Under prefers-reduced-motion it is static glass and the action runs immediately.
 
    Start reading at:
      `button()` in section 3; the spring physics in section 1 can be skipped on a first read.
    ===================================================================================================== */
-
-/* AQspace - "liquid glass" button (Apple iOS 26 style).
-
-   Material: a thick clear lens over the dark page. The page behind it is refracted through an SVG
-   feDisplacementMap that is driven by a displacement map generated at runtime (canvas -> data URL, sized to the
-   button), with a slight per-channel (chromatic) offset, applied with backdrop-filter: url(#id). Chromium/Edge
-   only; other browsers fall back to a frosted blur + the same highlights.
-   Hover:  the lens swells with a spring (overshoot), the specular rim and a soft highlight follow the pointer,
-           the body stretches toward it and wobbles like a viscous drop (damped springs, not noise).
-   Click:  the rim brightens briefly and the refraction swells a touch (jelly press: the button never shrinks); the form
-           opens immediately and the global click spark (click-spark.js) is the click effect.
-   Idle:   no work. The spring loop stops as soon as everything has settled, even while the pointer rests on it;
-           the button rect is cached (re-read only after scroll/resize or on enter).
-   Reduced motion: static glass, no animation, the action runs immediately.
-
-   AQ.water.button(label, { icon: "plus" | iconNode: <svg>, cls: "extra-class", onActivate: fn }) -> <button> */
 (function () {
   "use strict";
   var u = AQ.util,
@@ -198,6 +199,14 @@
   }
 
   // ===== 3. the button =====
+  /**
+   * Build a liquid-glass button.
+   * @param {string} label Visible text (also the accessible name).
+   * @param {{icon?: string, iconNode?: Element, cls?: string, onActivate?: function(HTMLButtonElement): void}} [opts]
+   *   `icon` is an AQ.util icon name, `iconNode` a ready-made icon, `cls` extra classes,
+   *   `onActivate` runs on click with the button.
+   * @returns {HTMLButtonElement} A type="button" element; the caller places it on the page.
+   */
   function button(label, opts) {
     opts = opts || {};
     sweep();

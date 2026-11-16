@@ -1,13 +1,15 @@
 /* =====================================================================================================
+   demo-cleanup.js - one-time removal of sample data from this browser
+
    What this file does:
-     Removes the sample ("demo") data that the old `?demo=dashboard` / `?demo=streak` switches wrote into
-     this browser, so the dashboard only shows real usage. The demo switches themselves are gone from the
-     code; this file only cleans up what they left behind. It runs once per browser.
+     Earlier builds had `?demo=dashboard` / `?demo=streak` switches that wrote sample ("demo") data into
+     localStorage. This file removes what they left behind, so the dashboard only shows real usage.
+     It runs once per browser (the `aq.demo-cleanup.v1` key records that it ran) and is cheap afterwards.
 
    How it fits:
-     Loaded FIRST, before store.js and the dashboard scripts, because those read localStorage when they
-     load. It only edits localStorage (no DOM, no network). The server copy of the demo watch progress
-     was deleted separately; removing it here too stops this browser from uploading it again on sync.
+     Loaded first, before util.js, store.js and the dashboard scripts, because those read localStorage
+     when they load. It only edits localStorage (no DOM, no network, no AQ.* dependency). Removing demo
+     watch progress here also stops this browser from uploading it to the server on the next sync.
 
    How demo data is recognised (real data is never matched):
      - activity log  : demo session ids are the 13-char id plus a suffix ("…3", "…n3"), real ids are 13 chars
@@ -19,7 +21,7 @@
      - badges seen   : reset when demo data was found (the demo streak "unlocked" them)
 
    Start reading at:
-     run() at the bottom.
+     run() at the bottom. Next file: core/util.js.
    ===================================================================================================== */
 (function () {
   "use strict";

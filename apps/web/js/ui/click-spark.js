@@ -1,22 +1,22 @@
 /* =====================================================================================================
+   click-spark.js - the small silver spark burst drawn wherever the user clicks (AQ.clickspark)
+
    What this file does:
-     The small silver spark burst drawn wherever the user clicks.
+     A press sends about 8 thin silver lines radiating a short way from the pointer (ease-out, ~420 ms).
+     One fixed, click-through canvas is created lazily and drawn only while sparks are alive: the
+     animation loop stops and the canvas clears and hides when idle, so it costs nothing at rest.
 
    How it fits:
-     Runs on its own: it listens to clicks on the whole document. Other files may call `AQ.clickspark.spark()`.
+     Runs on its own: it listens to presses on the whole document and needs no other AQ piece.
+     smart-magic.js calls `AQ.clickspark.spark(x, y)` to fire one from code.
+     Skipped for text fields, selects, iframes and anything inside [data-no-spark].
+
+   Accessibility:
+     The canvas is aria-hidden and ignores the pointer. Under prefers-reduced-motion no sparks are drawn.
 
    Start reading at:
      `spawn()` (adds sparks) and `frame()` (draws them).
    ===================================================================================================== */
-
-/* AQspace - click spark (vanilla take on React Bits <ClickSpark />).
-   A press anywhere useful sends ~8 thin silver lines radiating a short way from the pointer, ease-out, ~420ms.
-   One fixed, click-through canvas is created lazily, drawn only while sparks are alive (rAF stops, canvas clears
-   and hides when idle). Skipped for text fields, selects, iframes, anything inside [data-no-spark] and
-   under prefers-reduced-motion.
-   API:  AQ.clickspark.exclude(selector)   opt a CSS selector out (also: data-no-spark attribute)
-         AQ.clickspark.spark(x, y)         fire one from code (client px; viewport centre when omitted)
-         AQ.clickspark.configure({count, duration, reach, inner, length, width, alpha}) */
 (function () {
   "use strict";
 
@@ -25,17 +25,17 @@
   var MAX_BURSTS = 6,
     MAX_SPARKS = 16,
     TAU = Math.PI * 2;
-  var excludes = [
+  // Where a click never sparks: typing targets, embedded players and explicit opt-outs.
+  var selector = [
     "input",
     "textarea",
     "select",
     "iframe",
     "[contenteditable]:not([contenteditable=false])",
-    "[data-no-spark]",
-    ".cspark-off"
-  ];
-  var selector = excludes.join(",");
+    "[data-no-spark]"
+  ].join(",");
 
+  // Decorative motion only: respect the user's reduced-motion setting.
   var reduce = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
 
   // Fixed pool: no per-frame (or per-click) allocations.
@@ -206,23 +206,13 @@
 
   window.AQ = window.AQ || {};
   window.AQ.clickspark = {
-    exclude: function (sel) {
-      if (typeof sel !== "string" || !sel) return;
-      try {
-        document.createDocumentFragment().querySelector(sel);
-      } catch {
-        return;
-      }
-      if (excludes.indexOf(sel) < 0) {
-        excludes.push(sel);
-        selector = excludes.join(",");
-      }
-    },
+    /**
+     * Fire one spark burst from code (does nothing under reduced motion).
+     * @param {number} [x] Client x in px; the viewport centre when omitted.
+     * @param {number} [y] Client y in px; the viewport centre when omitted.
+     */
     spark: function (x, y) {
       spawn(x == null ? window.innerWidth / 2 : x, y == null ? window.innerHeight / 2 : y);
-    },
-    configure: function (o) {
-      for (var key in o) if (key in cfg && typeof o[key] === "number") cfg[key] = o[key];
     }
   };
 })();

@@ -1,21 +1,27 @@
 /* =====================================================================================================
+   dialog.js - the one modal dialog of the app (AQ.dialog)
+
    What this file does:
-     The one modal dialog of the app (player, forms, confirm boxes all use it).
+     Shows and hides the #modal markup from index.html. The player, forms and confirm boxes all use it;
+     only one dialog is open at a time.
 
    How it fits:
-     Uses the #modal markup from index.html. Features call `AQ.dialog.open({...})` and fill `d.body`.
+     Loaded after core/ (needs AQ.util). Features call `AQ.dialog.open({...})` and fill the returned
+     `body` element, or use `AQ.dialog.confirm(...)` for an "Are you sure?" box.
+
+       var d = AQ.dialog.open({ kind, title, wide, opener, restore, onClose });
+       d.body (element to fill), d.setTitle(), d.setKind(), d.focus(node), d.close(), d.element
+       AQ.dialog.confirm({ title, message, confirmLabel, danger, opener, restore }, onConfirm)
+
+   Accessibility:
+     The markup is role="dialog" aria-modal="true". Focus moves into the dialog, Tab is trapped inside,
+     Esc / the backdrop / the close button dismiss it, and focus returns to the button that opened it
+     (or to `restore()` / the page when that button was re-rendered meanwhile), so keyboard users never
+     lose their place.
 
    Start reading at:
-     `open()` and `close()`.
+     `open()` and `close()`. Next: features/player/player.js, the biggest user of this dialog.
    ===================================================================================================== */
-
-/* AQspace - accessible modal dialog host (one dialog at a time).
-   Uses the #modal markup in index.html. Focus is trapped inside, Esc / backdrop / close button dismiss it,
-   focus returns to the opener (or to `restore()` / the page heading when the opener no longer exists).
-
-   var d = AQ.dialog.open({ kind, title, wide, opener, restore, onClose });
-   d.body (element to fill), d.setTitle(), d.setKind(), d.close(), d.element
-   AQ.dialog.confirm({ title, message, confirmLabel, danger, opener, restore }, onConfirm) */
 (function () {
   "use strict";
   var u = AQ.util,
@@ -39,14 +45,20 @@
     });
   }
 
+  /**
+   * @returns {boolean} True while the dialog is shown.
+   */
   function isOpen() {
     return !modal.hidden;
   }
 
   // ===== 2. Open and close =====
 
-  // Closes the dialog and gives keyboard focus back to the button that opened it.
-  // If that button was re-rendered meanwhile, we try restore(), then a page fallback.
+  /**
+   * Close the dialog (a no-op when it is closed), run its onClose callback and give keyboard focus back
+   * to the button that opened it. If that button was re-rendered meanwhile, focus goes to `restore()`,
+   * then to [data-focus-fallback] or the main view.
+   */
   function close() {
     if (!state) return;
     var s = state;
@@ -67,6 +79,15 @@
     if (target && target.focus) target.focus();
   }
 
+  /**
+   * Open the dialog, closing any dialog that is already open.
+   * @param {{kind?: string, title?: string, wide?: boolean, opener?: Element,
+   *          restore?: function(): Element, onClose?: function(): void}} [opts]
+   *   `kind` is the small eyebrow text, `opener` defaults to the focused element, `restore` finds a new
+   *   focus target when the opener is gone.
+   * @returns {{body: HTMLElement, element: HTMLElement, setTitle: function(string): void,
+   *            setKind: function(string): void, close: function(): void, focus: function(Element=): void}}
+   */
   function open(opts) {
     opts = opts || {};
     var opener = opts.opener || document.activeElement;
@@ -96,11 +117,6 @@
     };
     dialog.focus();
     return api;
-  }
-
-  /* Callers build their content after open(); this focuses the right thing afterwards. */
-  function focusInitial(node) {
-    (node && node.focus ? node : dialog).focus();
   }
 
   // ===== 3. Keyboard: Esc closes, Tab stays inside the dialog ("focus trap") =====
@@ -138,6 +154,14 @@
   });
 
   // ===== 4. Ready-made "Are you sure?" dialog =====
+  /**
+   * Open an "Are you sure?" dialog with Cancel and a confirm button. Cancel gets focus first, so pressing
+   * Enter by accident never confirms a destructive action.
+   * @param {{kind?: string, title?: string, message?: string, confirmLabel?: string, danger?: boolean,
+   *          opener?: Element, restore?: function(): Element}} opts
+   * @param {function(): void} onConfirm Called when the user confirms (the dialog then closes).
+   * @returns {object} The handle returned by open().
+   */
   function confirmDialog(opts, onConfirm) {
     var d = open({
       kind: opts.kind || "Please confirm",
@@ -163,5 +187,5 @@
   }
 
   // ===== 5. Public API =====
-  AQ.dialog = { open: open, close: close, isOpen: isOpen, confirm: confirmDialog, focusInitial: focusInitial };
+  AQ.dialog = { open: open, close: close, isOpen: isOpen, confirm: confirmDialog };
 })();

@@ -1,16 +1,25 @@
-/* What this file styles:
-   The bottom navigation bar (js/features/navbar/navbar.js).
-   Linked from index.html (order matters: see README.md). */
+/* =====================================================================================================
+   navbar.css - the bottom navigation bar with its sliding liquid-glass lens
 
-/* AQspace - bottom nav bar with liquid-glass lens (navbar.js).
-   Add class `has-navbar` to <body> so page content is not hidden behind the bar. */
+   What this file styles:
+     The pill-shaped bar built by js/features/navbar/navbar.js (classes start with `nb-`), the lens that
+     slides between items, and the space the page keeps free for the bar.
+     The `has-navbar` class on <body> adds bottom padding so page content is never hidden behind the bar.
+
+   How it fits:
+     Linked from index.html after styles.css (order matters: see README.md). Uses no other tokens.
+
+   Accessibility:
+     The dimmed icon colour keeps at least 4.5:1 contrast on the pill, reduced motion stops the lens glide
+     and forced-colors mode gets explicit borders (section at the end).
+   ===================================================================================================== */
 :root {
   --nb-h: 64px; /* pill height */
   --nb-lens: 92px; /* lens diameter (taller than the pill) */
   --nb-w: min(360px, calc(100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
   --nb-gap: 14px; /* distance from viewport bottom */
   --nb-space: calc(var(--nb-lens) + var(--nb-gap) + env(safe-area-inset-bottom, 0px) + 12px);
-  --nb-dim: #8a8c90; /* #77: was #5d5f63 (2.9:1); now >= 4.5:1 on the pill */
+  --nb-dim: #8a8c90; /* inactive icons: at least 4.5:1 contrast on the pill */
   --nb-on: #ffffff;
   --nb-tint: 120, 170, 255; /* blue refraction tint (rgb) */
 }
@@ -18,7 +27,7 @@
 body.has-navbar {
   padding-bottom: var(--nb-space);
 }
-/* #77: toasts sat at bottom:20px under the bar (z 900 > 150); lift them above it */
+/* toasts would otherwise sit under the bar: lift them above it */
 body.has-navbar .toasts {
   bottom: var(--nb-space);
 }
@@ -81,7 +90,7 @@ body.has-navbar .toasts {
   position: absolute;
   inset: 8px 12%;
   border-radius: 999px;
-  box-shadow: 0 0 0 2px var(--nb-on); /* #77: solid white ring, matches the app focus rule */
+  box-shadow: 0 0 0 2px var(--nb-on); /* solid white ring, matches the app focus rule */
 }
 
 .nb-icon {
@@ -129,7 +138,7 @@ body.has-navbar .toasts {
   border-radius: 50%;
   overflow: hidden;
   /* bends/brightens the page background seen through the caps */
-  /* no backdrop-filter: re-blurring the page (thumbnails) every frame was the main cost */
+  /* no backdrop-filter: re-blurring the page (thumbnails) every frame while the lens moves is too costly */
   background: rgba(var(--nb-tint), 0.09);
   contain: paint;
 }
@@ -201,7 +210,7 @@ body.has-navbar .toasts {
   }
 }
 
-/* #77: reduced motion also stops the lens glide (navbar.js reads the same query) */
+/* reduced motion also stops the lens glide (navbar.js reads the same query) */
 @media (prefers-reduced-motion: reduce) {
   .nb-lens,
   .nb-lens-clone {
@@ -209,7 +218,7 @@ body.has-navbar .toasts {
     will-change: auto;
   }
 }
-/* #77: forced colors drop the gradients/glass, so show the bar, the active tab and focus explicitly */
+/* forced colors drop the gradients and glass, so show the bar, the active tab and focus explicitly */
 @media (forced-colors: active) {
   .nb-pill {
     border: 1px solid CanvasText;

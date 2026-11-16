@@ -1,38 +1,45 @@
 /* =====================================================================================================
+   api.js - the connection to the API server (AQ.api)
+
    What this file does:
-     Talks to the aq-api backend: loads playlists + progress from the server on start, and sends
-     every later change to the server, one after the other, in order.
+     Talks to the HTTP API (apps/api, under /api/v1). It loads playlists and watch progress from the
+     server on start and sends every later change to the server, one after the other, in order.
+     The UI keeps working without a server: localStorage stays the offline cache and every store
+     function stays synchronous.
+
+     When the API is reachable (the same origin when apps/api serves this page, otherwise
+     http://127.0.0.1:5180 for a page opened another way) this file
+       1. loads playlists and watch progress on start and hands them to the store, which re-renders,
+       2. uploads what was in localStorage once (the server's `bootstrapped` flag decides, so it happens
+          only the first time),
+       3. writes every later change through to the server in order (AQ.store calls AQ.api.record(...)),
+       4. sets `aq.dirty.v1` in localStorage when a write cannot be sent; the next successful connection
+          then pushes the whole local state, so offline edits are never lost.
 
    How it fits:
-     Loaded after store.js. store.js calls `AQ.api.record(name, args)` after each local change.
-     notes-jobs.js, import-playlist.js and smart-arrange.js ask `AQ.api.available()` to decide whether to
-     use the server. Without a server the UI keeps working with localStorage only.
+     Loaded after store.js (needs AQ.store). store.js calls `AQ.api.record(name, args)` after each local
+     change. notes-jobs.js, import-playlist.js, smart-arrange.js and profile.js use `AQ.api.request(...)`
+     and ask `AQ.api.available()` whether the server is there. A 401 {code:"auth_required"} stops all
+     traffic once and calls AQ.profile.authRequired() (profile.js shows the sign-in screen).
+
+   Public API:
+     AQ.api.ready()      -> Promise<boolean>   resolves once the first probe + sync attempt finished
+     AQ.api.available()  -> boolean            server reachable and in sync
+     AQ.api.base         -> "" | "http://127.0.0.1:5180"
+     AQ.api.request(method, path, body, opts) -> Promise<{status, json}>
+     AQ.api.flush()      -> Promise            resolves when queued writes (and pending progress) were sent
+     AQ.api.record(name, argsArray)            used by store.js only
+     AQ.api.signedOut()  -> boolean            a call returned 401 auth_required
 
    Start reading at:
      `connect()` near the bottom, then `reconcile()`, then the `ops` table (store -> server).
+     Next file: features/profile/profile.js (sign-in), or the API routes in apps/api/src/routes/.
    ===================================================================================================== */
-
-/* AQspace - adapter for the aq-api application backend (D:\AQspace\aq-api, http://127.0.0.1:5180).
-
-   The UI keeps working without it: localStorage stays the offline cache / fallback and every store function is still synchronous.
-   When the API is reachable (same origin when served by aq-api, else http://127.0.0.1:5180) this file
-     1. loads playlists + watch progress from the server on start (and tells the store, which re-renders),
-     2. migrates what was in localStorage once (the server's `bootstrapped` flag decides, so it happens only the first time),
-     3. writes every later change through to the server in order (AQ.store calls AQ.api.record(...)),
-     4. if a write cannot be sent (server down) it sets `aq.dirty.v1`; the next successful connection pushes the local state.
-
-   AQ.api.ready()      -> Promise<boolean>   resolves once the first probe + sync attempt finished
-   AQ.api.available()  -> boolean            server reachable and in sync (notes-jobs.js / import-playlist.js switch to /api/v1 on this)
-   AQ.api.base         -> "" | "http://127.0.0.1:5180"
-   AQ.api.flush()      -> Promise            resolves when queued writes (and pending progress) were sent
-   AQ.api.record(name, argsArray)            used by store.js only
-   AQ.api.signedOut()  -> boolean            a call returned 401 auth_required; all requests now short-circuit (profile.js shows sign-in)
-   Fires window event "aq:auth-required" once. Pass opts.authFree to request() for /auth/* calls. */
 (function () {
   "use strict";
 
-  var FALLBACK = "http://127.0.0.1:5180";
-  var DIRTY_KEY = "aq.dirty.v1";
+  var FALLBACK = "http://127.0.0.1:5180"; // the API's default local address, for a page not served by it
+  var DIRTY_KEY = "aq.dirty.v1"; // localStorage flag: "there are local changes the server has not seen"
   var WATCH_DELAY_MS = 2000;
 
   var api = { base: "" };
@@ -67,7 +74,7 @@
     return JSON.parse(JSON.stringify(x));
   }
 
-  /* ---------- signed-out handling (#130): any 401 {code:"auth_required"} stops all traffic once and tells profile.js ---------- */
+  /* ---------- signed-out handling: any 401 {code:"auth_required"} stops all traffic once and tells profile.js ---------- */
   var authLost = false;
   function authRequired() {
     if (authLost) return;
@@ -77,15 +84,12 @@
       clearTimeout(pending[id].timer);
       delete pending[id];
     });
-    try {
-      window.dispatchEvent(new CustomEvent("aq:auth-required"));
-    } catch {
-      /* old browser */
-    }
     if (window.AQ && AQ.profile && AQ.profile.authRequired) AQ.profile.authRequired();
   }
   var AUTH_401 = { status: 401, json: { code: "auth_required" } };
 
+  // One fetch wrapper for every call: JSON in and out, no HTTP cache, and a timeout (15 s by default) so a
+  // hung server never leaves the UI waiting forever.
   function req(method, path, body, opts) {
     opts = opts || {};
     if (authLost && !opts.authFree) return Promise.resolve(AUTH_401); // signed out: stop polling and writes
@@ -132,7 +136,7 @@
   function probe(base) {
     return req("GET", "/api/v1/health", undefined, { base: base, timeout: 1500 }).then(
       function (r) {
-        return r.status === 200 && r.json && r.json.service === "aq-api";
+        return r.status === 200 && r.json && r.json.service === "aq-api"; // the name apps/api reports
       },
       function () {
         return false;
@@ -249,9 +253,6 @@
       if (typeof a[2] === "number") body.position = a[2];
       return req("POST", P + a[0] + "/videos", body);
     },
-    addVideos: function (a) {
-      return req("POST", P + a[0] + "/videos", { videos: a[1].map(vid) });
-    },
     removeVideo: function (a) {
       return req("DELETE", P + a[0] + "/videos/" + a[1]);
     },
@@ -342,6 +343,13 @@
     };
   }
 
+  /**
+   * Send a store change to the server (called by store.js after each local write). Changes made before the
+   * first sync finished, or while the server is unreachable, mark the local state dirty instead; it is then
+   * pushed as a whole on the next connection.
+   * @param {string} name A key of `ops` ("create", "addVideo", "watch", ...); unknown names are ignored.
+   * @param {Array} args The store function's arguments (copied, so later edits do not leak into the queue).
+   */
   api.record = function (name, args) {
     if (!ops[name]) return;
     var a = plain(args);
@@ -356,22 +364,43 @@
     } // still loading: the whole local state gets pushed
     enqueue({ name: name, a: a });
   };
+  /**
+   * Send pending watch progress now and wait for every queued write.
+   * @returns {Promise<void>} Resolves when the queue is drained (it never rejects).
+   */
   api.flush = function () {
     flushWatch();
     return chain.then(function () {
       /* drained */
     });
   };
+  /**
+   * @returns {boolean} True when the server is reachable and in sync with this browser.
+   */
   api.available = function () {
     return state.ok;
   };
-  /** Generic JSON request against aq-api for other UI modules (smart.js). Resolves {status, json}; rejects on network failure / timeout. */
+  /**
+   * JSON request against the API for other modules (notes, import, smart arrange, profile).
+   * After a 401 auth_required every call short-circuits to that 401, unless opts.authFree is set (for /auth/*).
+   * @param {string} method HTTP method.
+   * @param {string} path Path starting with /api/v1/.
+   * @param {*} [body] Sent as JSON when defined.
+   * @param {{timeout?: number, authFree?: boolean, keepalive?: boolean, base?: string}} [opts] timeout in ms.
+   * @returns {Promise<{status: number, json: *}>} Rejects on network failure or timeout.
+   */
   api.request = function (method, path, body, opts) {
     return req(method, path, body, opts);
   };
+  /**
+   * @returns {boolean} True once a call returned 401 auth_required (all requests then short-circuit).
+   */
   api.signedOut = function () {
     return authLost;
   };
+  /**
+   * @returns {Promise<boolean>} Resolves once the first probe and sync attempt finished: true when connected.
+   */
   api.ready = function () {
     return readyP || Promise.resolve(false);
   };

@@ -1,6 +1,18 @@
-/* AQspace - profile button + menu, sign-in and expired-session screens (#130). Uses the tokens from styles.css. */
+/* =====================================================================================================
+   profile.css - profile button and menu, sign-in and expired-session screens
 
-/* hide the app until /auth/status says who is here (profile.js removes the class) */
+   What this file styles:
+     The round profile button that replaces the top bar avatar, its drop-down menu, the full-page
+     sign-in / "session has ended" card and the "Sign in with Google" button
+     (all built by js/features/profile/profile.js).
+
+   How it fits:
+     Linked last from index.html; uses the colour and radius tokens from styles.css.
+     The Google button follows Google's sign-in branding (white theme, the four-colour G, 40px tall).
+   ===================================================================================================== */
+
+/* Hide the app until /auth/status says who is here (profile.js removes the class), so a signed-out
+   user never sees the app flash on screen before the sign-in card. */
 .auth-pending body > :not(script):not(.authscreen) {
   visibility: hidden;
 }

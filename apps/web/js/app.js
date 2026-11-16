@@ -1,20 +1,30 @@
 /* =====================================================================================================
+   app.js - routing and the playlist screens
+
    What this file does:
-     The app itself: reads the address (#/ ...), draws the right screen and wires up all the buttons
-     of the playlists home and the playlist detail page.
+     Reads the address (#/...), draws the right screen and wires up all the buttons of the playlists
+     home and the playlist detail page. Other screens are mounted from their feature files.
+       #/                                  playlists home (section 3)
+       #/playlist/<id>[/notes/<videoId>]   playlist detail, optionally with the notes panel open (section 4)
+       #/dashboard                         AQ.dashboardView (features/dashboard/dashboard.js)
+       #/ai, #/goals                       AQ.comingSoonView placeholders
 
    How it fits:
-     Loaded LAST because it uses everything else. It subscribes to `AQ.store` and re-renders
-     the screen whenever the data changes (store -> render()).
+     Loaded last because it uses everything else: AQ.util, AQ.store, AQ.dialog, AQ.player, AQ.noteButton,
+     AQ.split, AQ.importPlaylist, AQ.smart, AQ.water, AQ.navbar and the dashboard views (optional ones are
+     checked before use). It subscribes to `AQ.store` and re-renders the screen whenever the data changes
+     (store -> render()). Activity and streak recording live in features/dashboard/activity-hooks.js.
+
+   Security and accessibility:
+     All user and server text is written with textContent / DOM APIs, never innerHTML. Route ids are
+     validated by the same patterns the store uses. Status messages go to the #live region for screen
+     readers, menus support the keyboard, and focus is put back on a sensible element after every render.
 
    Start reading at:
      `render()` at the very bottom, then `renderHome()` (section 3) and `renderDetail()` (section 4).
+     Sections: 1 setup + small UI helpers | 2 playlist form + delete | 3 home | 4 detail (add video,
+     rows, drag) | 5 router. Next file: core/store.js.
    ===================================================================================================== */
-
-/* AQspace - playlists screen: routing + rendering (vanilla JS, no build step).
-   Routes:  #/  -> playlists home      #/playlist/<id>  -> playlist detail
-   Sections: 1 setup + small UI helpers | 2 playlist form + delete | 3 home | 4 detail (add video, rows, drag) | 5 router
-   All user text is written with textContent / DOM APIs (never innerHTML). */
 (function () {
   "use strict";
   var u = AQ.util,
@@ -36,6 +46,8 @@
   var addStatus = null; // detail: {kind: ok|warn|error, msg, editId?}
   var pendingFocus = null; // selector or function; applied after the next render
 
+  // Screen-reader announcement through the polite live region. The text is cleared first and set a
+  // moment later, so repeating the same message is still read out.
   function announce(text) {
     liveEl.textContent = "";
     setTimeout(function () {
@@ -1221,6 +1233,8 @@
   }
 
   // ===== 5. router =====
+  // The id patterns match the store's playlist ids and YouTube video ids, so a hand-typed address can
+  // never reach the screens with anything else.
   function route() {
     var h = location.hash || "";
     var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?$/.exec(h);
@@ -1279,8 +1293,6 @@
       /* ignore */
     }
   }
-
-  /* Activity + streak recording now lives in js/features/dashboard/activity-hooks.js (it also logs minutes). */
 
   function render() {
     closeMenu(false);
