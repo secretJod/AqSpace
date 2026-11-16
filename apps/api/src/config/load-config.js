@@ -31,7 +31,7 @@ function int(value, fallback) {
 /** Reads the environment once. `overrides` is for tests. */
 export function loadConfig(env = process.env, overrides = {}) {
   const config = {
-    host: env.HOST || "127.0.0.1",                     // only set HOST=0.0.0.0 inside the container; compose publishes the port on 127.0.0.1 only
+    host: env.HOST || "127.0.0.1", // only set HOST=0.0.0.0 inside the container; compose publishes the port on 127.0.0.1 only
     port: int(env.PORT, 5180),
     dbFile: env.DB_FILE || path.join(ROOT, "data", "aq.db"),
     sqlDir: path.join(ROOT, "sql"),
@@ -40,26 +40,26 @@ export function loadConfig(env = process.env, overrides = {}) {
     // The Python worker (notes + AI)
     pyUrl: (env.PY_NOTES_URL || "http://127.0.0.1:5055").replace(/\/+$/, ""),
     pyProvider: env.PY_NOTES_PROVIDER || "groq",
-    pySmartProvider: env.PY_SMART_PROVIDER || "gemini",   // provider for smart playlist runs
-    pySmartModel: env.PY_SMART_MODEL || "",               // "" = the worker's default model for that provider
+    pySmartProvider: env.PY_SMART_PROVIDER || "gemini", // provider for smart playlist runs
+    pySmartModel: env.PY_SMART_MODEL || "", // "" = the worker's default model for that provider
     allowRemotePy: env.ALLOW_REMOTE_PY === "1",
-    requireMembership: env.NOTES_REQUIRE_MEMBERSHIP !== "0",   // notes can only be started for videos in the user's playlists
+    requireMembership: env.NOTES_REQUIRE_MEMBERSHIP !== "0", // notes can only be started for videos in the user's playlists
 
     // HTTP
     bodyLimit: env.BODY_LIMIT || "256kb",
     log: env.LOG !== "0",
 
     // Developer tools (/dev)
-    devTools: env.AQ_DEV_TOOLS !== "0",                  // /dev tracker (local only); AQ_DEV_TOOLS=0 turns it off (404)
-    devLogDir: env.AQ_DEVLOG_DIR ?? path.join(ROOT, "data", "devlogs"),   // persistent tracker JSONL; "" = off
+    devTools: env.AQ_DEV_TOOLS !== "0", // /dev tracker (local only); AQ_DEV_TOOLS=0 turns it off (404)
+    devLogDir: env.AQ_DEVLOG_DIR ?? path.join(ROOT, "data", "devlogs"), // persistent tracker JSONL; "" = off
     devLogDays: int(env.AQ_DEVLOG_DAYS, 14),
-    runDir: env.AQ_RUN_DIR ?? path.resolve(ROOT, "..", ".run"),          // start-all.ps1 service console logs
+    runDir: env.AQ_RUN_DIR ?? path.resolve(ROOT, "..", ".run"), // start-all.ps1 service console logs
 
     // Rate limits, per client IP, fixed window
-    trustCfHeaders: env.TRUST_CF_HEADERS === "1",       // opt-in: key the rate limit on CF-Connecting-IP, only for tunnel requests (viaProxy) from loopback cloudflared
+    trustCfHeaders: env.TRUST_CF_HEADERS === "1", // opt-in: key the rate limit on CF-Connecting-IP, only for tunnel requests (viaProxy) from loopback cloudflared
     rate: {
       general: { max: int(env.RATE_LIMIT_PER_MIN, 600), windowMs: 60_000 },
-      heavy: { max: int(env.RATE_LIMIT_HEAVY_PER_MIN, 20), windowMs: 60_000 }   // starting notes / YouTube imports
+      heavy: { max: int(env.RATE_LIMIT_HEAVY_PER_MIN, 20), windowMs: 60_000 } // starting notes / YouTube imports
     },
 
     // Sign-in: local = single built-in user (default); google = Google OAuth (middleware/google-auth.js)
@@ -77,7 +77,13 @@ export function loadConfig(env = process.env, overrides = {}) {
     },
 
     // Timings for talking to the worker; maxAutoResumes = re-submits after the worker lost a job (restart)
-    notes: { pollMinMs: 800, verifyMs: 5 * 60_000, pyTimeoutMs: 10_000, importTimeoutMs: 60_000, maxAutoResumes: int(env.NOTES_MAX_AUTO_RESUMES, 3) }
+    notes: {
+      pollMinMs: 800,
+      verifyMs: 5 * 60_000,
+      pyTimeoutMs: 10_000,
+      importTimeoutMs: 60_000,
+      maxAutoResumes: int(env.NOTES_MAX_AUTO_RESUMES, 3)
+    }
   };
   return Object.assign(config, overrides);
 }

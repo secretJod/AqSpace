@@ -13,7 +13,10 @@ import { HttpError } from "../utils/http-errors.js";
 export const nowIso = () => new Date().toISOString();
 
 /** Any value -> a single-line string of at most n characters (worker messages go into the UI). */
-export const short = (s, n = 300) => String(s ?? "").replace(/[\u0000-\u001f]/g, " ").slice(0, n);
+export const short = (s, n = 300) =>
+  String(s ?? "")
+    .replace(/[\u0000-\u001f]/g, " ")
+    .slice(0, n);
 
 // ---------------------------------------------------------------------------
 // 2. Per-key lock
@@ -26,9 +29,11 @@ export function createKeyedLock() {
   return function withLock(key, fn) {
     const previous = chains.get(key) || Promise.resolve();
     const run = previous.then(fn, fn);
-    const tail = run.catch(() => {});              // the next caller waits for us, but never sees our error
+    const tail = run.catch(() => {}); // the next caller waits for us, but never sees our error
     chains.set(key, tail);
-    tail.then(() => { if (chains.get(key) === tail) chains.delete(key); });
+    tail.then(() => {
+      if (chains.get(key) === tail) chains.delete(key);
+    });
     return run;
   };
 }

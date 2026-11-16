@@ -49,7 +49,8 @@ export function playlistRoutes(repo) {
 
   // add one video ({id, title, channel, duration, position?}) or a batch ({videos: [...]})
   router.post("/playlists/:id/videos", (req, res) => {
-    const body = jsonBody(req), playlistId = slug(req.params.id);
+    const body = jsonBody(req),
+      playlistId = slug(req.params.id);
     if (body.videos !== undefined) return res.json(repo.addVideos(userIdOf(req), playlistId, body.videos));
     res.status(201).json({ video: repo.addVideo(userIdOf(req), playlistId, body) });
   });

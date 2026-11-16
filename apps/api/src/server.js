@@ -29,10 +29,14 @@ server.on("error", (e) => {
 
 function stop() {
   server.close(() => {
-    try { app.locals.db.close(); } catch { /* already closed */ }
+    try {
+      app.locals.db.close();
+    } catch {
+      /* already closed */
+    }
     process.exit(0);
   });
-  setTimeout(() => process.exit(0), 3000).unref();   // do not wait forever for open connections
+  setTimeout(() => process.exit(0), 3000).unref(); // do not wait forever for open connections
 }
 
 process.on("SIGINT", stop);

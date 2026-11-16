@@ -30,8 +30,12 @@ export function createRingBuffer(max, onPush) {
       }
       return out;
     },
-    get last() { return seq; },
-    get size() { return items.length; },
+    get last() {
+      return seq;
+    },
+    get size() {
+      return items.length;
+    },
     all: () => items
   };
 }

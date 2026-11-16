@@ -22,8 +22,18 @@ export function healthRoutes({ db, py, version }) {
 
   router.get("/health", async (req, res) => {
     let dbOk = true;
-    try { db.prepare("SELECT 1").get(); } catch { dbOk = false; }
-    const out = { ok: dbOk, service: "aq-api", version, uptimeSec: Math.round(process.uptime()), db: dbOk ? "ok" : "error" };
+    try {
+      db.prepare("SELECT 1").get();
+    } catch {
+      dbOk = false;
+    }
+    const out = {
+      ok: dbOk,
+      service: "aq-api",
+      version,
+      uptimeSec: Math.round(process.uptime()),
+      db: dbOk ? "ok" : "error"
+    };
 
     if (req.query.deep === "1") {
       out.dbBusy = dbBusy(db);

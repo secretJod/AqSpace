@@ -24,7 +24,7 @@ const PUBLIC_CODES = new Set(["py_offline", "not_in_playlist", "auth_required"])
 
 // Four arguments tell Express this is an error handler.
 export function errorHandler(err, req, res, _next) {
-  if (res.headersSent) return res.destroy();        // a stream broke half way: nothing sensible to send
+  if (res.headersSent) return res.destroy(); // a stream broke half way: nothing sensible to send
 
   const { status, message } = describeError(err, req);
   if (err.retryAfter) res.setHeader("Retry-After", String(err.retryAfter));
@@ -36,12 +36,17 @@ function describeError(err, req) {
   let status = err.status || err.statusCode || 500;
   let message = err.expose ? err.message : "Something went wrong.";
 
-  if (err.type === "entity.parse.failed") {           // express.json() could not parse the body
-    status = 400; message = "The request body is not valid JSON.";
-  } else if (err.type === "entity.too.large") {       // body bigger than the limit
-    status = 413; message = "The request body is too large.";
+  if (err.type === "entity.parse.failed") {
+    // express.json() could not parse the body
+    status = 400;
+    message = "The request body is not valid JSON.";
+  } else if (err.type === "entity.too.large") {
+    // body bigger than the limit
+    status = 413;
+    message = "The request body is too large.";
   } else if (/SQLITE_CONSTRAINT/.test(String(err.code || err.message))) {
-    status = 409; message = "That conflicts with existing data.";
+    status = 409;
+    message = "That conflicts with existing data.";
   } else if (status >= 500 && !err.expose) {
     console.error(`${req.method} ${req.path} failed: ${err.name}: ${String(err.message).slice(0, 200)}`);
   }

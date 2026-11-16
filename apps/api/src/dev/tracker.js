@@ -23,11 +23,20 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
 
   let log = null;
   if (logDir) {
-    try { log = createDevLog({ dir: logDir, keepDays, flushMs }); }
-    catch (e) { console.error(`dev log disabled: ${e.code || e.message}`); }
+    try {
+      log = createDevLog({ dir: logDir, keepDays, flushMs });
+    } catch (e) {
+      console.error(`dev log disabled: ${e.code || e.message}`);
+    }
   }
   // Tracker polling (layer "dev") is kept in memory but not written to disk.
-  const requests = createRingBuffer(max, log && ((entry) => { if (entry.layer !== "dev") log.append("requests", entry); }));
+  const requests = createRingBuffer(
+    max,
+    log &&
+      ((entry) => {
+        if (entry.layer !== "dev") log.append("requests", entry);
+      })
+  );
   const events = createRingBuffer(max, log && ((entry) => log.append("events", entry)));
 
   // -------------------------------------------------------------------------
@@ -37,11 +46,18 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
   /** {kind, jobId, videoId, playlistId, before, after}: pushed only when status/stage/pct changed. */
   function change(kind, ids, before, after) {
     if (!after) return;
-    const nothingChanged = before && before.status === after.status && before.stage === after.stage && before.pct === after.pct;
+    const nothingChanged =
+      before && before.status === after.status && before.stage === after.stage && before.pct === after.pct;
     if (nothingChanged) return;
     events.push({
-      kind, jobId: after.job_id || null, videoId: ids.videoId ?? null, playlistId: ids.playlistId ?? null,
-      from: before ? publicState(before.status) : null, to: publicState(after.status), stage: after.stage, pct: after.pct
+      kind,
+      jobId: after.job_id || null,
+      videoId: ids.videoId ?? null,
+      playlistId: ids.playlistId ?? null,
+      from: before ? publicState(before.status) : null,
+      to: publicState(after.status),
+      stage: after.stage,
+      pct: after.pct
     });
   }
 
@@ -55,8 +71,13 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
       const startedAt = Date.now();
       const method = opts.method || "GET";
       let pathname = "/";
-      try { pathname = new URL(url).pathname; } catch { /* keep "/" */ }
-      const record = (status) => requests.push({ method, path: maskPath(pathname), status, ms: Date.now() - startedAt, layer: "worker" });
+      try {
+        pathname = new URL(url).pathname;
+      } catch {
+        /* keep "/" */
+      }
+      const record = (status) =>
+        requests.push({ method, path: maskPath(pathname), status, ms: Date.now() - startedAt, layer: "worker" });
       try {
         const res = await fetchImpl(url, opts);
         record(res.status);
@@ -77,14 +98,25 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
     res.on("finish", () => {
       const p = req.originalUrl.split("?")[0];
       const layer = p.startsWith("/dev") ? "dev" : p.startsWith("/api/") ? "api" : "ui";
-      requests.push({ method: req.method, path: maskPath(p), status: res.statusCode, ms: Date.now() - startedAt, layer });
+      requests.push({
+        method: req.method,
+        path: maskPath(p),
+        status: res.statusCode,
+        ms: Date.now() - startedAt,
+        layer
+      });
     });
     next();
   }
 
   return {
-    requests, events, log, keepDays,
+    requests,
+    events,
+    log,
+    keepDays,
     request: (fields) => requests.push(fields),
-    change, wrapFetch, middleware
+    change,
+    wrapFetch,
+    middleware
   };
 }

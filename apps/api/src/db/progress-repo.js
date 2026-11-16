@@ -10,11 +10,17 @@ import { bad } from "../utils/http-errors.js";
 import * as v from "../utils/validate.js";
 
 /** Database row -> JSON for the UI. */
-export const progressToJson = (row) => ({ pos: row.pos_sec, dur: row.dur_sec, done: !!row.done, updated: row.updated_ms });
+export const progressToJson = (row) => ({
+  pos: row.pos_sec,
+  dur: row.dur_sec,
+  done: !!row.done,
+  updated: row.updated_ms
+});
 
 export function createProgressRepo(db, helpers) {
   const { ensureVideo } = helpers;
-  const findRow = (userId, vid) => db.prepare("SELECT * FROM watch_progress WHERE user_id = ? AND video_id = ?").get(userId, vid);
+  const findRow = (userId, vid) =>
+    db.prepare("SELECT * FROM watch_progress WHERE user_id = ? AND video_id = ?").get(userId, vid);
 
   // -------------------------------------------------------------------------
   // 1. Reading
@@ -28,7 +34,8 @@ export function createProgressRepo(db, helpers) {
   /** { videoId: {pos, dur, done, updated}, ... } */
   function allProgress(userId) {
     const out = {};
-    for (const row of db.prepare("SELECT * FROM watch_progress WHERE user_id = ?").all(userId)) out[row.video_id] = progressToJson(row);
+    for (const row of db.prepare("SELECT * FROM watch_progress WHERE user_id = ?").all(userId))
+      out[row.video_id] = progressToJson(row);
     return out;
   }
 
@@ -40,14 +47,15 @@ export function createProgressRepo(db, helpers) {
   function putProgress(userId, vid, body) {
     v.videoId(vid);
     if (!v.isObj(body)) throw bad("Send a JSON object {pos, dur, done}.");
-    const pos = v.nonNeg(body.pos ?? 0, "pos"), dur = v.nonNeg(body.dur ?? 0, "dur");
+    const pos = v.nonNeg(body.pos ?? 0, "pos"),
+      dur = v.nonNeg(body.dur ?? 0, "dur");
     if (body.done !== undefined && typeof body.done !== "boolean") throw bad("done must be true or false.");
 
     const now = Date.now();
     let updated = now;
     if (body.updated !== undefined) {
       if (!Number.isFinite(body.updated) || body.updated < 0) throw bad("updated must be epoch milliseconds.");
-      updated = Math.min(Math.floor(body.updated), now + 60_000);   // a client clock may be a little ahead, not more
+      updated = Math.min(Math.floor(body.updated), now + 60_000); // a client clock may be a little ahead, not more
     }
 
     return tx(db, () => {

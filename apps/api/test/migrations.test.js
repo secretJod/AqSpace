@@ -9,11 +9,26 @@ import { DatabaseSync } from "node:sqlite";
 import { openDb } from "../src/db/database.js";
 
 const SQL = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "sql");
-const ALL = fs.readdirSync(SQL).filter((f) => f.endsWith(".sql")).sort();
+const ALL = fs
+  .readdirSync(SQL)
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
 const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "aq-mig-")), "aq.db");
-const names = (db) => db.prepare("SELECT name FROM schema_migrations ORDER BY name").all().map((r) => r.name);
-const cols = (db, t) => db.prepare(`PRAGMA table_info(${t})`).all().map((r) => r.name);
-const tables = (db) => db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
+const names = (db) =>
+  db
+    .prepare("SELECT name FROM schema_migrations ORDER BY name")
+    .all()
+    .map((r) => r.name);
+const cols = (db, t) =>
+  db
+    .prepare(`PRAGMA table_info(${t})`)
+    .all()
+    .map((r) => r.name);
+const tables = (db) =>
+  db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+    .all()
+    .map((r) => r.name);
 const run = (db, m) => db.exec(fs.readFileSync(path.join(SQL, m), "utf8"));
 
 test("fresh db: every migration applied once, in order; reopening is a no-op", () => {
@@ -32,7 +47,10 @@ test("db with 001+002 recorded but not 003: only 003 runs", () => {
   const f = tmp();
   const raw = new DatabaseSync(f);
   raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-  for (const m of ALL.slice(0, 2)) { run(raw, m); raw.prepare("INSERT INTO schema_migrations VALUES (?, 'x')").run(m); }
+  for (const m of ALL.slice(0, 2)) {
+    run(raw, m);
+    raw.prepare("INSERT INTO schema_migrations VALUES (?, 'x')").run(m);
+  }
   assert.ok(!tables(raw).includes("smart_runs"));
   raw.close();
   const db = openDb(f, SQL);
@@ -45,7 +63,10 @@ test("#14 db with 001-003 recorded: only 004 runs and adds the sessions table", 
   const f = tmp();
   const raw = new DatabaseSync(f);
   raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-  for (const m of ALL.slice(0, 3)) { run(raw, m); raw.prepare("INSERT INTO schema_migrations VALUES (?, 'x')").run(m); }
+  for (const m of ALL.slice(0, 3)) {
+    run(raw, m);
+    raw.prepare("INSERT INTO schema_migrations VALUES (?, 'x')").run(m);
+  }
   raw.close();
   const db = openDb(f, SQL);
   assert.ok(ALL.includes("004_sessions.sql"));
@@ -58,7 +79,10 @@ test("#151 db with 001-004 recorded: only 005 runs and adds users.picture; a bas
   const f = tmp();
   const raw = new DatabaseSync(f);
   raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-  for (const m of ALL.slice(0, 4)) { run(raw, m); raw.prepare("INSERT INTO schema_migrations VALUES (?, 'x')").run(m); }
+  for (const m of ALL.slice(0, 4)) {
+    run(raw, m);
+    raw.prepare("INSERT INTO schema_migrations VALUES (?, 'x')").run(m);
+  }
   raw.close();
   const db = openDb(f, SQL);
   assert.ok(ALL.includes("005_user_picture.sql"));
@@ -68,10 +92,13 @@ test("#151 db with 001-004 recorded: only 005 runs and adds users.picture; a bas
 
   const f2 = tmp();
   const raw2 = new DatabaseSync(f2);
-  for (const m of ALL.slice(0, 5)) run(raw2, m);           // no records table, picture column already there
+  for (const m of ALL.slice(0, 5)) run(raw2, m); // no records table, picture column already there
   raw2.close();
   const db2 = openDb(f2, SQL);
-  assert.equal(db2.prepare("SELECT applied_at FROM schema_migrations WHERE name = '005_user_picture.sql'").get().applied_at, "baseline");
+  assert.equal(
+    db2.prepare("SELECT applied_at FROM schema_migrations WHERE name = '005_user_picture.sql'").get().applied_at,
+    "baseline"
+  );
   db2.close();
 });
 
@@ -95,12 +122,17 @@ test("#158 db made by upstream (smart_runs recorded as 002_smart_runs.sql): 003 
   const f = tmp();
   const raw = new DatabaseSync(f);
   raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-  run(raw, "001_init.sql"); raw.prepare("INSERT INTO schema_migrations VALUES ('001_init.sql', 'x')").run();
-  run(raw, "003_smart_runs.sql"); raw.prepare("INSERT INTO schema_migrations VALUES ('002_smart_runs.sql', 'x')").run();
+  run(raw, "001_init.sql");
+  raw.prepare("INSERT INTO schema_migrations VALUES ('001_init.sql', 'x')").run();
+  run(raw, "003_smart_runs.sql");
+  raw.prepare("INSERT INTO schema_migrations VALUES ('002_smart_runs.sql', 'x')").run();
   raw.close();
   const db = openDb(f, SQL);
   assert.deepEqual(names(db), [...ALL, "002_smart_runs.sql"].sort());
-  assert.equal(db.prepare("SELECT applied_at FROM schema_migrations WHERE name = '003_smart_runs.sql'").get().applied_at, "renamed:002_smart_runs.sql");
+  assert.equal(
+    db.prepare("SELECT applied_at FROM schema_migrations WHERE name = '003_smart_runs.sql'").get().applied_at,
+    "renamed:002_smart_runs.sql"
+  );
   assert.ok(cols(db, "notes_jobs").includes("resumes"));
   assert.ok(cols(db, "users").includes("picture"));
   db.close();

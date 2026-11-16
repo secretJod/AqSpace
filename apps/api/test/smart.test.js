@@ -5,14 +5,17 @@ import { startApp, VID, JOB } from "./helpers.js";
 /** A stand-in for the Python worker's /api/smart, handed to the app as its fetch (no network). */
 function fakeWorker() {
   const w = { created: [], jobs: new Map(), next: 1, offline: false, busy: false, hits: 0 };
-  const reply = (code, o) => new Response(JSON.stringify(o), { status: code, headers: { "content-type": "application/json" } });
+  const reply = (code, o) =>
+    new Response(JSON.stringify(o), { status: code, headers: { "content-type": "application/json" } });
   w.fetch = async (url, init = {}) => {
     if (w.offline) throw new TypeError("fetch failed");
-    const p = new URL(url).pathname, method = init.method || "GET";
+    const p = new URL(url).pathname,
+      method = init.method || "GET";
     let m;
     if (method === "POST" && p === "/api/smart") {
       if (w.busy) return reply(429, { error: "busy" });
-      const body = JSON.parse(init.body), id = JOB(w.next++);
+      const body = JSON.parse(init.body),
+        id = JOB(w.next++);
       w.created.push({ id, body });
       w.jobs.set(id, { status: "running", pct: 25, stage: "profiling", message: "Profiling" });
       return reply(202, { job_id: id });
@@ -28,10 +31,16 @@ function fakeWorker() {
 }
 
 const RESULT = (ids) => ({
-  goal: "Goal", path_summary: "Start with the basics.",
-  order: ids.map((id) => ({ video_id: id, reason: "why here" })), unplaced: [], off_goal: [],
+  goal: "Goal",
+  path_summary: "Start with the basics.",
+  order: ids.map((id) => ({ video_id: id, reason: "why here" })),
+  unplaced: [],
+  off_goal: [],
   areas: [{ area: "Caching", why: "w", status: "missing", covered_by: [], priority: "high" }],
-  suggestions: [], video_topics: {}, checks: ["ok"], stats: { topics_claimed: 3, topics_grounded: 3 }
+  suggestions: [],
+  video_topics: {},
+  checks: ["ok"],
+  stats: { topics_claimed: 3, topics_grounded: 3 }
 });
 const USAGE = { calls: 3, total_tokens: 1234, wall_seconds: 9.5, api_seconds: 8, waiting_seconds: 0 };
 
@@ -40,11 +49,26 @@ const S = "/api/v1/playlists/goal/smart";
 beforeEach(async () => {
   w = fakeWorker();
   t = await startApp({ fetchImpl: w.fetch });
-  await t.post("/api/v1/playlists", { id: "goal", name: "Goal", videos: [{ id: VID(1), title: "one", channel: "c", duration: "3:00" }, { id: VID(2), title: "two" }, { id: VID(3), title: "three" }] });
+  await t.post("/api/v1/playlists", {
+    id: "goal",
+    name: "Goal",
+    videos: [
+      { id: VID(1), title: "one", channel: "c", duration: "3:00" },
+      { id: VID(2), title: "two" },
+      { id: VID(3), title: "three" }
+    ]
+  });
 });
-afterEach(async () => { await t.close(); });
+afterEach(async () => {
+  await t.close();
+});
 
-const finish = (id, extra = {}) => Object.assign(w.jobs.get(id), { status: "done", pct: 100, result: RESULT([VID(1), VID(2), VID(3)]), usage: USAGE }, extra);
+const finish = (id, extra = {}) =>
+  Object.assign(
+    w.jobs.get(id),
+    { status: "done", pct: 100, result: RESULT([VID(1), VID(2), VID(3)]), usage: USAGE },
+    extra
+  );
 
 test("no run yet: state 'none'", async () => {
   const r = await t.get(S);
@@ -82,7 +106,7 @@ test("start -> poll -> ready; the result is stored, then served without asking t
   assert.match(r.json.generatedAt, /^\d{4}-\d\d-\d\dT/);
 
   const hits = w.hits;
-  w.jobs.clear();                                                        // worker "restarts": the stored result still serves
+  w.jobs.clear(); // worker "restarts": the stored result still serves
   r = await t.get(S);
   assert.equal(r.json.state, "ready");
   assert.equal(r.json.result.order.length, 3);
@@ -132,7 +156,7 @@ test("changing the playlist makes the stored run current:false (result still ret
   assert.equal(w.created.length, 2);
   assert.equal(w.created[1].body.videos.length, 4);
 
-  r = await t.get(S);                                                    // the latest run is the new one
+  r = await t.get(S); // the latest run is the new one
   assert.equal(r.json.state, "running");
   assert.equal(r.json.current, true);
 
@@ -155,7 +179,7 @@ test("fewer than 2 or more than 20 videos -> 422, nothing is started", async () 
   r = await t.post("/api/v1/playlists/many/smart");
   assert.equal(r.status, 422);
   assert.equal(w.created.length, 0);
-  assert.equal((await t.get("/api/v1/playlists/one/smart")).json.state, "none");   // GET still answers
+  assert.equal((await t.get("/api/v1/playlists/one/smart")).json.state, "none"); // GET still answers
 });
 
 test("unknown playlist -> 404; bad id -> 400", async () => {
@@ -172,7 +196,7 @@ test("a worker 404 turns a running run into an error 'interrupted'; a new POST w
   assert.match(r.json.error, /interrupted/i);
   assert.equal(r.json.result, undefined);
 
-  r = await t.post(S);                                                   // a failed run never blocks a new one
+  r = await t.post(S); // a failed run never blocks a new one
   assert.equal(r.status, 202);
   assert.equal(r.json.state, "queued");
   assert.equal(w.created.length, 2);
@@ -205,7 +229,13 @@ test("an oversized result is refused (error run, nothing stored)", async () => {
 });
 
 test("another user cannot read or start a run on someone else's playlist", async () => {
-  const two = await startApp({ fetchImpl: w.fetch, authenticate: (req, _res, next) => { req.user = { id: Number(req.headers["x-user"] || 1), name: "u" }; next(); } });
+  const two = await startApp({
+    fetchImpl: w.fetch,
+    authenticate: (req, _res, next) => {
+      req.user = { id: Number(req.headers["x-user"] || 1), name: "u" };
+      next();
+    }
+  });
   try {
     two.db.exec("INSERT INTO users (id, name) VALUES (2, 'b')");
     const vids = [{ id: VID(1) }, { id: VID(2) }];
@@ -221,7 +251,9 @@ test("another user cannot read or start a run on someone else's playlist", async
     const r = await two.get(S.replace("goal", "mine"), { "x-user": "2" });
     assert.equal(r.status, 200);
     assert.equal(r.json.state, "none");
-  } finally { await two.close(); }
+  } finally {
+    await two.close();
+  }
 });
 
 test("deleting the playlist deletes its runs", async () => {
@@ -247,7 +279,7 @@ test("worker busy -> 429 with Retry-After; worker offline -> 503 py_offline, GET
   w.offline = false;
   await t.post(S);
   w.offline = true;
-  r = await t.get(S);                                                    // status refresh keeps the record
+  r = await t.get(S); // status refresh keeps the record
   assert.equal(r.status, 200);
   assert.equal(r.json.state, "queued");
 });

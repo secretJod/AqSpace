@@ -6,7 +6,9 @@
 
 export function requestLogger(req, res, next) {
   const startedAt = Date.now();
-  if (req.path.startsWith("/dev/api/")) return next();   // tracker polling would flood the console
-  res.on("finish", () => console.log(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - startedAt}ms`));
+  if (req.path.startsWith("/dev/api/")) return next(); // tracker polling would flood the console
+  res.on("finish", () =>
+    console.log(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - startedAt}ms`)
+  );
   next();
 }

@@ -13,7 +13,9 @@ import { viaProxy } from "./local-only.js";
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 const IPV6_RE = /^[0-9a-f:.]{2,45}$/i;
-function looksLikeIp(v) { return IPV4_RE.test(v) || (v.includes(":") && IPV6_RE.test(v)); }
+function looksLikeIp(v) {
+  return IPV4_RE.test(v) || (v.includes(":") && IPV6_RE.test(v));
+}
 
 /**
  * Client key for rate limiting. With trustCf, a CF-Connecting-IP header is used only when the TCP peer is
@@ -31,14 +33,14 @@ export function clientKey(req, trustCf = false) {
 }
 
 export function rateLimit({ max, windowMs, trustCf = false }, now = Date.now) {
-  const hitsByIp = new Map();                        // ip -> { n, reset }
+  const hitsByIp = new Map(); // ip -> { n, reset }
 
   // Forget expired windows now and then so the map does not grow forever.
   const cleanupTimer = setInterval(() => {
     const t = now();
     for (const [ip, hits] of hitsByIp) if (hits.reset <= t) hitsByIp.delete(ip);
   }, windowMs);
-  cleanupTimer.unref();                              // never keeps the process alive
+  cleanupTimer.unref(); // never keeps the process alive
 
   return function limiter(req, res, next) {
     const ip = clientKey(req, trustCf);

@@ -16,9 +16,14 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
 export function assertPyUrl(url, allowRemote = false) {
   let parsed;
-  try { parsed = new URL(url); } catch { throw new Error(`PY_NOTES_URL is not a valid URL: ${url}`); }
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`PY_NOTES_URL is not a valid URL: ${url}`);
+  }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("PY_NOTES_URL must be http(s).");
-  if (!allowRemote && !LOOPBACK_HOSTS.has(parsed.hostname)) throw new Error("PY_NOTES_URL must point to this machine (set ALLOW_REMOTE_PY=1 to override).");
+  if (!allowRemote && !LOOPBACK_HOSTS.has(parsed.hostname))
+    throw new Error("PY_NOTES_URL must point to this machine (set ALLOW_REMOTE_PY=1 to override).");
 }
 
 // ---------------------------------------------------------------------------
@@ -32,7 +37,9 @@ export function createPyClient({ baseUrl, timeoutMs = 10_000, fetchImpl = fetch 
     let res;
     try {
       res = await fetchImpl(baseUrl + path, {
-        method, redirect: "error", signal: AbortSignal.timeout(timeout),
+        method,
+        redirect: "error",
+        signal: AbortSignal.timeout(timeout),
         headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
         body: body !== undefined ? JSON.stringify(body) : undefined
       });
@@ -40,7 +47,11 @@ export function createPyClient({ baseUrl, timeoutMs = 10_000, fetchImpl = fetch 
       throw offlineError(e);
     }
     let data = null;
-    try { data = await res.json(); } catch { /* not JSON */ }
+    try {
+      data = await res.json();
+    } catch {
+      /* not JSON */
+    }
     return { status: res.status, headers: res.headers, json: data };
   }
 

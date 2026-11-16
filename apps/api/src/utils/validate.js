@@ -11,10 +11,10 @@ import { bad } from "./http-errors.js";
 
 export const LIMITS = { name: 60, description: 160, title: 150, channel: 80, batch: 500, maxSec: 360000 };
 
-export const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;     // a YouTube video id
-export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,47}$/;    // our playlist id ("my-playlist")
-export const LIST_ID_RE = /^[A-Za-z0-9_-]{10,64}$/;    // a YouTube playlist id (list=...)
-export const JOB_ID_RE = /^[a-f0-9]{32}$/;             // a job id from the Python worker
+export const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/; // a YouTube video id
+export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,47}$/; // our playlist id ("my-playlist")
+export const LIST_ID_RE = /^[A-Za-z0-9_-]{10,64}$/; // a YouTube playlist id (list=...)
+export const JOB_ID_RE = /^[a-f0-9]{32}$/; // a job id from the Python worker
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
 
@@ -69,7 +69,9 @@ export function durationSec(x) {
   if (typeof x !== "string") return 0;
   const match = /^(?:(\d{1,3}):)?(\d{1,2}):(\d{2})$/.exec(x.trim());
   if (!match) return 0;
-  const hours = Number(match[1] || 0), minutes = Number(match[2]), seconds = Number(match[3]);
+  const hours = Number(match[1] || 0),
+    minutes = Number(match[2]),
+    seconds = Number(match[3]);
   const total = hours * 3600 + minutes * 60 + seconds;
   return total > 0 && total < LIMITS.maxSec ? total : 0;
 }
@@ -78,7 +80,9 @@ export function durationSec(x) {
 export function clock(sec) {
   sec = Math.max(0, Math.floor(sec || 0));
   if (!sec) return "";
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const h = Math.floor(sec / 3600),
+    m = Math.floor((sec % 3600) / 60),
+    s = sec % 60;
   const pad = (n) => (n < 10 ? "0" : "") + n;
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
@@ -116,6 +120,7 @@ export function source(s) {
 
 /** Finite number >= 0 and <= max, else a 400. */
 export function nonNeg(x, label, max = 1e7) {
-  if (typeof x !== "number" || !Number.isFinite(x) || x < 0 || x > max) throw bad(`${label} must be a number between 0 and ${max}.`);
+  if (typeof x !== "number" || !Number.isFinite(x) || x < 0 || x > max)
+    throw bad(`${label} must be a number between 0 and ${max}.`);
   return x;
 }

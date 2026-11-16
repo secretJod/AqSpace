@@ -16,7 +16,10 @@ export function createRepo(db) {
   const users = createUsersRepo(db);
   const playlists = createPlaylistsRepo(db, helpers);
   const progress = createProgressRepo(db, helpers);
-  const syncImport = createSyncImportRepo(db, helpers, { listPlaylists: playlists.listPlaylists, allProgress: progress.allProgress });
+  const syncImport = createSyncImportRepo(db, helpers, {
+    listPlaylists: playlists.listPlaylists,
+    allProgress: progress.allProgress
+  });
 
   return {
     // users and sign-in sessions

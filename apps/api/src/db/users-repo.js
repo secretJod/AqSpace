@@ -9,14 +9,20 @@ import crypto from "node:crypto";
 import { tx } from "./database.js";
 
 /** Every table keyed by a user id (sessions excluded). Add new user-owned tables here (#151 claim). */
-export const USER_KEYED = [["playlists", "user_id"], ["watch_progress", "user_id"], ["notes_jobs", "requested_by"], ["smart_runs", "requested_by"]];
+export const USER_KEYED = [
+  ["playlists", "user_id"],
+  ["watch_progress", "user_id"],
+  ["notes_jobs", "requested_by"],
+  ["smart_runs", "requested_by"]
+];
 
 export function createUsersRepo(db) {
   // -------------------------------------------------------------------------
   // 1. Reading
   // -------------------------------------------------------------------------
 
-  const getUser = (id) => db.prepare("SELECT id, name, email, picture, external_id, bootstrapped_at FROM users WHERE id = ?").get(id) || null;
+  const getUser = (id) =>
+    db.prepare("SELECT id, name, email, picture, external_id, bootstrapped_at FROM users WHERE id = ?").get(id) || null;
 
   /** Public profile shape shared by /me and /auth/status (#151). */
   const profile = (u) => ({ id: u.id, name: u.name, email: u.email ?? null, picture: u.picture ?? null });
@@ -33,20 +39,37 @@ export function createUsersRepo(db) {
     const id = tx(db, () => {
       const existing = db.prepare("SELECT id FROM users WHERE external_id = ?").get(externalId);
       if (existing) {
-        db.prepare("UPDATE users SET name = ?, email = ?, picture = ? WHERE id = ?").run(name, email ?? null, picture ?? null, existing.id);
+        db.prepare("UPDATE users SET name = ?, email = ?, picture = ? WHERE id = ?").run(
+          name,
+          email ?? null,
+          picture ?? null,
+          existing.id
+        );
         return existing.id;
       }
       const first = !db.prepare("SELECT 1 FROM users WHERE external_id IS NOT NULL LIMIT 1").get();
-      const uid = Number(db.prepare("INSERT INTO users (external_id, name, email, picture) VALUES (?, ?, ?, ?)").run(externalId, name, email ?? null, picture ?? null).lastInsertRowid);
+      const uid = Number(
+        db
+          .prepare("INSERT INTO users (external_id, name, email, picture) VALUES (?, ?, ?, ?)")
+          .run(externalId, name, email ?? null, picture ?? null).lastInsertRowid
+      );
       if (first && db.prepare("SELECT 1 FROM users WHERE id = 1 AND external_id IS NULL").get()) {
         claimed = {};
-        for (const [t, c] of USER_KEYED) claimed[t] = Number(db.prepare(`UPDATE ${t} SET ${c} = ? WHERE ${c} = 1`).run(uid).changes);
-        db.prepare("UPDATE users SET bootstrapped_at = (SELECT bootstrapped_at FROM users WHERE id = 1) WHERE id = ?").run(uid);
+        for (const [t, c] of USER_KEYED)
+          claimed[t] = Number(db.prepare(`UPDATE ${t} SET ${c} = ? WHERE ${c} = 1`).run(uid).changes);
+        db.prepare(
+          "UPDATE users SET bootstrapped_at = (SELECT bootstrapped_at FROM users WHERE id = 1) WHERE id = ?"
+        ).run(uid);
         db.prepare("UPDATE users SET bootstrapped_at = NULL WHERE id = 1").run();
       }
       return uid;
     });
-    if (claimed) console.log(`[aq-api] first Google user ${id} claimed the local user's data: ${Object.entries(claimed).map(([k, n]) => `${k}=${n}`).join(" ")}`);
+    if (claimed)
+      console.log(
+        `[aq-api] first Google user ${id} claimed the local user's data: ${Object.entries(claimed)
+          .map(([k, n]) => `${k}=${n}`)
+          .join(" ")}`
+      );
     return id;
   }
 
@@ -60,7 +83,12 @@ export function createUsersRepo(db) {
   function createSession(userId, now, maxAgeMs) {
     const token = crypto.randomBytes(32).toString("base64url");
     db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
-    db.prepare("INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(sha(token), userId, now, now + maxAgeMs);
+    db.prepare("INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
+      sha(token),
+      userId,
+      now,
+      now + maxAgeMs
+    );
     return token;
   }
 
@@ -71,7 +99,9 @@ export function createUsersRepo(db) {
     return row ? row.user_id : null;
   }
 
-  function deleteSession(token) { if (typeof token === "string") db.prepare("DELETE FROM sessions WHERE id = ?").run(sha(token)); }
+  function deleteSession(token) {
+    if (typeof token === "string") db.prepare("DELETE FROM sessions WHERE id = ?").run(sha(token));
+  }
 
   return { getUser, profile, upsertExternalUser, createSession, sessionUser, deleteSession };
 }

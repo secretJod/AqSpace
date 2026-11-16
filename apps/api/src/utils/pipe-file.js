@@ -15,7 +15,7 @@ export async function pipeFile(res, upstream, headerNames) {
   if (!upstream.body) return res.end();
 
   const source = Readable.fromWeb(upstream.body);
-  source.on("error", () => res.destroy());           // worker stream broke: drop the connection
-  res.on("close", () => source.destroy());           // browser went away: stop reading from the worker
+  source.on("error", () => res.destroy()); // worker stream broke: drop the connection
+  res.on("close", () => source.destroy()); // browser went away: stop reading from the worker
   source.pipe(res);
 }

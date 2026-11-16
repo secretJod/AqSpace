@@ -3,19 +3,39 @@ import assert from "node:assert/strict";
 import { startApp } from "./helpers.js";
 
 const G = {
-  clientId: "cid.apps.googleusercontent.com", clientSecret: "shh", redirectUri: "http://localhost:5180/api/v1/auth/google/callback",
-  sessionSecret: "x".repeat(40), sessionMaxAgeMs: 3_600_000, afterLogin: "/",
-  authUrl: "https://accounts.google.com/o/oauth2/v2/auth", tokenUrl: "https://google.test/token", tokeninfoUrl: "https://google.test/tokeninfo"
+  clientId: "cid.apps.googleusercontent.com",
+  clientSecret: "shh",
+  redirectUri: "http://localhost:5180/api/v1/auth/google/callback",
+  sessionSecret: "x".repeat(40),
+  sessionMaxAgeMs: 3_600_000,
+  afterLogin: "/",
+  authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+  tokenUrl: "https://google.test/token",
+  tokeninfoUrl: "https://google.test/tokeninfo"
 };
 
 // mocked Google: token endpoint + tokeninfo endpoint
 let google;
 function mockGoogle() {
-  const st = { calls: [], info: { aud: G.clientId, iss: "https://accounts.google.com", sub: "g-123", email: "a@b.c", email_verified: "true", name: "Ann", exp: String(Math.floor(Date.now() / 1000) + 3600) }, tokenOk: true };
+  const st = {
+    calls: [],
+    info: {
+      aud: G.clientId,
+      iss: "https://accounts.google.com",
+      sub: "g-123",
+      email: "a@b.c",
+      email_verified: "true",
+      name: "Ann",
+      exp: String(Math.floor(Date.now() / 1000) + 3600)
+    },
+    tokenOk: true
+  };
   st.fetch = async (url, init) => {
     st.calls.push({ url: String(url), init });
-    const json = (code, o) => new Response(JSON.stringify(o), { status: code, headers: { "content-type": "application/json" } });
-    if (String(url) === G.tokenUrl) return st.tokenOk ? json(200, { id_token: "idtok", access_token: "a" }) : json(400, { error: "invalid_grant" });
+    const json = (code, o) =>
+      new Response(JSON.stringify(o), { status: code, headers: { "content-type": "application/json" } });
+    if (String(url) === G.tokenUrl)
+      return st.tokenOk ? json(200, { id_token: "idtok", access_token: "a" }) : json(400, { error: "invalid_grant" });
     if (String(url).startsWith(G.tokeninfoUrl)) return json(200, st.info);
     return json(404, {});
   };
@@ -23,11 +43,20 @@ function mockGoogle() {
 }
 
 let t;
-beforeEach(async () => { google = mockGoogle(); t = await startApp({ overrides: { authMode: "google", google: G }, googleFetch: google.fetch, withUi: true }); });
-afterEach(async () => { await t.close(); });
+beforeEach(async () => {
+  google = mockGoogle();
+  t = await startApp({ overrides: { authMode: "google", google: G }, googleFetch: google.fetch, withUi: true });
+});
+afterEach(async () => {
+  await t.close();
+});
 
 const raw = (p, headers = {}, method = "GET") => fetch(t.base + p, { method, headers, redirect: "manual" });
-const cookieOf = (res, name) => res.headers.getSetCookie().find((c) => c.startsWith(name + "="))?.split(";")[0];
+const cookieOf = (res, name) =>
+  res.headers
+    .getSetCookie()
+    .find((c) => c.startsWith(name + "="))
+    ?.split(";")[0];
 
 async function login() {
   const r1 = await raw("/api/v1/auth/google/login");
@@ -87,16 +116,21 @@ test("callback rejects missing/forged state", async () => {
   assert.equal((await raw("/api/v1/auth/google/callback?code=abc&state=x")).status, 400);
   const r1 = await raw("/api/v1/auth/google/login");
   const sc = cookieOf(r1, "aq_oauth_state");
-  assert.equal((await raw("/api/v1/auth/google/callback?code=abc&state=" + "0".repeat(32), { cookie: sc })).status, 400);
+  assert.equal(
+    (await raw("/api/v1/auth/google/callback?code=abc&state=" + "0".repeat(32), { cookie: sc })).status,
+    400
+  );
   assert.equal(google.calls.length, 0);
 });
 
 test("callback rejects bad id_tokens (wrong audience, unverified email, token error)", async () => {
   google.info.aud = "someone-else";
   assert.equal((await login()).r2.status, 401);
-  google.info.aud = G.clientId; google.info.email_verified = "false";
+  google.info.aud = G.clientId;
+  google.info.email_verified = "false";
   assert.equal((await login()).r2.status, 401);
-  google.info.email_verified = true; google.tokenOk = false;
+  google.info.email_verified = true;
+  google.tokenOk = false;
   const { r2, session } = await login();
   assert.equal(r2.status, 401);
   assert.equal(session, undefined);
@@ -113,7 +147,10 @@ test("tampered or foreign session cookies are rejected", async () => {
 test("google mode refuses to start without credentials / secret", async () => {
   const { loadConfig } = await import("../src/config/load-config.js");
   const { createApp } = await import("../src/app.js");
-  assert.throws(() => createApp(loadConfig({ AUTH_MODE: "google" }, { dbFile: ":memory:", uiDir: "" })), /SESSION_SECRET/);
+  assert.throws(
+    () => createApp(loadConfig({ AUTH_MODE: "google" }, { dbFile: ":memory:", uiDir: "" })),
+    /SESSION_SECRET/
+  );
   assert.equal(loadConfig({}).authMode, "local");
 });
 
@@ -126,12 +163,12 @@ test("#14 sessions live in SQLite: only the token hash is stored, expiry is enfo
   assert.match(rows[0].id, /^[0-9a-f]{64}$/);
   assert.equal((await t.get("/api/v1/me", { cookie: session })).status, 200);
 
-  t.db.prepare("UPDATE sessions SET expires_at = 1").run();               // expired -> 401
+  t.db.prepare("UPDATE sessions SET expires_at = 1").run(); // expired -> 401
   assert.equal((await t.get("/api/v1/me", { cookie: session })).status, 401);
 
   const fresh = await login();
-  assert.equal(t.db.prepare("SELECT count(*) n FROM sessions").get().n, 1);   // expired row pruned on create
+  assert.equal(t.db.prepare("SELECT count(*) n FROM sessions").get().n, 1); // expired row pruned on create
   assert.equal((await raw("/api/v1/auth/logout", { cookie: fresh.session }, "POST")).status, 200);
   assert.equal(t.db.prepare("SELECT count(*) n FROM sessions").get().n, 0);
-  assert.equal((await t.get("/api/v1/me", { cookie: fresh.session })).status, 401);   // replayed cookie is dead
+  assert.equal((await t.get("/api/v1/me", { cookie: fresh.session })).status, 401); // replayed cookie is dead
 });

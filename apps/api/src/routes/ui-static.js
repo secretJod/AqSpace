@@ -24,13 +24,22 @@ export function uiStaticRoutes(uiDir) {
     if (req.method !== "GET" && req.method !== "HEAD") return next(new HttpError(405, "Method not allowed."));
     const filePath = req.path === "/" ? "/index.html" : req.path;
     const parts = filePath.split("/");
-    const hiddenPart = parts.some((part) => part.startsWith(".") || part.startsWith("_") || DENIED_DIRS.has(part.toLowerCase()));
+    const hiddenPart = parts.some(
+      (part) => part.startsWith(".") || part.startsWith("_") || DENIED_DIRS.has(part.toLowerCase())
+    );
     const deniedFile = DENIED_FILE_RE.test(parts[parts.length - 1]);
     if (hiddenPart || deniedFile || !ALLOWED_FILE_RE.test(filePath)) return next(new HttpError(404, "Not found."));
     next();
   }
 
-  const serveFiles = express.static(root, { index: "index.html", dotfiles: "ignore", etag: true, maxAge: 0, redirect: false, fallthrough: true });
+  const serveFiles = express.static(root, {
+    index: "index.html",
+    dotfiles: "ignore",
+    etag: true,
+    maxAge: 0,
+    redirect: false,
+    fallthrough: true
+  });
 
   return [onlyWebAssets, serveFiles];
 }

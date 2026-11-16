@@ -15,12 +15,15 @@ export function youtubeImportRoutes(py, config, heavyLimiter) {
   router.get("/import/youtube", heavyLimiter, async (req, res) => {
     const listId = listIdFromUrl(req.query.url);
     const canonical = "https://www.youtube.com/playlist?list=" + listId;
-    const answer = await py.json("/api/playlist?url=" + encodeURIComponent(canonical), { timeout: config.notes.importTimeoutMs });
+    const answer = await py.json("/api/playlist?url=" + encodeURIComponent(canonical), {
+      timeout: config.notes.importTimeoutMs
+    });
 
     if (answer.status !== 200 || !answer.json) {
-      const message = answer.json && typeof answer.json.error === "string"
-        ? answer.json.error.slice(0, 300)
-        : `The notes service could not read that playlist (status ${answer.status}).`;
+      const message =
+        answer.json && typeof answer.json.error === "string"
+          ? answer.json.error.slice(0, 300)
+          : `The notes service could not read that playlist (status ${answer.status}).`;
       const clientProblem = answer.status >= 400 && answer.status < 500 && answer.status !== 404;
       throw new HttpError(clientProblem ? 422 : 502, message);
     }
@@ -35,6 +38,7 @@ function listIdFromUrl(value) {
   const url = typeof value === "string" ? value : "";
   if (!url || url.length > 2048) throw new HttpError(400, "Paste a YouTube playlist link.");
   const match = /[?&]list=([A-Za-z0-9_-]{10,64})(?:[&#]|$)/.exec(url);
-  if (!match || !LIST_ID_RE.test(match[1])) throw new HttpError(400, "That doesn't look like a playlist link (it should contain list=...).");
+  if (!match || !LIST_ID_RE.test(match[1]))
+    throw new HttpError(400, "That doesn't look like a playlist link (it should contain list=...).");
   return match[1];
 }

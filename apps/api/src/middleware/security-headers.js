@@ -19,7 +19,10 @@ export const CSP_APP = [
   "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com",
   "connect-src 'self' https://www.youtube.com",
   "media-src 'self' blob:",
-  "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'self'"
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'self'"
 ].join("; ");
 
 /** JSON answers never need to load anything. */

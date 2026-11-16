@@ -17,7 +17,9 @@ const FILE_RE = /^(requests|events)-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 // ---------------------------------------------------------------------------
 
 const OPEN_STORES = new Set();
-process.once("exit", () => { for (const store of OPEN_STORES) store.flushSync(); });
+process.once("exit", () => {
+  for (const store of OPEN_STORES) store.flushSync();
+});
 
 // ---------------------------------------------------------------------------
 // 2. The store
@@ -27,9 +29,9 @@ process.once("exit", () => { for (const store of OPEN_STORES) store.flushSync();
 export function createDevLog({ dir, keepDays = 14, flushMs = 1000, now = Date.now } = {}) {
   fs.mkdirSync(dir, { recursive: true });
 
-  let pending = new Map();                 // file path -> lines waiting to be written
+  let pending = new Map(); // file path -> lines waiting to be written
   let timer = null;
-  let writeChain = Promise.resolve();      // async writes run one after another, in order
+  let writeChain = Promise.resolve(); // async writes run one after another, in order
   const fileFor = (type, day) => path.join(dir, `${type}-${day}.jsonl`);
 
   const store = {
@@ -40,19 +42,29 @@ export function createDevLog({ dir, keepDays = 14, flushMs = 1000, now = Date.no
       if (!pending.has(file)) pending.set(file, []);
       pending.get(file).push(JSON.stringify(entry) + "\n");
       if (!timer) {
-        timer = setTimeout(() => { timer = null; store.flush(); }, flushMs);
+        timer = setTimeout(() => {
+          timer = null;
+          store.flush();
+        }, flushMs);
         timer.unref?.();
       }
     },
 
     /** Writes the pending lines (async). Returns a promise that resolves when they are on disk. */
     flush() {
-      if (timer) { clearTimeout(timer); timer = null; }
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
       const batch = pending;
       pending = new Map();
       writeChain = writeChain.then(async () => {
         for (const [file, lines] of batch) {
-          try { await fs.promises.appendFile(file, lines.join("")); } catch { /* disk issue: drop, never break requests */ }
+          try {
+            await fs.promises.appendFile(file, lines.join(""));
+          } catch {
+            /* disk issue: drop, never break requests */
+          }
         }
       });
       return writeChain;
@@ -61,7 +73,11 @@ export function createDevLog({ dir, keepDays = 14, flushMs = 1000, now = Date.no
     /** Same as flush(), but blocking - used on process exit. */
     flushSync() {
       for (const [file, lines] of pending) {
-        try { fs.appendFileSync(file, lines.join("")); } catch { /* ignore */ }
+        try {
+          fs.appendFileSync(file, lines.join(""));
+        } catch {
+          /* ignore */
+        }
       }
       pending = new Map();
     },
@@ -73,7 +89,12 @@ export function createDevLog({ dir, keepDays = 14, flushMs = 1000, now = Date.no
       for (const name of fs.readdirSync(dir)) {
         const match = FILE_RE.exec(name);
         if (match && match[2] < cutoffDay) {
-          try { fs.unlinkSync(path.join(dir, name)); deleted.push(name); } catch { /* ignore */ }
+          try {
+            fs.unlinkSync(path.join(dir, name));
+            deleted.push(name);
+          } catch {
+            /* ignore */
+          }
         }
       }
       return deleted;
@@ -100,11 +121,19 @@ export function createDevLog({ dir, keepDays = 14, flushMs = 1000, now = Date.no
     async read(type, day) {
       await store.flush();
       let content;
-      try { content = await fs.promises.readFile(fileFor(type, day), "utf8"); } catch { return []; }
+      try {
+        content = await fs.promises.readFile(fileFor(type, day), "utf8");
+      } catch {
+        return [];
+      }
       const entries = [];
       for (const line of content.split("\n")) {
         if (!line) continue;
-        try { entries.push(JSON.parse(line)); } catch { /* torn line */ }
+        try {
+          entries.push(JSON.parse(line));
+        } catch {
+          /* torn line */
+        }
       }
       return entries;
     },

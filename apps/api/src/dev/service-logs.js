@@ -21,12 +21,12 @@ export const LOG_FILES = {
 // ---------------------------------------------------------------------------
 
 const SECRET_PATTERNS = [
-  [/gsk_[A-Za-z0-9]{8,}/g, "gsk_***"],                 // Groq
-  [/AIza[0-9A-Za-z_-]{16,}/g, "AIza***"],              // Google
-  [/nvapi-[A-Za-z0-9_-]{8,}/g, "nvapi-***"],           // NVIDIA
-  [/hf_[A-Za-z0-9]{8,}/g, "hf_***"],                   // Hugging Face
-  [/xai-[A-Za-z0-9_-]{8,}/g, "xai-***"],               // xAI
-  [/\bsk-[A-Za-z0-9_-]{16,}/g, "sk-***"],              // OpenAI-style
+  [/gsk_[A-Za-z0-9]{8,}/g, "gsk_***"], // Groq
+  [/AIza[0-9A-Za-z_-]{16,}/g, "AIza***"], // Google
+  [/nvapi-[A-Za-z0-9_-]{8,}/g, "nvapi-***"], // NVIDIA
+  [/hf_[A-Za-z0-9]{8,}/g, "hf_***"], // Hugging Face
+  [/xai-[A-Za-z0-9_-]{8,}/g, "xai-***"], // xAI
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, "sk-***"], // OpenAI-style
   [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 ***"],
   [/\b(key|api_key|apikey|api-key|token|access_token|secret|password)(["']?\s*[=:]\s*["']?)[^\s&"',;]+/gi, "$1$2***"]
 ];
@@ -45,7 +45,11 @@ export function redactLine(s) {
     -> {size, mtime, lines}, or null when the file does not exist. */
 export async function tailFile(file, n, maxBytes = 512 * 1024) {
   let handle;
-  try { handle = await fs.promises.open(file, "r"); } catch { return null; }
+  try {
+    handle = await fs.promises.open(file, "r");
+  } catch {
+    return null;
+  }
   try {
     const { size, mtime } = await handle.stat();
     const length = Math.min(size, maxBytes);
@@ -53,7 +57,7 @@ export async function tailFile(file, n, maxBytes = 512 * 1024) {
     await handle.read(buffer, 0, length, size - length);
 
     const lines = buffer.toString("utf8").split(/\r?\n/);
-    if (length < size) lines.shift();                 // we started mid-file: the first line is partial
+    if (length < size) lines.shift(); // we started mid-file: the first line is partial
     if (lines.length && lines[lines.length - 1] === "") lines.pop();
     return { size, mtime: mtime.toISOString(), lines: lines.slice(-n).map((line) => redactLine(line.slice(0, 4000))) };
   } finally {

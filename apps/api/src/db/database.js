@@ -36,7 +36,12 @@ export function openDb(file, sqlDir) {
 /* Databases made before migrations were recorded have no schema_migrations table. For those we detect what
    each known migration created and record it as applied ("baseline") instead of re-running non-idempotent SQL. */
 const hasTable = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
-const hasColumn = (db, t, c) => hasTable(db, t) && db.prepare(`PRAGMA table_info(${t})`).all().some((r) => r.name === c);
+const hasColumn = (db, t, c) =>
+  hasTable(db, t) &&
+  db
+    .prepare(`PRAGMA table_info(${t})`)
+    .all()
+    .some((r) => r.name === c);
 export const BASELINE_PROBES = {
   "001_init.sql": (db) => hasTable(db, "users"),
   "002_notes_resumes.sql": (db) => hasColumn(db, "notes_jobs", "resumes"),
@@ -58,11 +63,22 @@ export function migrate(db, sqlDir) {
   if (fresh) {
     for (const [name, probe] of Object.entries(BASELINE_PROBES)) if (probe(db)) record.run(name, "baseline");
   }
-  const recorded = new Set(db.prepare("SELECT name FROM schema_migrations").all().map((row) => row.name));
+  const recorded = new Set(
+    db
+      .prepare("SELECT name FROM schema_migrations")
+      .all()
+      .map((row) => row.name)
+  );
   for (const [oldName, newName] of Object.entries(RENAMED)) {
-    if (recorded.has(oldName) && !recorded.has(newName) && BASELINE_PROBES[newName](db)) { record.run(newName, "renamed:" + oldName); recorded.add(newName); }
+    if (recorded.has(oldName) && !recorded.has(newName) && BASELINE_PROBES[newName](db)) {
+      record.run(newName, "renamed:" + oldName);
+      recorded.add(newName);
+    }
   }
-  const files = fs.readdirSync(sqlDir).filter((f) => /^\d+.*\.sql$/.test(f)).sort(byNumber);
+  const files = fs
+    .readdirSync(sqlDir)
+    .filter((f) => /^\d+.*\.sql$/.test(f))
+    .sort(byNumber);
 
   for (const fileName of files) {
     if (recorded.has(fileName)) continue;
@@ -76,7 +92,10 @@ function applyMigration(db, sqlDir, fileName) {
   db.exec("BEGIN");
   try {
     db.exec(sql);
-    db.prepare("INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)").run(fileName, new Date().toISOString());
+    db.prepare("INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)").run(
+      fileName,
+      new Date().toISOString()
+    );
     db.exec("COMMIT");
   } catch (e) {
     db.exec("ROLLBACK");
@@ -91,18 +110,28 @@ function applyMigration(db, sqlDir, fileName) {
 /** Write-contention counter per connection (ADR-0002 Postgres trigger). Read with dbBusy(db). */
 const busyCounts = new WeakMap();
 export const SLOW_TX_MS = 100;
-export function dbBusy(db) { return busyCounts.get(db) || 0; }
-function isBusy(e) { return !!e && (e.errcode === 5 || e.errcode === 6 || /SQLITE_BUSY|database is (locked|busy)/i.test(String(e.message))); }
+export function dbBusy(db) {
+  return busyCounts.get(db) || 0;
+}
+function isBusy(e) {
+  return (
+    !!e && (e.errcode === 5 || e.errcode === 6 || /SQLITE_BUSY|database is (locked|busy)/i.test(String(e.message)))
+  );
+}
 function contention(db, what, ms) {
   busyCounts.set(db, dbBusy(db) + 1);
-  console.warn(`[aq-api] db write contention: ${what} after ${Math.round(ms)} ms`);   // never logs data values
+  console.warn(`[aq-api] db write contention: ${what} after ${Math.round(ms)} ms`); // never logs data values
 }
 
 /** Runs fn inside BEGIN IMMEDIATE..COMMIT (not re-entrant). Logs + counts SQLITE_BUSY and lock waits > SLOW_TX_MS. */
 export function tx(db, fn) {
   const t0 = performance.now();
-  try { db.exec("BEGIN IMMEDIATE"); }
-  catch (e) { if (isBusy(e)) contention(db, "SQLITE_BUSY on BEGIN", performance.now() - t0); throw e; }
+  try {
+    db.exec("BEGIN IMMEDIATE");
+  } catch (e) {
+    if (isBusy(e)) contention(db, "SQLITE_BUSY on BEGIN", performance.now() - t0);
+    throw e;
+  }
   const waited = performance.now() - t0;
   if (waited > SLOW_TX_MS) contention(db, "slow lock wait", waited);
   try {
@@ -110,7 +139,11 @@ export function tx(db, fn) {
     db.exec("COMMIT");
     return result;
   } catch (e) {
-    try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      /* already rolled back */
+    }
     if (isBusy(e)) contention(db, "SQLITE_BUSY in tx", performance.now() - t0);
     throw e;
   }

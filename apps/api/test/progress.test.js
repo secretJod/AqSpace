@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { startApp, VID } from "./helpers.js";
 
 let t;
-before(async () => { t = await startApp(); });
+before(async () => {
+  t = await startApp();
+});
 after(() => t.close());
 
 const PR = "/api/v1/progress";
@@ -24,7 +26,7 @@ test("progress: put, get one, get all", async () => {
   assert.equal(r.json.pos, 99);
   r = await t.get(PR);
   assert.deepEqual(Object.keys(r.json.progress).sort(), [VID(1), VID(2)]);
-  assert.deepEqual(Object.keys(r.json.progress[VID(1)]).sort(), ["done", "dur", "pos", "updated"]);   // same shape as the UI's aq.watch.v1
+  assert.deepEqual(Object.keys(r.json.progress[VID(1)]).sort(), ["done", "dur", "pos", "updated"]); // same shape as the UI's aq.watch.v1
 });
 
 test("progress validation", async () => {
@@ -35,7 +37,7 @@ test("progress validation", async () => {
   assert.equal((await t.put(`${PR}/${VID(3)}`, { pos: 1, done: "yes" })).status, 400);
   assert.equal((await t.put(`${PR}/${VID(3)}`, { pos: 1, updated: -3 })).status, 400);
   assert.equal((await t.put(`${PR}/${VID(3)}`, "[]")).status, 400);
-  assert.equal((await t.get(`${PR}/${VID(3)}`)).status, 404);          // nothing was stored by the failed attempts
+  assert.equal((await t.get(`${PR}/${VID(3)}`)).status, 404); // nothing was stored by the failed attempts
 });
 
 test("progress: an older update does not overwrite a newer one", async () => {

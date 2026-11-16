@@ -46,15 +46,20 @@ export function createApp(config, deps = {}) {
   const tracker = config.devTools ? createTracker({ logDir: config.devLogDir, keepDays: config.devLogDays }) : null;
   const fetchImpl = deps.fetchImpl || fetch;
   // With the tracker on, every call to the worker is recorded (layer "worker").
-  const py = createPyClient({ baseUrl: config.pyUrl, timeoutMs: config.notes.pyTimeoutMs, fetchImpl: tracker ? tracker.wrapFetch(fetchImpl) : fetchImpl });
+  const py = createPyClient({
+    baseUrl: config.pyUrl,
+    timeoutMs: config.notes.pyTimeoutMs,
+    fetchImpl: tracker ? tracker.wrapFetch(fetchImpl) : fetchImpl
+  });
 
   const onChange = tracker ? tracker.change : null;
   const notes = createNotesService({ db, repo, py, config, clock, onChange });
   const smart = createSmartService({ db, repo, py, config, clock, onChange });
   // AUTH_MODE=google: Google sign-in with server-side sessions; otherwise the single local user.
-  const google = config.authMode === "google" && !deps.authenticate
-    ? createGoogleAuth(config.google, { repo, fetchImpl: deps.googleFetch || fetch, clock })
-    : null;
+  const google =
+    config.authMode === "google" && !deps.authenticate
+      ? createGoogleAuth(config.google, { repo, fetchImpl: deps.googleFetch || fetch, clock })
+      : null;
   const authenticate = deps.authenticate || (google ? google.authenticate : localAuth);
 
   // -------------------------------------------------------------------------
@@ -91,8 +96,24 @@ export function createApp(config, deps = {}) {
   const generalLimiter = rateLimit({ ...config.rate.general, trustCf: config.trustCfHeaders }, deps.clock);
   const heavyLimiter = rateLimit({ ...config.rate.heavy, trustCf: config.trustCfHeaders }, deps.clock);
 
-  app.use("/api/v1", createApiRouter({ db, repo, py, notes, smart, config, authenticate, google, localUserId: LOCAL_USER.id, generalLimiter, heavyLimiter, version: VERSION }));
-  app.use("/api", notFoundHandler);                  // e.g. /api/v2/... or /api/anything
+  app.use(
+    "/api/v1",
+    createApiRouter({
+      db,
+      repo,
+      py,
+      notes,
+      smart,
+      config,
+      authenticate,
+      google,
+      localUserId: LOCAL_USER.id,
+      generalLimiter,
+      heavyLimiter,
+      version: VERSION
+    })
+  );
+  app.use("/api", notFoundHandler); // e.g. /api/v2/... or /api/anything
 
   // -------------------------------------------------------------------------
   // 5. Fonts for the notes page, then the UI (same origin as the API)
