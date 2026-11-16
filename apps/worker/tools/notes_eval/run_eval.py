@@ -36,10 +36,12 @@ except ImportError:  # pragma: no cover
 
 
 def log(msg: str) -> None:
+    """Print a timestamped progress line."""
     print(f"[{dt.datetime.now():%H:%M:%S}] {msg}", flush=True)
 
 
 def fetch_transcripts(videos: list[str], dry: bool) -> dict[str, dict]:
+    """Return ``{video id: transcript}``, fetched once and cached under out/."""
     out = {}
     for vid in videos:
         p = C.TRANSCRIPTS / f"{vid}.json"
@@ -66,6 +68,7 @@ def fetch_transcripts(videos: list[str], dry: bool) -> dict[str, dict]:
 
 
 def generate(cid: str, vid: str, n: int, transcript: dict) -> dict:
+    """Run the engine once for a contestant and video; returns the run record (or the error)."""
     from notes_engine import llm
     from notes_engine.notes_schema import validate_notes
 
@@ -129,6 +132,7 @@ def _csv(values: list[str]) -> list[str]:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the command line (see the module docstring for examples)."""
     ap = argparse.ArgumentParser(prog="python -m tools.notes_eval.run_eval")
     ap.add_argument(
         "--videos",
@@ -158,6 +162,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> dict:
+    """Run the evaluation; returns the aggregated ``evaluation.json`` data."""
     a = parse_args(argv)
     videos = _csv(a.videos)
     if videos == ["default"] or not videos:

@@ -35,7 +35,7 @@ _last_call = [0.0]
 
 
 class JudgeQuota(Exception):
-    pass
+    """The judge provider's quota is used up; judging stops and resumes on a later run."""
 
 
 def _judge(system: str, user: str, max_tokens: int = 8192) -> Any:
@@ -94,6 +94,7 @@ def _tx_block(t: dict) -> str:
 
 # --------------------------------------------------------------------- judge stages ----
 def ensure_gold(vid: str, t: dict, dry: bool, log: Callable) -> dict | None:
+    """Return the video's gold key facts, asking the judge once if none are saved."""
     p = C.GOLD / f"{vid}.json"
     g = C.read_json(p)
     if isinstance(g, dict) and g.get("facts"):
@@ -121,10 +122,12 @@ def ensure_gold(vid: str, t: dict, dry: bool, log: Callable) -> dict | None:
 
 
 def gold_hash(g: dict) -> str:
+    """Return a short hash of the gold facts (a judgement is redone when it changes)."""
     return hashlib.sha1(json.dumps(g.get("facts"), sort_keys=True).encode()).hexdigest()[:10]
 
 
 def judge_run(cid: str, vid: str, n: int, t: dict, gold: dict, dry: bool, log: Callable) -> None:
+    """Judge one run (coverage, claims, rubric) unless a current judgement is saved."""
     rp = C.run_path(cid, vid, n)
     run = C.read_json(rp)
     if not isinstance(run, dict) or run.get("status") != "success":
@@ -156,6 +159,7 @@ def judge_run(cid: str, vid: str, n: int, t: dict, gold: dict, dry: bool, log: C
 
 
 def judge_pair(vid: str, a: str, b: str, t: dict, dry: bool, log: Callable) -> None:
+    """Compare the run-1 notes of two contestants on one video, in random order."""
     ra, rb = C.read_json(C.run_path(a, vid, 1)), C.read_json(C.run_path(b, vid, 1))
     if not (isinstance(ra, dict) and isinstance(rb, dict) and ra.get("status") == rb.get("status") == "success"):
         return
@@ -188,6 +192,7 @@ def judge_pair(vid: str, a: str, b: str, t: dict, dry: bool, log: Callable) -> N
 
 
 def judge_all(ts: dict, videos: list[str], contestants: list[str], runs: int, dry: bool, log: Callable) -> None:
+    """Judge every run and every contestant pair; stops early on a judge quota error."""
     try:
         for vid in videos:
             if vid not in ts:
@@ -270,6 +275,7 @@ def _norm(s: str) -> str:
 
 
 def grounding(notes: dict, t: dict) -> dict:
+    """Code check: share of numbers and quoted terms in the notes found in the transcript."""
     txt = C.notes_text(notes)
     tr = C.transcript_text(t).lower()
     trn = _norm(tr)
@@ -301,6 +307,7 @@ def grounding(notes: dict, t: dict) -> dict:
 
 
 def noise(notes: dict, t: dict) -> dict:
+    """Code check: filler phrases (sponsors, greetings, ...) that leaked into the notes."""
     txt = C.notes_text(notes).lower()
     tr = C.transcript_text(t).lower()
     hits = {}
@@ -338,6 +345,7 @@ def _bool(v: Any) -> bool:
 
 
 def aggregate() -> dict:
+    """Aggregate runs and judgements into ``out/evaluation.json`` and return it."""
     from notes_engine.llm import PROVIDERS
 
     runs_out = []

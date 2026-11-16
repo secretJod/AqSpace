@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -104,6 +105,7 @@ def register_contestant(spec: str) -> str:
 
 
 def set_judge(spec: str) -> None:
+    """Use the contestant id or ``provider[:model][@url]`` spec as the judge."""
     global JUDGE_PROVIDER, JUDGE_MODEL, JUDGE_URL
     cfg = CONTESTANTS[spec] if spec in CONTESTANTS else parse_spec(spec)
     JUDGE_PROVIDER, JUDGE_MODEL, JUDGE_URL = cfg["provider"], cfg["model"], cfg.get("url")
@@ -122,6 +124,7 @@ def set_out(path: Path) -> None:
 
 
 def model_of(cid: str) -> str:
+    """Return the model a contestant runs (its own or the provider default)."""
     from notes_engine.llm import PROVIDERS
 
     c = CONTESTANTS[cid]
@@ -129,6 +132,7 @@ def model_of(cid: str) -> str:
 
 
 def judge_model() -> str:
+    """Return the judge's model (its own or the provider default)."""
     from notes_engine.llm import PROVIDERS
 
     return JUDGE_MODEL or PROVIDERS[JUDGE_PROVIDER]["default_model"]
@@ -139,7 +143,7 @@ _APP_ONLY_ENV = ("LNA_CACHE_DIR", "LNAI_CHECKPOINT_DIR", "LNA_PROVIDER_FALLBACK"
 
 
 @contextlib.contextmanager
-def clean_run_env(local_url: str | None = None):
+def clean_run_env(local_url: str | None = None) -> Iterator[None]:
     """Same engine path as the app, minus cache, checkpoints and provider fallback (a fallback would
     silently score another provider). ``local_url`` overrides LNAI_LOCAL_URL for the block."""
     saved = {k: os.environ.get(k) for k in (*_APP_ONLY_ENV, "LNAI_LOCAL_URL")}
@@ -177,6 +181,7 @@ def key(env: str | None) -> str:
 
 
 def read_json(p: Path) -> Any:
+    """Return the parsed JSON file, or None when it is missing or unreadable."""
     try:
         return json.loads(p.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
@@ -184,6 +189,7 @@ def read_json(p: Path) -> Any:
 
 
 def write_json(p: Path, obj: Any) -> None:
+    """Write ``obj`` as JSON atomically (temp file + rename), creating folders."""
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -191,10 +197,12 @@ def write_json(p: Path, obj: Any) -> None:
 
 
 def run_path(cid: str, vid: str, n: int) -> Path:
+    """Return the result file of run ``n`` of contestant ``cid`` on video ``vid``."""
     return RUNS / cid / vid / f"{n}.json"
 
 
 def transcript_text(t: dict) -> str:
+    """Return the transcript's segment texts joined by newlines."""
     return "\n".join(str(s.get("text", "")) for s in t.get("segments", []))
 
 
@@ -243,6 +251,7 @@ class Meter:
         self.reset()
 
     def reset(self) -> None:
+        """Zero every counter and stop counting."""
         self.active = False
         self.requests = 0
         self.statuses: dict[str, int] = {}
@@ -316,6 +325,7 @@ def install_meter() -> None:
 
 
 def classify_error(msg: str) -> str:
+    """Map an engine error message to a short error type (quota_daily, timeout, ...)."""
     m = (msg or "").lower()
     if "daily quota" in m:
         return "quota_daily"
@@ -335,6 +345,7 @@ def classify_error(msg: str) -> str:
 
 
 def scrub(s: str) -> str:
+    """Replace anything that looks like an API key (and every loaded key) with [redacted]."""
     s = re.sub(
         r"(AIza[0-9A-Za-z_\-]{20,}|gsk_[A-Za-z0-9]{20,}|nvapi-[A-Za-z0-9_\-]{20,}|hf_[A-Za-z0-9]{20,}"
         r"|xai-[A-Za-z0-9]{20,}|Bearer\s+\S+)",

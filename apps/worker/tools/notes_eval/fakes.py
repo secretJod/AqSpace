@@ -13,6 +13,7 @@ from typing import Any
 
 
 def transcript(vid: str, title: str) -> dict:
+    """Return a synthetic transcript dict for a dry run."""
     segs = [
         {
             "start": i * 20.0,
@@ -62,6 +63,7 @@ NOTES_BODY = {
 
 
 def judge_answer(system: str) -> dict:
+    """Return the canned judge answer for a judge system prompt."""
     if "extract the key facts" in system:
         return {"facts": [{"id": f"f{i}", "fact": f"Idea number {i} matters."} for i in range(1, 13)]}
     if "compare two sets" in system:
@@ -97,7 +99,15 @@ class FakeHTTP:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    def post(self, url, headers=None, json=None, timeout=None, **kw):  # noqa: A002
+    def post(
+        self,
+        url: str,
+        headers: dict | None = None,
+        json: dict | None = None,  # noqa: A002
+        timeout: object = None,
+        **kw: Any,
+    ) -> _Resp:
+        """Answer a chat call with canned notes, or canned judge JSON for judge prompts."""
         body = json or {}
         system = _system_of(url, body)
         self.calls.append({"url": url, "model": body.get("model"), "system": system[:80]})
@@ -117,7 +127,8 @@ class FakeHTTP:
             }
         )
 
-    def get(self, url, headers=None, timeout=None, **kw):
+    def get(self, url: str, headers: dict | None = None, timeout: object = None, **kw: Any) -> _Resp:
+        """Answer the local server probes (``/props``, ``/models``)."""
         self.calls.append({"url": url, "get": True})
         return _Resp({"default_generation_settings": {"n_ctx": 32768}, "data": [{"id": "fake"}]})
 

@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover
 
 
 def main() -> None:
+    """Write the dev page's ``eval-data.json`` from ``out/evaluation.json``."""
     ev = C.read_json(C.OUT / "evaluation.json") or evaluate.aggregate()
     data = json.loads(json.dumps(ev))  # deep copy
     data["schema"] = "aq-notes-eval/1"

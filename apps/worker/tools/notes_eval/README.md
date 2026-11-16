@@ -1,10 +1,11 @@
 # Notes provider evaluation (developer only)
 
-Compares LLM providers for the AQspace notes pipeline (`notes_engine.llm.generate_notes`, unchanged)
-on 4 real library videos, 2 runs each, and publishes the results to the dev page
-`http://127.0.0.1:5180/dev/eval.html` (`aq-api/dev-ui/eval.html`, override with `LNAI_EVAL_DEV_UI`; + `eval.js`, `eval.css`, `eval-data.json`).
+Compares LLM providers on the worker's own notes pipeline (`notes_engine.llm.generate_notes`, used
+as is) on 4 real lecture videos, 2 runs each, and publishes the results to the API's dev page
+`http://127.0.0.1:5180/dev/eval.html` (files in `apps/api/dev-ui/`: `eval.html`, `eval.js`, `eval.css` and the
+generated `eval-data.json`; override the folder with `LNAI_EVAL_DEV_UI`).
 
-## Run (from `lecture-notes-ai/`, card #75)
+## Run (from `apps/worker/`)
 
 ```
 .venv/bin/python -m tools.notes_eval.run_eval --contestants gemini,groq,local --videos default --dry-run   # fakes only
@@ -31,7 +32,7 @@ on 4 real library videos, 2 runs each, and publishes the results to the dev page
 
 ## Blind human scoring
 
-Each run writes `docs/qa/r5-eval-blind.md` (dry run: `out/dry-run/r5-eval-blind.md`): per video, the run-1
+Each run writes the blind sheet `docs/qa/r5-eval-blind.md` (dry run: `out/dry-run/r5-eval-blind.md`): per video, the run-1
 notes of every contestant behind shuffled letters A, B, C..., with the `docs/qa/r5-eval.md` Part B rubric
 (Accuracy, Coverage, Structure, Readability, 1-5). Model names are stripped from the notes text. The key is
 `out/blind-key.json` (git-ignored). Score first, then `python -m tools.notes_eval.blind --reveal`.
@@ -67,6 +68,11 @@ Everything is cached under `out/`; a rerun skips completed work.
 - `fakes.py` - offline fakes for `--dry-run` and tests.
 - `blind.py` - blind sheet + key, `--reveal`.
 - `build_data.py` - writes `dev-ui/eval-data.json` (no transcripts, no notes bodies, no keys).
+
+## Tests
+
+`tests/test_notes_eval.py` runs the harness in dry-run mode with the fakes (no keys, no network). It is part
+of the normal suite: `LNA_OFFLINE=1 .venv/bin/python -m pytest`.
 
 ## Caveats
 

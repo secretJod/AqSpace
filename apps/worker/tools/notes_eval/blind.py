@@ -51,6 +51,7 @@ def _scrub_names(text: str, contestants: list[str]) -> str:
 
 
 def build(videos: list[str], contestants: list[str], seed: int | None = None) -> tuple[str, dict]:
+    """Return ``(sheet markdown, key)``: run-1 notes per video behind shuffled letters."""
     rng = random.Random(seed) if seed is not None else random.SystemRandom()
     key: dict = {"note": "Key to unblind docs/qa/r5-eval-blind.md. Do not open before scoring.", "videos": {}}
     parts = [
@@ -108,6 +109,7 @@ def build(videos: list[str], contestants: list[str], seed: int | None = None) ->
 def write_sheet(
     videos: list[str], contestants: list[str], sheet: Path, key_path: Path, seed: int | None = None
 ) -> dict:
+    """Write the blind sheet and its key file; returns the key."""
     text, key = build(videos, contestants, seed)
     sheet = Path(sheet)
     sheet.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +119,7 @@ def write_sheet(
 
 
 def reveal(key_path: Path) -> str:
+    """Return a Markdown table mapping each video's letters to contestants."""
     key = C.read_json(Path(key_path)) or {}
     rows = ["| Video | Letter | Contestant | Model |", "|---|---|---|---|"]
     for vid, letters in (key.get("videos") or {}).items():
