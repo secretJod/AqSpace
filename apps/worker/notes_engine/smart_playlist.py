@@ -34,7 +34,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
 from . import ingest
-from .llm import PROVIDERS, LLMError, _BadJSON, _Client, _clean_key, _OutputTruncated
+from .ai.key_safety import clean_api_key
+from .llm import PROVIDERS, LLMError, _BadJSON, _Client, _OutputTruncated
 
 Progress = Callable[[str, int, str], None]
 
@@ -410,7 +411,7 @@ def analyze(goal: str, videos: list[dict], provider: str, api_key: str, model: s
     """
     if provider not in PROVIDERS:
         raise LLMError(f"Unknown provider '{_s(provider, 40)}'. Choose one of: {', '.join(PROVIDERS)}.")
-    key = _clean_key(api_key)
+    key = clean_api_key(api_key)
     model = (model or "").strip() or PROVIDERS[provider]["default_model"]
     if provider == "gemini":
         model = model.removeprefix("models/")

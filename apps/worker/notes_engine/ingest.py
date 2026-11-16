@@ -44,7 +44,6 @@ from __future__ import annotations
 import glob
 import json
 import os
-import re  # noqa: F401 - kept for backward compatibility of ``ingest.re``
 import shutil
 import subprocess
 import tempfile
@@ -54,22 +53,14 @@ from urllib.parse import urlparse
 import requests
 
 from . import cache as disk_cache
-from .transcripts.chunking import (MARKER_EVERY_SEC, chunk_transcript, format_timestamp, render_chunk, segment_cost,
-                                   split_long_text)
-from .transcripts.cleaning import (WS_RE, build_segments, clean_text, dedupe_cues, drop_word_overlap, merge_cues,
+from .transcripts.chunking import (chunk_transcript, format_timestamp)
+from .transcripts.cleaning import (build_segments, clean_text, dedupe_cues, merge_cues,
                                    parse_json3, parse_vtt)
-from .transcripts.cleaning import _norm_line, _words, _SENT_END, _VTT_TIME_RE  # noqa: F401 - old names
-from .transcripts.errors import MSG_CHANNEL, MSG_NOT_VIDEO, MSG_PLAYLIST  # noqa: F401
-from .transcripts.errors import (FAILURE_MESSAGES, FAILURE_PRIORITY, MSG_AGE, MSG_BLOCKED, MSG_INVALID, MSG_LIVE,
-                                 MSG_NO_CAPTIONS, MSG_NO_CAPTIONS_WHISPER_FAILED, MSG_NOT_PLAYLIST,
-                                 MSG_PLAYLIST_BLOCKED, MSG_PLAYLIST_MIX, MSG_PLAYLIST_NOT_FOUND, MSG_PLAYLIST_OTHER,
-                                 MSG_PLAYLIST_PRIVATE, MSG_UNAVAILABLE, IngestError, PlaylistError, StageFailure,
+from .transcripts.errors import MSG_CHANNEL, MSG_NO_CAPTIONS
+from .transcripts.errors import (FAILURE_MESSAGES, FAILURE_PRIORITY, MSG_NO_CAPTIONS_WHISPER_FAILED, IngestError, StageFailure,
                                  ytdlp_error_kind)
-from .transcripts.playlists import (PLAYLIST_LIMIT, PLAYLIST_SLACK, get_playlist, plain_text, playlist_entry,
-                                    playlist_error, ytdlp_playlist)
-from .transcripts.playlists import _CTRL_RE, _DEAD_TITLES  # noqa: F401 - old names
-from .transcripts.youtube_urls import (CHANNEL_PREFIXES, PATH_PREFIXES, PLAYLIST_ID_RE, SHORT_HOSTS, VIDEO_ID_RE, YOUTUBE_HOSTS,
-                                       canonical_url, parse_playlist_id, parse_video_id)
+from .transcripts.playlists import (PLAYLIST_SLACK, get_playlist, plain_text)
+from .transcripts.youtube_urls import VIDEO_ID_RE, canonical_url, parse_playlist_id, parse_video_id
 
 TRANSCRIPT_CACHE_DAYS = 30  # a video's captions rarely change; auto-captions may improve, so not forever
 
@@ -81,40 +72,21 @@ __all__ = [
     "parse_playlist_id",
     "chunk_transcript",
     "format_timestamp",
+    "VIDEO_ID_RE",
+    "MSG_CHANNEL",
+    "MSG_NO_CAPTIONS",
 ]
 
-# --------------------------------------------------------------------------- #
-# 1. Re-exports: old private names -> new homes in notes_engine/transcripts/
-# --------------------------------------------------------------------------- #
-
-_YOUTUBE_HOSTS = YOUTUBE_HOSTS
-_SHORT_HOSTS = SHORT_HOSTS
-_PATH_PREFIXES = PATH_PREFIXES
-_CHANNEL_PREFIXES = CHANNEL_PREFIXES
-_canonical_url = canonical_url
-
-_PRIORITY = FAILURE_PRIORITY
-_MESSAGES = FAILURE_MESSAGES
+# Short names the tests use for helpers that live in ``notes_engine/transcripts/``.
 _Fail = StageFailure
 _ytdlp_error_kind = ytdlp_error_kind
-
-_WS_RE = WS_RE
-_drop_word_overlap = drop_word_overlap
 _dedupe_cues = dedupe_cues
 _merge_cues = merge_cues
 _build_segments = build_segments
 _parse_json3 = parse_json3
 _parse_vtt = parse_vtt
-
-_split_long_text = split_long_text
-_render_chunk = render_chunk
-_seg_cost = segment_cost
-
 _PLAYLIST_SLACK = PLAYLIST_SLACK
 _plain = plain_text
-_playlist_error = playlist_error
-_playlist_entry = playlist_entry
-_ytdlp_playlist = ytdlp_playlist
 
 # --------------------------------------------------------------------------- #
 # Constants for the fetch stages
@@ -242,7 +214,7 @@ def _ytdlp_info(video_id: str, cache: dict | None = None) -> dict:
     opts = dict(_YTDLP_COMMON, skip_download=True)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(_canonical_url(video_id), download=False)
+            info = ydl.extract_info(canonical_url(video_id), download=False)
     except Exception as e:  # yt_dlp.utils.DownloadError & friends
         raise _Fail(_ytdlp_error_kind(str(e)), str(e)[:300]) from None
     if not isinstance(info, dict):
@@ -257,7 +229,7 @@ def _oembed(video_id: str) -> tuple[str, str]:
     try:
         r = requests.get(
             "https://www.youtube.com/oembed",
-            params={"url": _canonical_url(video_id), "format": "json"},
+            params={"url": canonical_url(video_id), "format": "json"},
             timeout=_HTTP_TIMEOUT,
         )
     except requests.RequestException as e:
@@ -543,7 +515,7 @@ def _download_audio(video_id: str, out_dir: str, cache: dict) -> str:
     )
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(_canonical_url(video_id), download=True)
+            info = ydl.extract_info(canonical_url(video_id), download=True)
         if isinstance(info, dict) and "info" not in cache:
             cache["info"] = info
     except Exception as e:
@@ -872,7 +844,7 @@ def get_transcript(url: str, *, groq_key: str | None = None, progress=None,
     _progress(progress, "transcript", 100, f"Transcript ready ({len(segments)} segments).")
     out = {
         "video_id": video_id,
-        "url": _canonical_url(video_id),
+        "url": canonical_url(video_id),
         "title": title,
         "channel": channel,
         "duration_sec": duration,
@@ -887,11 +859,11 @@ def get_transcript(url: str, *, groq_key: str | None = None, progress=None,
 def _final_message(failures: list[_Fail], whisper_fail: _Fail | None, had_key: bool) -> str:
     """Pick the single most helpful message when every stage failed."""
     kinds = [f.kind for f in failures]
-    best = max(kinds, key=lambda k: _PRIORITY.get(k, 0)) if kinds else "other"
+    best = max(kinds, key=lambda k: FAILURE_PRIORITY.get(k, 0)) if kinds else "other"
     if whisper_fail is not None and best in ("nocaps", "other", "blocked"):
         why = whisper_fail.detail or "unknown error"
         # whisper details are produced by this module (no secrets); trim for safety
         return MSG_NO_CAPTIONS_WHISPER_FAILED.format(why=why[:200])
     if best == "nocaps" and had_key:
         return MSG_NO_CAPTIONS_WHISPER_FAILED.format(why="could not transcribe the audio.")
-    return _MESSAGES.get(best, _MESSAGES["other"])
+    return FAILURE_MESSAGES.get(best, FAILURE_MESSAGES["other"])

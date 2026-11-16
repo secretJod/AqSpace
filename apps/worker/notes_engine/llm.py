@@ -64,50 +64,32 @@ import requests
 
 from . import cache, prompts
 from .ai.errors import LLMError, _BadJSON, _HTTPStatusError, _OutputTruncated, _TransientError
-from .ai.json_repair import loads_lenient, outermost_json, parse_json, salvage_truncated_json, strip_code_fences
-from .ai.key_safety import KEY_PATTERNS, clean_api_key, scrub_secrets
-from .ai.providers import (BASE_PROFILES, CHARS_PER_TOKEN, ENDPOINTS, GEMINI_URL, LOCAL_READ_TIMEOUT,
-                           LOCAL_URL_DEFAULT, PROVIDERS, READ_TIMEOUT, SECTION_TOKENS, SMALL_CTX_MAX,
-                           colab_base_url, local_profile_name, model_profile)
+from .ai.json_repair import parse_json, salvage_truncated_json
+from .ai.key_safety import clean_api_key, scrub_secrets
+from .ai.providers import (LOCAL_READ_TIMEOUT, CHARS_PER_TOKEN, ENDPOINTS, GEMINI_URL, LOCAL_URL_DEFAULT, PROVIDERS, SECTION_TOKENS, colab_base_url, local_profile_name, model_profile)
 from .ai.responses import as_dict, as_str, failed_generation_text, is_daily_quota_error, parse_retry_delay
-from .ai.sections import (STOP_WORDS, coverage_needed, find_sections, glossary_from_blocks, join_section_lists,
-                          looks_like_section, pack_batches, title_words, usable_section_count)
+from .ai.sections import (coverage_needed, find_sections, glossary_from_blocks, join_section_lists,
+                          pack_batches, usable_section_count)
 from .notes_schema import format_duration, validate_notes
 
-# --------------------------------------------------------------------------- #
-# 1. Re-exports (old private names -> new homes in notes_engine/ai/)
-#    smart_playlist.py, server.py, demo/notes_eval and the tests import these from ``llm``.
-# --------------------------------------------------------------------------- #
+__all__ = [
+    "LLMError",
+    "PROVIDERS",
+    "LOCAL_READ_TIMEOUT",
+    "generate_notes",
+    "default_checkpoint_dir",
+    "local_base_url",
+    "local_key",
+    "local_online",
+    "local_profile_name",
+    "local_server_ctx",
+    "profile_hash",
+]
 
-_ENDPOINTS = ENDPOINTS
-_GEMINI_URL = GEMINI_URL
-_colab_base_url = colab_base_url
-_BASE_PROFILES = BASE_PROFILES
+# Short names the pipeline and its tests use for helpers that live in ``notes_engine/ai/``.
 _profile = model_profile
-
-_KEY_PATTERNS = KEY_PATTERNS
-_scrub = scrub_secrets
-_clean_key = clean_api_key
-
-_parse_retry_delay = parse_retry_delay
-_daily_quota_hit = is_daily_quota_error
-_to_s = as_str
-_dict = as_dict
-_failed_generation = failed_generation_text
-
-_strip_fences = strip_code_fences
-_outermost = outermost_json
-_loads = loads_lenient
-
-_looks_like_section = looks_like_section
-_as_section_list = find_sections
-_STOP = STOP_WORDS
-_title_words = title_words
 _join_parts = join_section_lists
-_pack_batches = pack_batches
 _usable_count = usable_section_count
-_coverage_needed = coverage_needed
-_glossary_from_blocks = glossary_from_blocks
 
 # progress(stage, percent, message) - the same callback shape the whole engine uses
 Progress = Callable[[str, int, str], None]
@@ -278,7 +260,7 @@ class _Client:
     def build_request(self, system: str, user: str, max_tokens: int, temperature: float,
                       think: bool = False, schema: dict | None = None) -> tuple[str, dict, dict]:
         if self.provider == "gemini":
-            url = _GEMINI_URL.format(model=self.model)
+            url = GEMINI_URL.format(model=self.model)
             headers = {"x-goog-api-key": self.key, "Content-Type": "application/json"}
             gen = {"responseMimeType": "application/json", "temperature": temperature, "maxOutputTokens": max_tokens}
             if schema and self.schema_ok:
@@ -298,7 +280,7 @@ class _Client:
             if not think and "qwen3" in self.model.lower():
                 user = user + "\n/no_think"
         else:
-            url = _ENDPOINTS[self.provider]
+            url = ENDPOINTS[self.provider]
             headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
         body = {
             "model": self.model,
@@ -331,7 +313,7 @@ class _Client:
                     if local:
                         raise _TransientError(
                             "The local model server is not reachable at LNAI_LOCAL_URL "
-                            f"({_scrub(self.base_url or local_base_url(), self.key, 80)}). Start llama-server and try again.") from None
+                            f"({scrub_secrets(self.base_url or local_base_url(), self.key, 80)}). Start llama-server and try again.") from None
                     raise _TransientError(f"Could not reach {self.label} (network error or timeout) after "
                                    f"{MAX_ATTEMPTS} tries. Check your connection and try again.") from None
                 _sleep(self._backoff(attempt))
@@ -350,12 +332,12 @@ class _Client:
                 body_text = resp.text or ""
             except Exception:  # noqa: BLE001
                 pass
-            if sc == 429 and _daily_quota_hit(body_text):
+            if sc == 429 and is_daily_quota_error(body_text):
                 self.quota_dead = True  # parallel calls of this job stop instead of hitting the cap again
                 raise _TransientError(self._quota_message("daily quota"), daily_quota=True)
             if sc in (408, 429, 500, 502, 503, 504, 529):
                 last_status = sc
-                wait = _parse_retry_delay(resp)
+                wait = parse_retry_delay(resp)
                 if wait is not None and wait > 90:
                     raise _TransientError(self._quota_message(f"limit (asks to wait {int(wait)} s)")) if sc == 429 else \
                         _TransientError(f"{self.label} is overloaded (HTTP {sc}); try again later.")
@@ -404,17 +386,17 @@ class _Client:
             pass
         err = payload.get("error") if isinstance(payload, dict) else None
         if isinstance(err, dict):
-            detail = _to_s(err.get("message")) or body_text
+            detail = as_str(err.get("message")) or body_text
         else:
-            detail = _to_s(err) or body_text
-        detail = _scrub(detail, self.key)
+            detail = as_str(err) or body_text
+        detail = scrub_secrets(detail, self.key)
         if sc in (401, 403):
             msg = (f"{self.label} rejected the API key (HTTP {sc}). Check that the key is pasted correctly, "
                    f"is active, and belongs to {self.label}"
                    + (" (and that the Generative Language API is enabled for it)." if self.provider == "gemini" else ".")
                    + (f" Server said: {detail}" if detail else ""))
         elif sc == 404:
-            msg = (f"{self.label} does not know the model '{_scrub(self.model, self.key, 80)}' (HTTP 404). "
+            msg = (f"{self.label} does not know the model '{scrub_secrets(self.model, self.key, 80)}' (HTTP 404). "
                    f"Pick a valid model id (default: {PROVIDERS[self.provider]['default_model']}).")
         elif sc == 413:
             msg = (f"The request was too large for {self.label}'s limits (HTTP 413). Try a shorter video "
@@ -423,7 +405,7 @@ class _Client:
             msg = f"{self.label} says the account has no credits left (HTTP 402)."
         else:
             msg = f"{self.label} rejected the request (HTTP {sc})." + (f" Server said: {detail}" if detail else "")
-        code = _to_s(err.get("code")) + " " + _to_s(err.get("type")) if isinstance(err, dict) else ""
+        code = as_str(err.get("code")) + " " + as_str(err.get("type")) if isinstance(err, dict) else ""
         return _HTTPStatusError(msg, sc, (detail + " " + code).lower(), payload)
 
     # -- one completion: returns (text, truncated) --
@@ -445,7 +427,7 @@ class _Client:
                     self.schema_ok = False  # model/API version without JSON-schema output: plain JSON mode
                     continue
                 if self.provider != "gemini" and e.status in (400, 422):
-                    failed = _failed_generation(e.payload)
+                    failed = failed_generation_text(e.payload)
                     if failed and "json_validate_failed" in e.detail:
                         return failed, False  # Groq hands back the invalid text: let the repair stage fix it
                     if self.reasoning_effort and "reasoning" in e.detail:
@@ -462,28 +444,28 @@ class _Client:
 
     def _extract(self, data: dict) -> tuple[str, bool]:
         if self.provider == "gemini":
-            pf = _dict(data.get("promptFeedback"))
+            pf = as_dict(data.get("promptFeedback"))
             if pf.get("blockReason"):
                 raise LLMError(f"Gemini blocked the request for safety reasons ({pf['blockReason']}). "
                                "Try a different video or model.")
             cands = data.get("candidates") or []
             if not cands:
                 raise LLMError("Gemini returned no answer (empty response). Try again or choose another model.")
-            c = _dict(cands[0])
+            c = as_dict(cands[0])
             fr = str(c.get("finishReason") or "")
-            parts = _dict(c.get("content")).get("parts") or []
-            text = "".join(_to_s(p.get("text")) for p in parts if isinstance(p, dict) and not p.get("thought"))
+            parts = as_dict(c.get("content")).get("parts") or []
+            text = "".join(as_str(p.get("text")) for p in parts if isinstance(p, dict) and not p.get("thought"))
             if fr in ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION") and not text.strip():
                 raise LLMError(f"Gemini's safety filter stopped the answer ({fr}). Try a different model or video.")
             return text, fr == "MAX_TOKENS"
         choices = data.get("choices") or []
         if not choices:
             raise LLMError(f"{self.label} returned no answer (empty response).")
-        ch = _dict(choices[0])
-        msg = _dict(ch.get("message"))
+        ch = as_dict(choices[0])
+        msg = as_dict(ch.get("message"))
         content = msg.get("content")
         if isinstance(content, list):
-            content = "".join(_to_s(p.get("text") if isinstance(p, dict) else p) for p in content)
+            content = "".join(as_str(p.get("text") if isinstance(p, dict) else p) for p in content)
         content = re.sub(r"<think>.*?</think>", "", content or "", flags=re.S)  # qwen-style reasoning
         if "<think>" in content:  # reasoning cut off before it closed: nothing usable after it
             content = content.split("<think>", 1)[0]
@@ -693,19 +675,19 @@ def _parallel_single(client: _Client, transcript: dict, text_chars: int, meta: d
         for strict in ("", f"IMPORTANT: return AT LEAST {n} separate sections covering the whole slice."):
             msgs = prompts.compose_part_messages(meta, txt, n, n, i + 1, len(jobs), strict)
             try:
-                again = _as_section_list(client.ask_json(msgs, cap_out(n), schema=prompts.SECTIONS_SCHEMA,
+                again = find_sections(client.ask_json(msgs, cap_out(n), schema=prompts.SECTIONS_SCHEMA,
                                                          read_timeout=PART_TIMEOUT))
             except _OutputTruncated as e:
                 # usually a repetition loop: keep the complete sections, drop the runaway last one
                 try:
-                    again = _as_section_list(salvage_truncated_json(e.text))[:-1]
+                    again = find_sections(salvage_truncated_json(e.text))[:-1]
                 except ValueError:
                     again = []
             except _BadJSON:
                 again = []
             if _usable_count(again) > _usable_count(got):
                 got = again
-            if _usable_count(got) >= _coverage_needed(n):
+            if _usable_count(got) >= coverage_needed(n):
                 break
         tick()
         return got
@@ -730,7 +712,7 @@ def _parallel_single(client: _Client, transcript: dict, text_chars: int, meta: d
     report(90, "Checking the notes...")
     out["sections"] = sections
     if not out.get("glossary"):
-        out["glossary"] = _glossary_from_blocks(sections)
+        out["glossary"] = glossary_from_blocks(sections)
     return out
 
 
@@ -826,11 +808,11 @@ def _compose_covered(client: _Client, meta: dict, digs: list[str], n: int, cap: 
     ck = _cache_key(client, "compose", first)
     hit = cache.get("compose", ck)
     if isinstance(hit, dict) and isinstance(hit.get("sections"), list) \
-            and _usable_count(hit["sections"]) >= _coverage_needed(n):
+            and _usable_count(hit["sections"]) >= coverage_needed(n):
         return hit["sections"]
     got = _compose_batch(client, meta, digs, n, n_max, prior, no, total)
     have = _usable_count(got)
-    if have < _coverage_needed(n):
+    if have < coverage_needed(n):
         strict = (f"IMPORTANT: your previous answer contained only {have} usable section(s). "
                   f"Return AT LEAST {n} sections: split the digests into {n} consecutive groups by their "
                   "[mm:ss] markers and write one separate section per group, so the whole span from the "
@@ -838,7 +820,7 @@ def _compose_covered(client: _Client, meta: dict, digs: list[str], n: int, cap: 
         again = _compose_batch(client, meta, digs, n, n_max, prior, no, total, strict)
         if _usable_count(again) > have:
             got = again
-    if client.cache_writes and _usable_count(got) >= _coverage_needed(n):  # only accepted answers are kept
+    if client.cache_writes and _usable_count(got) >= coverage_needed(n):  # only accepted answers are kept
         cache.put("compose", ck, {"sections": got})
     return got
 
@@ -848,7 +830,7 @@ def _compose_batch(client: _Client, meta: dict, digs: list[str], n_min: int, n_m
     text = "\n\n".join(digs)
     msgs = prompts.compose_batch_messages(meta, text, n_min, n_max, prior, no, total, strict)
     try:
-        return _as_section_list(client.ask_json(msgs, client.profile["out_batch"], schema=prompts.SECTIONS_SCHEMA))
+        return find_sections(client.ask_json(msgs, client.profile["out_batch"], schema=prompts.SECTIONS_SCHEMA))
     except _OutputTruncated:
         if len(digs) > 1:  # too much for one reply: halve the input
             mid = len(digs) // 2
@@ -880,7 +862,7 @@ def _map_reduce(client: _Client, transcript: dict, meta: dict, report: _Reporter
                        "entertainment clip rather than a lecture. Try a lecture, tutorial or talk video.")
     digests = _merge_levels(client, digests, meta, report, ckpt)
 
-    batches = _pack_batches(digests, prof["batch_chars"], min(slices_needed, len(digests)))
+    batches = pack_batches(digests, prof["batch_chars"], min(slices_needed, len(digests)))
     total_chars = sum(len(d) for d in digests)
     sections: list = []
     for b_i, batch in enumerate(batches):
@@ -895,7 +877,7 @@ def _map_reduce(client: _Client, transcript: dict, meta: dict, report: _Reporter
             if ckpt:
                 ckpt.put(name, got)
         sections += got
-    if _usable_count(sections, max_sec) < _coverage_needed(target):
+    if _usable_count(sections, max_sec) < coverage_needed(target):
         report(86, "Fewer pages than the lecture length suggests; the video may contain little teachable content.")
 
     report(88, "Writing cover, glossary and recap...")
@@ -924,7 +906,7 @@ def _map_reduce(client: _Client, transcript: dict, meta: dict, report: _Reporter
     out = dict(front)
     out["sections"] = sections
     if not out.get("glossary"):
-        out["glossary"] = _glossary_from_blocks(sections)
+        out["glossary"] = glossary_from_blocks(sections)
     return out
 
 
@@ -1045,7 +1027,7 @@ def generate_notes(transcript: dict, *, provider: str, api_key: str | None = Non
             raise
         fb, fb_key = target
         _log.warning("LLM provider %s failed (%s); falling back to %s",
-                     provider, _scrub(e, api_key, 160), fb)
+                     provider, scrub_secrets(e, api_key, 160), fb)
         if progress:
             try:
                 why = "daily quota reached" if getattr(e, "daily_quota", False) else "is busy"
@@ -1057,7 +1039,7 @@ def generate_notes(transcript: dict, *, provider: str, api_key: str | None = Non
             notes = _generate_notes(transcript, provider=fb, api_key=fb_key, model=None, progress=progress,
                                     checkpoint_dir=ckdir, cache_writes=False)
         except LLMError as e2:
-            raise LLMError(f"{e} Fallback to {PROVIDERS[fb]['label']} also failed: {_scrub(e2, fb_key, 300)}") from None
+            raise LLMError(f"{e} Fallback to {PROVIDERS[fb]['label']} also failed: {scrub_secrets(e2, fb_key, 300)}") from None
         meta = notes.setdefault("meta", {})
         meta["provider"] = fb
         meta["fallback_from"] = provider
@@ -1068,18 +1050,18 @@ def _generate_notes(transcript: dict, *, provider: str, api_key: str | None, mod
                     progress: Progress | None, checkpoint_dir: str | Path | None = None,
                     cache_writes: bool = True) -> dict:
     if provider not in PROVIDERS:
-        raise LLMError(f"Unknown provider '{_scrub(provider, None, 40)}'. Choose one of: {', '.join(PROVIDERS)}.")
+        raise LLMError(f"Unknown provider '{scrub_secrets(provider, None, 40)}'. Choose one of: {', '.join(PROVIDERS)}.")
     alias_of = provider
     base_url = None
     if provider == "colab":  # deprecated alias: the local provider on COLAB_LLM_URL / COLAB_LLM_KEY
         _log.warning("provider 'colab' is deprecated; use 'local' with LNAI_LOCAL_URL and LNAI_LOCAL_KEY")
-        base_url = _colab_base_url()
-        key = _clean_key(api_key or os.environ.get("COLAB_LLM_KEY"))
+        base_url = colab_base_url()
+        key = clean_api_key(api_key or os.environ.get("COLAB_LLM_KEY"))
         provider = "local"
     elif provider == "local":
         key = local_key()  # server-side only: a key typed in the app is never sent to a local server
     else:
-        key = _clean_key(api_key) if PROVIDERS[provider].get("needs_key", True) else ""
+        key = clean_api_key(api_key) if PROVIDERS[provider].get("needs_key", True) else ""
     model = (model or "").strip() or PROVIDERS[provider]["default_model"]
     if provider == "gemini":
         model = model.removeprefix("models/")
@@ -1116,7 +1098,7 @@ def _generate_notes(transcript: dict, *, provider: str, api_key: str | None, mod
             try:
                 raw = _parallel_single(client, transcript, len(text), meta, parts, report)
                 have = len(validate_notes(raw, transcript, max_sections=max_sec)["sections"])
-                if have < _coverage_needed(n_target):
+                if have < coverage_needed(n_target):
                     report(12, f"Only {have} of ~{n_target} sections came back; rewriting slice by slice...")
                     raw = None
             except ValueError:
@@ -1126,7 +1108,7 @@ def _generate_notes(transcript: dict, *, provider: str, api_key: str | None, mod
             try:
                 raw = _single_pass(client, transcript, text, meta, report)
                 have = len(validate_notes(raw, transcript, max_sections=max_sec)["sections"])
-                if have < _coverage_needed(n_target):
+                if have < coverage_needed(n_target):
                     # models tend to under-deliver on section count; map-reduce covers every time slice
                     report(12, f"Only {have} of ~{n_target} sections came back; rewriting slice by slice...")
                     raw = None
@@ -1141,7 +1123,7 @@ def _generate_notes(transcript: dict, *, provider: str, api_key: str | None, mod
     except LLMError:
         raise
     except ValueError as e:
-        raise LLMError(f"The model's answer could not be turned into notes ({_scrub(e, key, 120)}). Please retry.") from None
+        raise LLMError(f"The model's answer could not be turned into notes ({scrub_secrets(e, key, 120)}). Please retry.") from None
     except Exception as e:  # noqa: BLE001 - never leak internals/keys
         raise LLMError(f"Unexpected error while generating notes ({type(e).__name__}). Please retry.") from None
     report(100, "Notes ready.")

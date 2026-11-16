@@ -33,7 +33,6 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import re
 from pathlib import Path
 
 __version__ = "0.1.0"

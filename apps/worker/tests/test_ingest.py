@@ -5,6 +5,7 @@ Live:  LNA_LIVE=1 python -m pytest tests/test_ingest.py -q -k live
 """
 import json
 import os
+import re
 import sys
 from types import SimpleNamespace
 from unittest import mock
@@ -278,7 +279,7 @@ def test_chunk_basic_markers_and_limits():
 def test_chunk_markers_every_30s_and_format():
     t = _transcript(n=30, step=10.0)
     c = chunk_transcript(t, max_chars=100000)[0]
-    markers = ingest.re.findall(r"\[(\d+:\d{2}(?::\d{2})?)\]", c["text"])
+    markers = re.findall(r"\[(\d+:\d{2}(?::\d{2})?)\]", c["text"])
     assert markers[:4] == ["00:00", "00:30", "01:00", "01:30"]
     assert len(markers) == 10  # one per 30 s over 300 s
 
