@@ -16,7 +16,7 @@ Building blocks (re-exported, imported lazily so ``import notes_engine`` stays c
     IngestError, LLMError, PdfError          # user-safe exceptions
     PROVIDERS                                # {id: {label, default_model, key_hint, ...}}
 
-Package map (see docs/ARCHITECTURE.md, section "AI engine")::
+Package map (see docs/architecture.md)::
 
     ingest.py        YouTube -> transcript (helpers in transcripts/)
     llm.py           transcript -> notes JSON via an AI provider (helpers in ai/)
@@ -34,6 +34,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 __version__ = "0.1.0"
@@ -149,7 +150,7 @@ def generate(
     model: str | None = None,
     groq_key: str | None = None,
     out_dir: str | Path = ".",
-    progress=None,
+    progress: Callable[[str, int, str], None] | None = None,
     *,
     basename: str = "notes",
     pdf_path: str | Path | None = None,

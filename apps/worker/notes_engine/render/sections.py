@@ -31,7 +31,7 @@ def title_size_class(title: str) -> str:
     return "" if n <= 24 else ("m" if n <= 38 else "s")
 
 
-def section_heading(num, title: str, subtitle: str, timestamp: str, seed: str) -> str:
+def section_heading(num: int | str | None, title: str, subtitle: str, timestamp: str, seed: str) -> str:
     """Section heading item: "N. title — subtitle  ◷ timestamp" with a squiggly underline.
 
     ``data-keep`` tells notebook.js to keep the heading on the same page as the next item.
@@ -49,7 +49,7 @@ def section_heading(num, title: str, subtitle: str, timestamp: str, seed: str) -
     )
 
 
-def takeaways_item(items) -> str:
+def takeaways_item(items: object) -> str:
     """The "★ to remember" list (max 6 points)."""
     items = [clean_text(i) for i in as_list(items) if clean_text(i)][:6]
     if not items:
@@ -61,7 +61,7 @@ def takeaways_item(items) -> str:
     )
 
 
-def recall_item(recall) -> str:
+def recall_item(recall: object) -> str:
     """The "★ recall question" box (Q + A)."""
     recall = as_dict(recall)
     question, answer = clean_text(recall.get("q")), clean_text(recall.get("a"))
@@ -150,7 +150,8 @@ def contents_unit(notes: dict, max_on_cover: int) -> str:
     return '<div class="unit" data-kind="contents" data-num="" data-title="contents">%s%s</div>' % (head, body)
 
 
-def glossary_unit(glossary) -> str:
+def glossary_unit(glossary: object) -> str:
+    """Return the glossary page (terms in order, "" when there are none)."""
     rows = []
     for entry in as_list(glossary):
         if not isinstance(entry, dict):
@@ -170,7 +171,8 @@ def glossary_unit(glossary) -> str:
     )
 
 
-def recap_unit(recap) -> str:
+def recap_unit(recap: object) -> str:
+    """Return the closing recap page: its points and the whole-lecture diagram ("" when empty)."""
     recap = as_dict(recap)
     points = [clean_text(p) for p in as_list(recap.get("points")) if clean_text(p)]
     diagram = diagram_item(recap.get("diagram"))

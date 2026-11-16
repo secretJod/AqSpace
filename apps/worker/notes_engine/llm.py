@@ -1,6 +1,7 @@
 """Transcript -> study notes, using an AI model (plain ``requests``, no vendor SDKs).
 
-Start here: ``generate_notes()`` at the bottom of this file.
+Called by ``backend/app/jobs.py``, ``notes_engine.generate`` and ``smart_playlist.py`` (which reuses
+``_Client``). Start here: ``generate_notes()`` at the bottom of this file.
 
 The pipeline
 ------------
@@ -16,8 +17,8 @@ The pipeline
     6. ``notes_schema.validate_notes`` coerces everything.
   Single pass falls back to map-reduce if the output is truncated or unusable.
 
-AQspace additions
------------------
+Providers and resilience
+------------------------
 * ``local`` provider: an OpenAI-compatible llama-server (LNAI_LOCAL_URL, optional LNAI_LOCAL_KEY),
   "local" / "local-small" profiles by the server's context size; ``colab`` is a deprecated alias.
 * Gemini RPM pacer (LNAI_GEMINI_RPM): thread-safe, counts in-flight calls, says why it waits;
@@ -29,7 +30,7 @@ AQspace additions
 
 How the file is organised
 -------------------------
-1. Re-exports       - names that now live in ``notes_engine/ai/`` (kept importable from here).
+1. Short names      - aliases for helpers in ``notes_engine/ai/`` that the pipeline and tests use.
 2. Tunables         - timeouts, retry counts; the local server helpers.
 3. Sleeping/pacing  - ``_sleep`` and ``_Pacer`` (tests replace ``llm._sleep``).
 4. ``_Client``      - builds requests, retries HTTP errors, extracts text, asks for JSON.
@@ -224,6 +225,7 @@ class _Pacer:
         return bool(self.rpm) and len(self.log) + self.inflight + 1 > self.rpm
 
     def before(self, est_tokens: int) -> None:
+        """Block until a request of about ``est_tokens`` tokens fits the window, then count it in flight."""
         if not self.budget and not self.rpm:
             return
         with self._lock:  # parallel callers wait their turn, so the window is never overrun
@@ -246,6 +248,7 @@ class _Pacer:
             self.log.pop(0)  # explicit pop: terminates even when sleep is mocked
 
     def after(self, est_tokens: int) -> None:
+        """Record a finished request so it counts against the next 60 seconds."""
         if self.budget or self.rpm:
             with self._lock:
                 self.inflight = max(0, self.inflight - 1)
@@ -292,6 +295,11 @@ class _Client:
         think: bool = False,
         schema: dict | None = None,
     ) -> tuple[str, dict, dict]:
+        """Build ``(url, headers, body)`` for one chat call in the provider's API shape.
+
+        The key only ever goes into a header. ``think`` enables reasoning on the local Qwen model;
+        ``schema`` is sent as Gemini structured output when the model accepts it.
+        """
         if self.provider == "gemini":
             url = GEMINI_URL.format(model=self.model)
             headers = {"x-goog-api-key": self.key, "Content-Type": "application/json"}
@@ -478,6 +486,12 @@ class _Client:
         schema: dict | None = None,
         read_timeout: float | None = None,
     ) -> tuple[str, bool]:
+        """Run one completion and return ``(text, truncated)``.
+
+        Retries without JSON mode, ``reasoning_effort`` or the Gemini schema when the provider
+        rejects them. Raises ``_TransientError`` (rate limit, overload, unreachable),
+        ``_HTTPStatusError`` or ``LLMError`` with a user-safe message.
+        """
         est = int((len(system) + len(user)) / CHARS_PER_TOKEN) + max_tokens
         for _ in range(4):  # at most: normal, then without JSON mode / reasoning_effort / schema
             if self.quota_dead:
@@ -558,6 +572,12 @@ class _Client:
         schema: dict | None = None,
         read_timeout: float | None = None,
     ) -> Any:
+        """Ask for JSON and return it parsed (a dict or list).
+
+        Unparseable output gets one "please fix this JSON" call. Raises ``_OutputTruncated`` when the
+        answer hit the token limit (its ``text`` can be salvaged) and ``_BadJSON`` when the repair
+        failed too.
+        """
         system, user = messages
         extra: dict = {"schema": schema} if schema and self.schema_ok else {}  # only Gemini uses a schema
         if read_timeout:
@@ -661,12 +681,14 @@ class _Checkpoints:
         os.replace(tmp, path)
 
     def get(self, name: str) -> Any:
+        """Return the saved value of step ``name``, or None."""
         if not self.dir:
             return None
         got = self._read(self.dir / f"{name}.json")
         return got.get("value") if isinstance(got, dict) else None
 
     def put(self, name: str, value: Any) -> None:
+        """Save the value of step ``name``; a failed write is only logged."""
         if not self.dir:
             return
         try:
@@ -675,6 +697,7 @@ class _Checkpoints:
             _log.warning("checkpoint write failed (%s)", type(e).__name__)
 
     def clear(self) -> None:
+        """Delete this video's checkpoints (called once the notes are done)."""
         if self.dir:
             for f in self.dir.glob("*.json*"):
                 f.unlink(missing_ok=True)
@@ -860,7 +883,7 @@ def _digest_chunks(
 def _merge_levels(
     client: _Client, digests: list[str], meta: dict, report: _Reporter, ckpt: _Checkpoints | None = None
 ) -> list[str]:
-    """Hierarchical reduce for very long lectures (ADR-0003): while the digests exceed
+    """Hierarchical reduce for very long lectures: while the digests exceed
     ``merge_budget_chars``, fold every ``merge_fanout`` consecutive digests into one part digest.
     Order and [h:mm:ss] markers are kept, so the compose stage still walks the lecture in time order."""
     prof = client.profile
@@ -1087,7 +1110,8 @@ SERVER_KEY_ENV = {
     "huggingface": "HF_TOKEN",
     "nvidia": "NVIDIA_API_KEY",
 }
-GROQ_FALLBACK_MAX_SEC_DEFAULT = 3600  # local -> Groq only for videos up to ~1 h (ADR-0003)
+# local -> Groq only for videos up to ~1 h: longer ones do not fit Groq's free tokens-per-minute budget
+GROQ_FALLBACK_MAX_SEC_DEFAULT = 3600
 _log = logging.getLogger(__name__)
 
 
@@ -1121,7 +1145,7 @@ def _fallback_target(primary: str, transcript: dict | None = None) -> tuple[str,
             return ("groq", key) if key else None
         nv = (os.environ.get("NVIDIA_API_KEY") or "").strip()
         return ("nvidia", nv) if nv else None
-    # every other primary follows the same chain (ADR-0005): local (online) -> Groq (<= cap) -> NVIDIA
+    # every other primary follows the same chain: local (online) -> Groq (<= cap) -> NVIDIA
     if local_online():
         return "local", ""
     dur = (transcript or {}).get("duration_sec") or 0

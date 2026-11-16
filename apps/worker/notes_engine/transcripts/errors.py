@@ -2,7 +2,7 @@
 
 1. Public exceptions   - ``IngestError`` (any failure) and ``PlaylistError`` (with an HTTP status).
 2. Video messages      - one friendly text per failure kind, plus how to pick the "best" one.
-3. Internal signal     - ``StageFailure`` (old name ``_Fail``): one fetch stage failed, and why.
+3. Internal signal     - ``StageFailure``: one fetch stage failed, and why.
 4. yt-dlp error text   - ``ytdlp_error_kind()`` maps raw yt-dlp messages to a failure kind.
 5. Playlist messages.
 

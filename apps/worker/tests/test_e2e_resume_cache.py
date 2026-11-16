@@ -1,4 +1,4 @@
-"""F6 (#62) end-to-end: crash-then-resume with the notes cache ON.
+"""End-to-end: crash-then-resume with the notes cache ON.
 
 Flask API -> real notes_engine.llm (provider "local") -> fake llama-server over real HTTP, with
 LNA_CACHE_DIR pointing at a temp dir. Proves the resumed job reuses checkpoints and the cache (no

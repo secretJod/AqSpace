@@ -1,4 +1,4 @@
-"""End-to-end R5 test (#32): Flask API -> real notes_engine.llm (provider "local") -> a fake
+"""End-to-end test: Flask API -> real notes_engine.llm (provider "local") -> a fake
 OpenAI-compatible server over real HTTP on 127.0.0.1, standing in for llama-server.
 
 Proves: a full local job finishes; a job killed mid-way (server drops the connection during the

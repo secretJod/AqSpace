@@ -1,4 +1,4 @@
-"""Long videos (R5, cards #36 and #33): 24 h transcripts, chunked speech-to-text with
+"""Long videos: 24 h transcripts, chunked speech-to-text with
 checkpoints, and rendering of very long notes. No network, no model downloads."""
 
 import copy
@@ -335,7 +335,7 @@ def test_default_work_dir_is_repo_local_and_ignored():
 
 
 # --------------------------------------------------------------------------- #
-# rendering very long notes (#33)
+# rendering very long notes
 # --------------------------------------------------------------------------- #
 
 
@@ -414,7 +414,7 @@ def test_pdf_of_40_section_notes(tmp_path, base_notes):
     n = len(doc)
     texts = [p.get_text() for p in doc]
     doc.close()
-    assert n > 20  # compact layout (upstream db9ac6b): sections flow, so fewer than one page each
+    assert n > 20  # compact layout: sections flow, so fewer than one page each
     for i, t in enumerate(texts, 1):
         assert re.search(r"pg\.\s*%d\s*/\s*%d" % (i, n), t)
     full = "\n".join(texts)

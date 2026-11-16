@@ -9,7 +9,7 @@ What this file answers
                             how many output tokens to ask for, the tokens-per-minute budget,
                             how many calls may run in parallel, the section cap, merge levels...
 
-The ``local`` provider (an OpenAI-compatible llama-server; AQspace ADR-0003/0004) needs no key. Its
+The ``local`` provider (an OpenAI-compatible llama-server running Qwen3-8B) needs no key. Its
 network helpers (``local_base_url``, ``local_server_ctx``, ``local_online``) live in ``llm.py``
 because tests patch them there; this file only holds its static numbers.
 
@@ -82,7 +82,7 @@ PROVIDERS: dict[str, dict] = {
         "needs_key": True,
         "key_hint": "Free key from build.nvidia.com (starts with nvapi-...)",
     },
-    # DEPRECATED alias of "local" (ADR-0004, kept for one release): runs the local provider against
+    # Deprecated alias of "local", kept for one release: runs the local provider against
     # COLAB_LLM_URL with COLAB_LLM_KEY and the local-small profile. Prefer LNAI_LOCAL_URL + LNAI_LOCAL_KEY.
     "colab": {
         "label": "Colab Qwen3-8B (deprecated: use Local)",
@@ -152,7 +152,7 @@ SMALL_CTX_MAX = 8192  # a local server with at most this context gets the "local
 # (section cap for the whole notebook), merge_budget_chars / merge_fanout (hierarchical merge levels
 # for very long lectures), read_timeout, ctx_tokens.
 BASE_PROFILES: dict[str, dict] = {
-    # Qwen3-8B Q4_K_M on llama.cpp, ctx 16384, 1 slot (numbers from ADR-0003). The biggest call
+    # Qwen3-8B Q4_K_M on llama.cpp, ctx 16384, 1 slot. The biggest call
     # stays <= ~14k tokens (tokens ~ chars/3.3 worst case; Qwen's tokenizer is nearer chars/4):
     #   digest  : 24k chars (6-7k) + 0.8k prompt + 1.5k out             ~ 9k
     #   compose : 20k chars of digests (5-6k) + 2.8k rules/example + 6k out ~ 14k
@@ -226,7 +226,7 @@ BASE_PROFILES: dict[str, dict] = {
         out_batch=8000,
         tpm=None,
     ),
-    # local-small: the same Qwen3-8B on a llama-server with <= 8K context (upstream's Colab T4 sizes).
+    # local-small: the same Qwen3-8B on a llama-server with <= 8K context (e.g. a free Colab T4 GPU).
     # Chosen when the server reports n_ctx <= SMALL_CTX_MAX (or LNAI_LOCAL_CTX says so), and always
     # for the deprecated "colab" alias. Small slices keep every call inside the window.
     "local-small": dict(

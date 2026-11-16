@@ -1,6 +1,6 @@
 """The notebook renderer: notes dict -> hand-drawn "field notebook" HTML -> A4 PDF.
 
-Public API (also available as ``notes_engine.pdf``, the older import path):
+Public API (callers usually import it through ``notes_engine.pdf``):
     render_html(notes: dict, *, for_print=False) -> str
     render_pdf(notes: dict, out_path: str) -> str
     class PdfError(Exception)

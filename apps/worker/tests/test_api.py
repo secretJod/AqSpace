@@ -429,7 +429,7 @@ def test_missing_modules_gives_friendly_error(make_client, monkeypatch):
     assert r.status_code == 503
 
 
-# ---- local provider (#31) ------------------------------------------------------
+# ---- local provider ------------------------------------------------------
 def test_local_job_needs_no_key_and_reports_chunks(make_client):
     client, state, calls = make_client()
     r = client.post("/api/jobs", json={"url": GOOD_URL, "provider": "local", "api_key": SECRET})

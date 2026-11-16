@@ -1,4 +1,4 @@
-"""Card #75: the notes-provider evaluation runs through notes_engine with fakes only (no network)."""
+"""The notes-provider evaluation runs through notes_engine with fakes only (no network)."""
 
 from __future__ import annotations
 

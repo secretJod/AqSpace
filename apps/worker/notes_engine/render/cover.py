@@ -68,6 +68,7 @@ def _cover_diagram(notes: dict) -> dict:
 
 
 def cover_unit(notes: dict, title: str) -> str:
+    """Return the cover page: title, summary, big idea, contents, cover diagram and how-to-use box."""
     meta, cover = as_dict(notes.get("meta")), as_dict(notes.get("cover"))
     tagline = clean_text(cover.get("tagline")) or "a student's own field notebook —"
     subtitle = clean_text(meta.get("subtitle"))

@@ -42,7 +42,7 @@ DETAIL_SIZE, DETAIL_LINE_HEIGHT = 13.6, 16.2  # node details (Patrick Hand)
 # ----------------------------------------------------------------------------------------------
 # 2. Cleaning the input
 # ----------------------------------------------------------------------------------------------
-def clean_diagram(diagram) -> dict | None:
+def clean_diagram(diagram: object) -> dict | None:
     """Validate a diagram dict. Returns a clean copy, or ``None`` if there is nothing to draw.
 
     Unknown types become "flow"; node ids are made unique; edges must point at known nodes.
@@ -744,8 +744,8 @@ def _mm_box(nd: dict, bw: float, lsize, llh, dsize, dlh, max_label, max_det, pad
     return {"ll": ll, "dl": dl, "h": max(h, 36)}
 
 
-def mindmap_tree(dg: dict):
-    """-> (root, parent{child: parent}, depth{node: 0|1|2}); always a valid tree of depth <= 2."""
+def mindmap_tree(dg: dict) -> tuple[int, dict[int, int], dict[int, int]]:
+    """Return (root, parent{child: parent}, depth{node: 0-2}) as node indexes; always a valid tree, depth <= 2."""
     nodes = dg["nodes"]
     n = len(nodes)
     idx = {nd["id"]: i for i, nd in enumerate(nodes)}
@@ -1024,7 +1024,7 @@ DIAGRAM_BUILDERS = {
 }
 
 
-def build_diagram_svg(diagram, width: float = 690.0, css_class: str = "d") -> tuple[str, float, float] | None:
+def build_diagram_svg(diagram: object, width: float = 690.0, css_class: str = "d") -> tuple[str, float, float] | None:
     """Return (svg_markup, vb_w, vb_h) or None. Never raises on odd input."""
     dg = clean_diagram(diagram)
     if not dg:
@@ -1044,7 +1044,7 @@ def build_diagram_svg(diagram, width: float = 690.0, css_class: str = "d") -> tu
     return svg, vw, vh
 
 
-def diagram_item(diagram) -> str:
+def diagram_item(diagram: object) -> str:
     """The diagram as a notebook item: optional title, the SVG, optional caption ("" if none)."""
     dg = clean_diagram(diagram)
     if not dg:

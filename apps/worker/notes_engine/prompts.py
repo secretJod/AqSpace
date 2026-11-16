@@ -164,6 +164,7 @@ DIGEST_SHAPE = (
 
 
 def digest_messages(chunk_text: str, index: int, total: int, meta: dict, max_words: int) -> tuple[str, str]:
+    """Map stage: ask for the teachable facts of slice ``index`` (0-based) of ``total`` as ``{"topics": [...]}``."""
     user = f"""\
 Lecture: {_meta_line(meta)}
 This is slice {index + 1} of {total}. (Slices overlap slightly at the edges: do not worry about a cut-off first/last sentence.)
@@ -229,6 +230,7 @@ Check before answering: valid JSON, one object with a "sections" list, no fact t
 
 
 def compose_single_messages(meta: dict, transcript_text: str, n_sections: int) -> tuple[str, str]:
+    """Single pass: ask for the whole Notes JSON with about ``n_sections`` sections."""
     lo, hi = n_sections, n_sections + 3
     user = f"""\
 Lecture: {_meta_line(meta)}
@@ -260,6 +262,11 @@ def compose_batch_messages(
     batch_total: int,
     strict: str = "",
 ) -> tuple[str, str]:
+    """Compose stage: turn one batch of digests into ``n_min``-``n_max`` sections.
+
+    ``prior_titles`` lists sections already written (so topics are not repeated), ``batch_no`` /
+    ``batch_total`` say where this batch sits, and ``strict`` is an extra instruction for a retry.
+    """
     prior = ""
     if prior_titles:
         prior = (
@@ -328,6 +335,7 @@ You merge consecutive fact digests of a very long lecture into ONE shorter part 
 
 
 def merge_messages(meta: dict, digest_text: str, level: int, part: int, total: int, max_words: int) -> tuple[str, str]:
+    """Hierarchical merge: fold several digests into one part digest of at most ``max_words`` words."""
     user = f"""\
 Lecture: {_meta_line(meta)}
 Merge level {level}, part {part} of {total}. Fold the digests below into one part digest of 4-12 topics, in order, under about {max_words} words in total. Merge topics that repeat; keep the earliest start marker of each merged topic.
@@ -497,6 +505,7 @@ FIX_JSON_SYSTEM = "You repair malformed JSON. Output ONLY the corrected JSON obj
 
 
 def fix_json_messages(bad_text: str, error: str) -> tuple[str, str]:
+    """Repair call: ask the model to fix its own unparseable JSON (input capped at 24k characters)."""
     bad = bad_text if len(bad_text) <= 24000 else bad_text[:24000]
     user = f"The following JSON failed to parse ({error}). Fix it (close unterminated strings/brackets, remove trailing commas, escape quotes/newlines in strings) and return the complete JSON object only.\n\n{bad}"
     return FIX_JSON_SYSTEM, user

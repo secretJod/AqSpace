@@ -67,6 +67,7 @@ class _Progress:
         self.last_stage, self.last_pct = stage, pct
 
     def finish(self) -> None:
+        """End the progress line (call once, before printing the result)."""
         if self.tty and self.open_line:
             sys.stderr.write("\n")
             sys.stderr.flush()
@@ -129,6 +130,14 @@ def _load_dotenv() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the command line.
+
+    Args:
+        argv: arguments without the program name (default: ``sys.argv[1:]``).
+
+    Returns:
+        The process exit code (see the table at the top of this file).
+    """
     for stream in (sys.stdout, sys.stderr):  # never crash on an odd console encoding
         try:
             stream.reconfigure(errors="replace")

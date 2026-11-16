@@ -582,7 +582,7 @@ def test_smart_origin_guard(smart_client):
 
 
 def test_transcripts_go_through_ingest_with_whisper_args(monkeypatch, tmp_path):
-    """F7 (#63): one transcript path, ingest.get_transcript, with the Groq key and work_dir passed on."""
+    """One transcript path, ingest.get_transcript, with the Groq key and work_dir passed on."""
     calls = []
 
     def get_transcript(url, **kw):

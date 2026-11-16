@@ -11,9 +11,9 @@ What lives here
 
 How it fits
 -----------
-``notes_engine/ingest.py`` is still the public module (``get_transcript`` and the three
-fetch stages live there, because tests patch them on ``ingest``) and it re-exports every
-name from this package, so ``from notes_engine.ingest import X`` keeps working.
+``notes_engine/ingest.py`` is the public module: ``get_transcript`` and the three fetch stages
+live there (tests patch them on ``ingest``), and it re-exports the names callers need
+(``parse_video_id``, ``get_playlist``, ``chunk_transcript``, ...).
 
 Read next: ``youtube_urls.py`` -> ``cleaning.py`` -> ``chunking.py`` -> ``../ingest.py``.
 """

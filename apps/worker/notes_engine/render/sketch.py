@@ -81,7 +81,7 @@ class Sketch:
         self.rj.append(spec)
 
     # --- 2a. Basic shapes ---------------------------------------------------------------------
-    def line_d(self, x1, y1, x2, y2, amp=1.3, over=0.0) -> str:
+    def line_d(self, x1: float, y1: float, x2: float, y2: float, amp: float = 1.3, over: float = 0.0) -> str:
         """SVG path data for one slightly bowed line.
 
         ``amp`` controls how much it bows; ``over`` lets the ends overshoot a little, like a pen.
@@ -107,20 +107,20 @@ class Sketch:
 
     def rect(
         self,
-        x,
-        y,
-        w,
-        h,
-        fill=CARD,
-        stroke=INK,
-        sw=2.2,
-        double=True,
-        dash=None,
-        shadow=False,
-        hl=None,
-        hl_style="hachure",
-        rough=True,
-    ):
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        fill: str = CARD,
+        stroke: str = INK,
+        sw: float = 2.2,
+        double: bool = True,
+        dash: str | None = None,
+        shadow: bool = False,
+        hl: str | None = None,
+        hl_style: str = "hachure",
+        rough: bool = True,
+    ) -> None:
         """Box. ``fill`` is the pale base, ``hl`` an optional highlighter-hachure colour (Rough.js only).
 
         ``double`` draws the outline twice (the second pass thinner) like a real pen sketch;
@@ -204,7 +204,18 @@ class Sketch:
             options["strokeLineDash"] = [float(v) for v in str(dash).split()]
         self._add_rough_spec("r", box, **options)
 
-    def ellipse(self, cx, cy, w, h, fill=CARD, stroke=INK, sw=2.2, hl=None, hl_style="hachure"):
+    def ellipse(
+        self,
+        cx: float,
+        cy: float,
+        w: float,
+        h: float,
+        fill: str = CARD,
+        stroke: str = INK,
+        sw: float = 2.2,
+        hl: str | None = None,
+        hl_style: str = "hachure",
+    ) -> None:
         """Hand-drawn ellipse centred on (cx, cy), outlined twice like ``rect``."""
         rng = self.rng
         rx, ry = w / 2, h / 2
@@ -259,7 +270,18 @@ class Sketch:
         """Rough.js option for a dashed stroke ("7 5" -> [7.0, 5.0]), or nothing."""
         return {"strokeLineDash": [float(v) for v in str(dash).split()]} if dash else {}
 
-    def line(self, x1, y1, x2, y2, stroke=INK, sw=2.2, dash=None, amp=1.3, opacity=None):
+    def line(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        stroke: str = INK,
+        sw: float = 2.2,
+        dash: str | None = None,
+        amp: float = 1.3,
+        opacity: float | None = None,
+    ) -> None:
         """A single hand-drawn line."""
         self.parts.append(self._fallback_path(self.line_d(x1, y1, x2, y2, amp=amp), stroke, sw, dash, opacity))
         self._add_rough_spec(
@@ -273,7 +295,15 @@ class Sketch:
             **self._dash_option(dash),
         )
 
-    def path(self, d, stroke=INK, sw=2.2, dash=None, opacity=None, rd=None):
+    def path(
+        self,
+        d: str,
+        stroke: str = INK,
+        sw: float = 2.2,
+        dash: str | None = None,
+        opacity: float | None = None,
+        rd: str | None = None,
+    ) -> None:
         """Stroke an SVG path. ``d`` is the python fallback; ``rd`` (default ``d``) is what Rough.js redraws."""
         self.parts.append(self._fallback_path(d, stroke, sw, dash, opacity))
         self._add_rough_spec(
@@ -288,7 +318,7 @@ class Sketch:
         )
 
     # --- 2b. Arrows ---------------------------------------------------------------------------
-    def head(self, x, y, ang, stroke=INK, sw=2.2, size=11):
+    def head(self, x: float, y: float, ang: float, stroke: str = INK, sw: float = 2.2, size: float = 11) -> None:
         """Arrow head at (x, y) pointing in direction ``ang`` (radians): two short strokes."""
         d = ""
         for sign in (-1, 1):
@@ -299,7 +329,14 @@ class Sketch:
             self._add_rough_spec("l", [x, y, ex, ey], stroke=stroke, strokeWidth=round1(sw), roughness=0.55, bowing=0.6)
         self.parts.append(self._fallback_path(d, stroke, sw))
 
-    def arrow(self, pts, stroke=INK, sw=2.2, dash=None, curve=True):
+    def arrow(
+        self,
+        pts: list[tuple[float, float]],
+        stroke: str = INK,
+        sw: float = 2.2,
+        dash: str | None = None,
+        curve: bool = True,
+    ) -> None:
         """pts: list of (x, y); drawn as smooth-ish polyline with arrow head at the end."""
         if len(pts) == 2:
             (x1, y1), (x2, y2) = pts
@@ -330,7 +367,17 @@ class Sketch:
         x1, y1 = pts[-2]
         self.head(x2, y2, math.atan2(y2 - y1, x2 - x1), stroke, sw)
 
-    def bezier_arrow(self, p0, c1, c2, p3, stroke=INK, sw=2.2, dash=None, head=True):
+    def bezier_arrow(
+        self,
+        p0: tuple[float, float],
+        c1: tuple[float, float],
+        c2: tuple[float, float],
+        p3: tuple[float, float],
+        stroke: str = INK,
+        sw: float = 2.2,
+        dash: str | None = None,
+        head: bool = True,
+    ) -> None:
         """Cubic Bezier from p0 to p3 (control points c1, c2), optionally with an arrow head."""
         d = "M%s %sC%s %s %s %s %s %s" % (
             fmt_num(p0[0]),
@@ -347,14 +394,33 @@ class Sketch:
             self.head(p3[0], p3[1], math.atan2(p3[1] - c2[1], p3[0] - c2[0]), stroke, sw)
 
     # --- 2c. Text -----------------------------------------------------------------------------
-    def text(self, x, y, s, size, cls, anchor="middle", fill=INK, extra=""):
+    def text(
+        self,
+        x: float,
+        y: float,
+        s: str,
+        size: float,
+        cls: str,
+        anchor: str = "middle",
+        fill: str = INK,
+        extra: str = "",
+    ) -> None:
         """One line of SVG text (escaped). ``cls`` is the font class, e.g. "kb" or "ph"."""
         self.tx.append(
             '<text x="%s" y="%s" font-size="%s" class="%s" text-anchor="%s" fill="%s"%s>%s</text>'
             % (fmt_num(x), fmt_num(y), fmt_num(size), cls, anchor, fill, extra, escape_html(s))
         )
 
-    def label(self, cx, cy, lines, size=15, cls="cv", fill="#2f5f8f", bg=PAPER):
+    def label(
+        self,
+        cx: float,
+        cy: float,
+        lines: list[str],
+        size: float = 15,
+        cls: str = "cv",
+        fill: str = "#2f5f8f",
+        bg: str = PAPER,
+    ) -> None:
         """Edge label centred on (cx, cy) with paper-coloured backing."""
         line_height = size * 1.05
         w = max(text_width(line, size, "cv") for line in lines) + 8

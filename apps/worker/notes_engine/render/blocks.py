@@ -43,7 +43,8 @@ def split_sentences(text: str) -> list[str]:
     return sentences
 
 
-def paragraph_block(block) -> str:
+def paragraph_block(block: dict) -> str:
+    """Return the HTML item for a paragraph of rich text. ("" when it is empty)."""
     text = clean_text(block.get("text"))
     if not text:
         return ""
@@ -58,7 +59,8 @@ def paragraph_block(block) -> str:
 # ----------------------------------------------------------------------------------------------
 # 2. Lists
 # ----------------------------------------------------------------------------------------------
-def bullets_block(block) -> str:
+def bullets_block(block: dict) -> str:
+    """Return the HTML item for a bullet list. ("" when it is empty)."""
     items = [clean_text(i) for i in as_list(block.get("items")) if clean_text(i)]
     if not items:
         return ""
@@ -72,7 +74,8 @@ def bullets_block(block) -> str:
     )
 
 
-def steps_block(block) -> str:
+def steps_block(block: dict) -> str:
+    """Return the HTML item for a numbered list of steps. ("" when it is empty)."""
     items = [clean_text(i) for i in as_list(block.get("items")) if clean_text(i)]
     if not items:
         return ""
@@ -86,7 +89,8 @@ def steps_block(block) -> str:
 # ----------------------------------------------------------------------------------------------
 # 3. Boxes: definition, example, callout, formula
 # ----------------------------------------------------------------------------------------------
-def definition_block(block) -> str:
+def definition_block(block: dict) -> str:
+    """Return the HTML item for a "def." line: term and meaning. ("" when it is empty)."""
     term, text = clean_text(block.get("term")), clean_text(block.get("text"))
     if not (term or text):
         return ""
@@ -96,7 +100,8 @@ def definition_block(block) -> str:
     )
 
 
-def example_block(block) -> str:
+def example_block(block: dict) -> str:
+    """Return the HTML item for a worked example with an optional title. ("" when it is empty)."""
     title, text = clean_text(block.get("title")), clean_text(block.get("text"))
     if not (title or text):
         return ""
@@ -107,7 +112,7 @@ def example_block(block) -> str:
 CALLOUT_LABELS = {"note": "note to self", "warning": "watch out!", "tip": "pro tip"}
 
 
-def callout_block(block, callout_number: int) -> str:
+def callout_block(block: dict, callout_number: int) -> str:
     """A sticky-note callout. ``callout_number`` alternates the tilt (classes t1 / t2)."""
     text = clean_text(block.get("text"))
     if not text:
@@ -122,7 +127,8 @@ def callout_block(block, callout_number: int) -> str:
     )
 
 
-def formula_block(block) -> str:
+def formula_block(block: dict) -> str:
+    """Return the HTML item for a formula on its own line. ("" when it is empty)."""
     text = clean_text(block.get("text"))
     if not text:
         return ""
@@ -132,7 +138,7 @@ def formula_block(block) -> str:
 # ----------------------------------------------------------------------------------------------
 # 4. Code and tables
 # ----------------------------------------------------------------------------------------------
-def code_block(block) -> str:
+def code_block(block: dict) -> str:
     """Code listing, one ``<div class="ln">`` per line (max 160 lines of max 400 characters)."""
     raw = block.get("code") if block.get("code") is not None else ""
     code = str(raw).replace("\r\n", "\n").replace("\r", "\n").expandtabs(4).strip("\n")
@@ -149,7 +155,7 @@ def code_block(block) -> str:
     )
 
 
-def table_block(block) -> str:
+def table_block(block: dict) -> str:
     """Table (max 60 rows); short rows are padded so every row has the same number of cells."""
     headers = [clean_text(h) for h in as_list(block.get("headers"))]
     rows = [r for r in as_list(block.get("rows")) if isinstance(r, list)][:60]
@@ -171,7 +177,7 @@ def table_block(block) -> str:
 # ----------------------------------------------------------------------------------------------
 # 5. Unknown blocks and the dispatcher
 # ----------------------------------------------------------------------------------------------
-def unknown_block(block) -> str:
+def unknown_block(block: dict) -> str:
     """Block types this renderer does not know yet: show any text / items instead of dropping them."""
     if as_list(block.get("items")):
         return bullets_block(block)

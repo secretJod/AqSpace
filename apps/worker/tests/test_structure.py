@@ -1,5 +1,5 @@
-"""#159: the upstream folder layout (ai/, render/, transcripts/, backend/app modules) with every
-AQspace feature still reachable under its old import path, plus bug #128 (cover summary)."""
+"""Package layout: helpers in ai/, render/ and transcripts/ stay reachable through llm, ingest and
+pdf, and the cover summary is never cut mid-sentence."""
 
 import copy
 import json
@@ -34,7 +34,7 @@ def test_local_provider_and_profiles_live_in_ai_providers():
     assert providers.local_profile_name(8192) == "local-small" and providers.local_profile_name(16384) == "local"
 
 
-def test_ingest_keeps_aqspace_names_and_messages():
+def test_ingest_exposes_transcriber_names_and_messages():
     assert ingest.MSG_CHANNEL is ingest_errors.MSG_CHANNEL
     assert ingest.parse_video_id is youtube_urls.parse_video_id
     for name in (
@@ -56,7 +56,7 @@ def test_pdf_keeps_long_notes_helpers():
     assert "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" in pdf_export.KNOWN_BROWSER_PATHS
 
 
-# ---------------------------------------------------------------- #128: summary cut mid-sentence
+# ---------------------------------------------------------------- cover summary ends on a sentence
 def test_truncate_sentences_ends_on_a_whole_sentence():
     s = (
         "Higher order derivatives measure how a rate of change itself changes. The second derivative is "

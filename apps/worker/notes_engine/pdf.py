@@ -1,13 +1,12 @@
-"""Compatibility module: the notebook renderer now lives in ``notes_engine/render/``.
+"""The renderer's front door: ``render_html``, ``render_pdf`` and ``PdfError``.
 
 What this file does
-    Re-exports the renderer under the old import path, so existing code
-    (``from notes_engine import pdf``; ``pdf.render_html(...)``, ``pdf.render_pdf(...)``,
-    ``pdf.PdfError``) and the tests keep working unchanged.
+    The job runner (``backend/app/jobs.py``), ``notes_engine.generate`` and the tests import the
+    renderer as ``from notes_engine import pdf``. The code itself lives in ``notes_engine/render/``.
 
     ``render_html`` / ``render_pdf`` here are tiny wrappers that look up ``_rough_js`` in THIS
-    module each time they run. That keeps the old test hook working:
-    ``monkeypatch.setattr(pdf, "_rough_js", lambda: "")`` renders without Rough.js.
+    module each time they run, so a test can render without Rough.js:
+    ``monkeypatch.setattr(pdf, "_rough_js", lambda: "")``.
 
 Read next
     ``notes_engine/render/__init__.py`` - it lists the renderer's files in reading order.
@@ -20,7 +19,7 @@ from .render import page_layout as _page_layout
 from .render import pdf_export as _pdf_export
 from .render.cover import COVER_TOC_MAX  # noqa: F401
 
-# Older private names that tests and scripts still use (kept as aliases)
+# Short names the tests use for renderer internals
 from .render.diagrams import clean_diagram as _clean_diagram  # noqa: F401
 from .render.diagrams import mindmap_tree as _mindmap_tree  # noqa: F401
 from .render.page_layout import rough_js_source as _rough_js

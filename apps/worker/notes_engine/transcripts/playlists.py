@@ -32,7 +32,7 @@ _DEAD_TITLES = {"[private video]", "[deleted video]", "private video", "deleted 
 # --------------------------------------------------------------------------- #
 
 
-def plain_text(text, limit: int) -> str:
+def plain_text(text: object, limit: int) -> str:
     """Single-line, control-character-free text capped at `limit` characters."""
     s = _CTRL_RE.sub(" ", str(text or ""))
     return WS_RE.sub(" ", s).strip()[:limit]
@@ -61,7 +61,7 @@ def playlist_error(msg: str) -> PlaylistError:
     return PlaylistError(MSG_PLAYLIST_OTHER, 502)
 
 
-def playlist_entry(e) -> dict | None:
+def playlist_entry(e: object) -> dict | None:
     """Normalise one flat yt-dlp entry; None for private/deleted/invalid ones."""
     if not isinstance(e, dict):
         return None

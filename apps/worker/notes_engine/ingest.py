@@ -1,6 +1,7 @@
-"""YouTube -> transcript ingestion for Lecture Notes AI.
+"""YouTube -> transcript ingestion.
 
-Start here: ``get_transcript()`` (section 6).
+Called by ``backend/app/jobs.py`` (notes jobs), ``smart_playlist.py`` and ``routes.py`` (URL and
+playlist checks). Start here: ``get_transcript()`` (section 6).
 
 Public surface:
     IngestError, parse_video_id, get_transcript, get_playlist, parse_playlist_id, chunk_transcript
@@ -22,8 +23,8 @@ timeouts and retries; timestamps are h:mm:ss with any number of hours.
 
 How the file is organised
 -------------------------
-1. Re-exports - URL parsing, text cleaning, chunking and playlists now live in
-   ``notes_engine/transcripts/``; every old name is still importable from here.
+1. Imports - URL parsing, text cleaning, chunking and playlists live in
+   ``notes_engine/transcripts/``; the public ones are re-exported from here.
 2. Small helpers (progress callback, HTTP session with a timeout).
 3. Video metadata (title, channel, duration).
 4. Stage 1: youtube-transcript-api.
@@ -49,6 +50,8 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -153,7 +156,8 @@ class _TimeoutSession(requests.Session):
 
     The read timeout is long because a 24 h transcript is a big response."""
 
-    def request(self, method, url, **kwargs):  # type: ignore[override]
+    def request(self, method: str, url: str, **kwargs: Any) -> requests.Response:  # type: ignore[override]
+        """Send the request with the long download timeout unless the caller set one."""
         kwargs.setdefault("timeout", _DOWNLOAD_TIMEOUT)
         return super().request(method, url, **kwargs)
 
@@ -682,6 +686,7 @@ class GroqTranscriber:
         self._key = key
 
     def transcribe(self, path: str) -> tuple[list[dict], str]:
+        """Transcribe one audio file with Groq Whisper; returns ``(segments, language)``."""
         return _groq_transcribe_chunk(path, self._key)
 
 
@@ -711,6 +716,7 @@ class LocalWhisperTranscriber:
         return self._model
 
     def transcribe(self, path: str) -> tuple[list[dict], str]:
+        """Transcribe one audio file with the local model; returns ``(segments, language)``."""
         try:
             model = self._load()
             segs, info = model.transcribe(path, beam_size=1, vad_filter=True, condition_on_previous_text=False)
@@ -838,7 +844,13 @@ def _fetch_via_whisper(
 # --------------------------------------------------------------------------- #
 
 
-def get_transcript(url: str, *, groq_key: str | None = None, progress=None, work_dir: str | None = None) -> dict:
+def get_transcript(
+    url: str,
+    *,
+    groq_key: str | None = None,
+    progress: Callable[[str, int, str], None] | None = None,
+    work_dir: str | None = None,
+) -> dict:
     """Fetch and clean the transcript for a YouTube video. Raises IngestError.
 
     ``work_dir`` holds the speech-to-text checkpoints (``<work_dir>/<video_id>/stt``);

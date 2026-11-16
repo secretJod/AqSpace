@@ -14,10 +14,9 @@ talk to the network or sleep, so each file can be read (and tested) on its own:
 
 How it fits
 -----------
-``notes_engine/llm.py`` is still the public entry point (``generate_notes``) and it re-exports
-every name it used to define, so ``from notes_engine.llm import X`` keeps working.  The HTTP
-client, the rate-limit pacer and the pipeline stay in ``llm.py`` because tests patch
-``llm._sleep`` / ``llm._get_chunker`` there.
+``notes_engine/llm.py`` is the public entry point (``generate_notes``). The HTTP client, the
+rate-limit pacer and the pipeline live in ``llm.py`` because tests patch ``llm._sleep`` /
+``llm._get_chunker`` there.
 
 Read next: ``providers.py`` -> ``json_repair.py`` -> ``sections.py`` -> ``../llm.py``.
 """
