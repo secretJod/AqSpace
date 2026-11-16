@@ -9,6 +9,7 @@ import { bad } from "./http-errors.js";
 // 1. Limits and patterns
 // ---------------------------------------------------------------------------
 
+/* Size limits for user text and batches. They keep rows small and match what the UI can show. */
 export const LIMITS = { name: 60, description: 160, title: 150, channel: 80, batch: 500, maxSec: 360000 };
 
 export const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/; // a YouTube video id
@@ -16,6 +17,7 @@ export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,47}$/; // our playlist id ("my-play
 export const LIST_ID_RE = /^[A-Za-z0-9_-]{10,64}$/; // a YouTube playlist id (list=...)
 export const JOB_ID_RE = /^[a-f0-9]{32}$/; // a job id from the Python worker
 
+// eslint-disable-next-line no-control-regex -- removing control characters is the point
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
 
 // ---------------------------------------------------------------------------
@@ -34,16 +36,19 @@ export function text(x) {
 // 3. Ids and names (throw a 400 when invalid)
 // ---------------------------------------------------------------------------
 
+/** A YouTube video id (11 characters), or a 400. */
 export function videoId(x) {
   if (typeof x !== "string" || !VIDEO_ID_RE.test(x)) throw bad("Video id must be an 11-character YouTube id.");
   return x;
 }
 
+/** A playlist id ("my-playlist"), or a 400. */
 export function slug(x) {
   if (typeof x !== "string" || !SLUG_RE.test(x)) throw bad("Invalid playlist id.");
   return x;
 }
 
+/** A playlist name: cleaned, not empty, at most LIMITS.name characters, or a 400. */
 export function name(x) {
   const cleaned = text(x);
   if (!cleaned) throw bad("Give the playlist a name.");
@@ -51,6 +56,7 @@ export function name(x) {
   return cleaned;
 }
 
+/** A playlist description: cleaned, at most LIMITS.description characters ("" when missing), or a 400. */
 export function description(x) {
   if (x == null) return "";
   if (typeof x !== "string") throw bad("Description must be text.");

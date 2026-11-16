@@ -10,6 +10,7 @@
 // 1. The error class
 // ---------------------------------------------------------------------------
 
+/** An Error with an HTTP status; its message is safe to show to the user. */
 export class HttpError extends Error {
   /**
    * @param {number} status  HTTP status code (400, 404, 503, ...)
@@ -28,6 +29,9 @@ export class HttpError extends Error {
 // 2. Shortcuts for the most common statuses
 // ---------------------------------------------------------------------------
 
+/** 400 Bad Request. */
 export const bad = (message) => new HttpError(400, message);
+/** 404 Not Found. */
 export const notFound = (message = "Not found.") => new HttpError(404, message);
+/** 409 Conflict (e.g. a duplicate name or video). */
 export const conflict = (message) => new HttpError(409, message);

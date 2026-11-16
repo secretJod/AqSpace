@@ -32,6 +32,17 @@ export function clientKey(req, trustCf = false) {
   return sock;
 }
 
+/**
+ * Builds a fixed-window rate limiter middleware. Over the limit it answers 429 with Retry-After.
+ * The counters live in memory, so they reset on restart and are per process; enough for one local server.
+ *
+ * @param {object} options
+ * @param {number} options.max       requests allowed per window and client
+ * @param {number} options.windowMs  window length
+ * @param {boolean} [options.trustCf]  see clientKey()
+ * @param {() => number} [now]  clock, for tests
+ * @returns {import("express").RequestHandler}
+ */
 export function rateLimit({ max, windowMs, trustCf = false }, now = Date.now) {
   const hitsByIp = new Map(); // ip -> { n, reset }
 

@@ -11,6 +11,7 @@ import { HttpError } from "../utils/http-errors.js";
 // 1. 404
 // ---------------------------------------------------------------------------
 
+/** Middleware: anything that reaches it becomes a 404 HttpError for errorHandler. */
 export function notFoundHandler(_req, _res, next) {
   next(new HttpError(404, "Not found."));
 }
@@ -19,10 +20,14 @@ export function notFoundHandler(_req, _res, next) {
 // 2. Errors -> JSON
 // ---------------------------------------------------------------------------
 
-// Error codes the UI understands; only these are sent back as `code`.
+// Error codes the UI understands; only these are sent back as `code`, so internal codes (SQLite, Node) never leak.
 const PUBLIC_CODES = new Set(["py_offline", "not_in_playlist", "auth_required"]);
 
-// Four arguments tell Express this is an error handler.
+/**
+ * Express error handler: turns any error into {error, code?} with a sensible status.
+ * Only HttpErrors (expose = true) show their message; everything else is "Something went wrong."
+ * The four arguments are required: that is how Express recognises an error handler.
+ */
 export function errorHandler(err, req, res, _next) {
   if (res.headersSent) return res.destroy(); // a stream broke half way: nothing sensible to send
 

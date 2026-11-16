@@ -5,7 +5,15 @@
    Read next: routes/notes.js */
 import { Readable } from "node:stream";
 
-/** upstream = a fetch Response from the worker; headerNames = which of its headers to pass on. */
+/**
+ * Streams a worker response to the browser. Only the named headers are copied, so the worker cannot
+ * set cookies or other headers on our origin.
+ *
+ * @param {import("express").Response} res
+ * @param {Response} upstream  a fetch Response from the worker (body not read yet)
+ * @param {string[]} headerNames  lower-case names of the headers to pass on
+ * @returns {Promise<void>}
+ */
 export async function pipeFile(res, upstream, headerNames) {
   res.status(upstream.status);
   for (const name of headerNames) {
