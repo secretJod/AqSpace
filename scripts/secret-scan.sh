@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Scans the repo (excluding .git, node_modules, .venv, __pycache__ and repo-local caches) for
-# real-looking API keys and for any file named .env. Exit code 1 on hits. Matches under tests/
-# are reported as allowlisted dummy fixtures (exit stays 0). Matched values are never printed in full.
-# Usage: scripts/secret-scan.sh [repo-dir]
+# Looks for real-looking API keys and for any file named .env. Run it before pushing.
+#
+#   scripts/secret-scan.sh [repo-dir]
+#
+# Skips .git, node_modules, .venv, __pycache__ and the repo-local caches.
+# Exits 1 when it finds something. Matches under tests/ are listed as allowed
+# fixtures (they should be dummies) and do not fail the scan. Matched values
+# are never printed in full, so the output is safe to share.
 set -uo pipefail
 REPO="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO" || exit 2

@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# Consistent online backup of the aq-api SQLite database (ADR-0002) using VACUUM INTO via node:sqlite.
-# Safe whether or not the stack runs (WAL: readers don't block the writer). No sqlite3 CLI needed.
-# Usage: scripts/backup-db.sh [keep]
-#   env: DB_FILE (default apps/api/data/aq.db), BACKUP_DIR (default .data/backups), BACKUP_KEEP (default 7)
+# Takes a consistent backup of the API's SQLite database and keeps the newest few.
+#
+#   scripts/backup-db.sh [keep]
+#
+# Environment:
+#   DB_FILE      database to back up      (default apps/api/data/aq.db)
+#   BACKUP_DIR   where backups are kept   (default .data/backups)
+#   BACKUP_KEEP  how many to keep         (default 7; the [keep] argument wins)
+#
+# The copy is made with VACUUM INTO through node:sqlite, so no sqlite3 CLI is
+# needed. It is safe while the app is running: the database uses WAL mode, so
+# the backup reader never blocks the app's writer. Each copy is checked with
+# PRAGMA integrity_check. apps/api/test/db-backup.test.js covers this script.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DB="${DB_FILE:-apps/api/data/aq.db}"

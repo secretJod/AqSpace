@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy AQspace to a second Mac over SSH (card #136). Runbook: docs/deploy/second-mac.md
+# Deploys AQspace to another Mac over SSH and starts it there with Docker Compose.
 #
 #   scripts/deploy.sh <user@host> [ref]          deploy a git ref (default: HEAD)
 #   scripts/deploy.sh <user@host> --with-secrets copy the two .env files too (chmod 600, never echoed)
@@ -16,6 +16,7 @@
 # Secrets move only with --with-secrets, streamed over SSH stdin, never printed or placed in argv.
 set -euo pipefail
 
+# usage() prints the header above (lines 2-15), so keep it in step with the options.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -103,7 +104,7 @@ log "Deploying ${REF:-rollback} ($SHA) to $TARGET:$REMOTE_DIR"
 # --- 1. preflight ----------------------------------------------------------------------------
 log "1/6 Preflight: SSH, Docker and disk on the target"
 run_remote "preflight" "
-command -v docker >/dev/null || { echo 'Docker Desktop is not installed (see docs/deploy/second-mac.md)' >&2; exit 1; }
+command -v docker >/dev/null || { echo 'Docker Desktop is not installed on the target' >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo 'Docker Desktop is not running on the target' >&2; exit 1; }
 command -v rsync >/dev/null || { echo 'rsync missing on target' >&2; exit 1; }
 df -h . | tail -1"
