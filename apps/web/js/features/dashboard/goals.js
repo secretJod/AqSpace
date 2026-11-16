@@ -1,24 +1,26 @@
 /* =====================================================================================================
    What this file does:
-     Learning goals: the data (`AQ.goals`, localStorage) + how far along each goal is, and the goals card
-     on the dashboard (`AQ.goalsView`) with progress rings, status chips, the add/edit form and a small
-     confetti burst when a goal completes. Styles: css/goals.css (classes start with `gl-`).
+     Learning goals, in two parts:
+       - data: `AQ.goals` stores the goals and works out how far along each one is (no DOM code).
+       - view: `AQ.goalsView` draws the goals card on the dashboard: progress rings, status chips, the
+         add / edit form and a small confetti burst when a goal completes.
+     Styles: css/goals.css (classes start with `gl-`).
+
+     Goals are kept in this browser only, in localStorage `aq.goals.v1` (a JSON array):
+       Goal = { id, type: "playlist"|"minutes"|"notes"|"checklist", title, target (number),
+                deadline? ("YYYY-MM-DD"), created (ISO), done (bool), playlistId? (type playlist),
+                period? ("day"|"week", type minutes), items? ([{ text, done }], type checklist) }
+     "minutes" and "notes" goals repeat every day / week, so their `done` is computed, never stored.
 
    How it fits:
-     Loaded after activity-log.js (minutes / notes counts) and store.js (playlist completion); the form
-     uses AQ.dialog when it exists, otherwise an inline panel. dashboard.js mounts the card with
-     `AQ.goalsView.mount(container) -> { destroy() }`.
+     Depends on AQ.util (elements, buttons, icons), AQ.activity (activity-log.js: minutes / notes counts)
+     and AQ.store (store.js: playlist completion), so it loads after them; the form uses AQ.dialog
+     (dialog.js) when it exists, otherwise an inline panel. dashboard.js and hud-metrics.js read
+     `list()` / `progress()`, and dashboard.js mounts the card with `AQ.goalsView.mount(container)`.
 
    Start reading at:
-     The goal shape below, `progress()` in PART 1 (section 4), then `mount()` in PART 2.
+     `progress()` in PART 1 (section 4), then `mount()` in PART 2. Next: dashboard.js.
    ===================================================================================================== */
-
-/* AQspace - goals.
-   localStorage key `aq.goals.v1` = JSON array:
-   Goal = { id, type: "playlist"|"minutes"|"notes"|"checklist", title, target (number), deadline? ("YYYY-MM-DD"),
-            created (ISO), done (bool), playlistId? (type playlist), period? ("day"|"week", type minutes),
-            items? ([{ text, done }], type checklist) }
-   "minutes" and "notes" goals repeat every day / week, so their `done` is computed, never stored. */
 window.AQ = window.AQ || {};
 (function (AQ) {
   "use strict";
@@ -139,6 +141,13 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 3. CRUD =====
+  // Every write goes through cleanGoal(), so stored data always has the shape above and capped lengths
+  // (localStorage is shared with other tabs and can be edited by hand).
+
+  /**
+   * Returns all goals, in the order they were added.
+   * @returns {Object[]} a shallow copy of the list (the goal objects themselves are shared)
+   */
   function list() {
     return goals.slice();
   }
@@ -146,7 +155,11 @@ window.AQ = window.AQ || {};
     for (var i = 0; i < goals.length; i++) if (goals[i].id === id) return goals[i];
     return null;
   }
-  /** Add a goal from form data; returns the stored goal or null when invalid / too many. */
+  /**
+   * Adds a goal from form data.
+   * @param {Object} data { type, title, target?, deadline?, playlistId?, period?, items? }
+   * @returns {Object|null} the stored goal, or null when the data is invalid or the limit of 50 goals is reached
+   */
   function add(data) {
     if (goals.length >= LIMITS.goals) return null;
     var g = cleanGoal(Object.assign({}, data, { id: newId(), created: new Date().toISOString(), done: false }));
@@ -156,6 +169,12 @@ window.AQ = window.AQ || {};
     emit({ type: "add", id: g.id });
     return g;
   }
+  /**
+   * Changes a goal (its id and creation date never change).
+   * @param {string} id
+   * @param {Object} patch fields to change
+   * @returns {Object|null} the stored goal, or null for an unknown id or invalid data
+   */
   function update(id, patch) {
     var cur = get(id);
     if (!cur) return null;
@@ -166,6 +185,11 @@ window.AQ = window.AQ || {};
     emit({ type: "update", id: id });
     return g;
   }
+  /**
+   * Deletes a goal.
+   * @param {string} id
+   * @returns {boolean} false for an unknown id
+   */
   function remove(id) {
     var cur = get(id);
     if (!cur) return false;
@@ -174,6 +198,12 @@ window.AQ = window.AQ || {};
     emit({ type: "remove", id: id });
     return true;
   }
+  /**
+   * Marks a goal done or not done by hand (used for playlist and checklist goals).
+   * @param {string} id
+   * @param {boolean} done
+   * @returns {boolean} false for an unknown id
+   */
   function setDone(id, done) {
     var g = get(id);
     if (!g) return false;
@@ -182,7 +212,13 @@ window.AQ = window.AQ || {};
     emit({ type: "update", id: id });
     return true;
   }
-  /** Tick / untick one checklist item; the goal is done when every item is. */
+  /**
+   * Ticks or unticks one checklist item; the goal is done when every item is.
+   * @param {string} id checklist goal id
+   * @param {number} index item position
+   * @param {boolean} [done] new state; omitted = flip the current one
+   * @returns {boolean} false when the goal or item does not exist
+   */
   function toggleItem(id, index, done) {
     var g = get(id);
     if (!g || g.type !== "checklist" || !g.items[index]) return false;
@@ -346,7 +382,12 @@ window.AQ = window.AQ || {};
           shortDate(g.deadline);
     return out;
   }
-  /** { percent 0-100, status "on track"|"behind"|"ahead"|"done", pace (sentence), current, target, unit, detail } */
+  /**
+   * Works out how far along a goal is, from the activity log, the store or its checklist.
+   * @param {Object} g a goal from list()
+   * @returns {Object|null} { percent (0-100), status: "on track"|"behind"|"ahead"|"done", pace (a sentence),
+   *   current, target, unit, detail, missing? (the playlist was deleted) }; null without a goal
+   */
   function progress(g) {
     if (!g) return null;
     var out =
@@ -364,6 +405,11 @@ window.AQ = window.AQ || {};
     }
     return out;
   }
+  /**
+   * Calls `fn(event)` after every change: { type: "add"|"update"|"remove", id } or { type: "sync" }.
+   * @param {function(Object): void} fn
+   * @returns {function(): void} unsubscribe
+   */
   function subscribe(fn) {
     if (typeof fn !== "function") return function () {};
     listeners.push(fn);
@@ -374,8 +420,8 @@ window.AQ = window.AQ || {};
     };
   }
 
-  // only the user's own goals (the old ?demo=dashboard sample goals are gone; see js/core/demo-cleanup.js)
   load();
+  // another tab changed the goals: reload them so every open tab agrees
   try {
     window.addEventListener("storage", function (e) {
       if (e.key === KEY) {
@@ -388,11 +434,7 @@ window.AQ = window.AQ || {};
   }
 
   AQ.goals = {
-    KEY: KEY,
-    TYPES: TYPES,
-    LIMITS: LIMITS,
     list: list,
-    get: get,
     add: add,
     update: update,
     remove: remove,
@@ -400,6 +442,10 @@ window.AQ = window.AQ || {};
     toggleItem: toggleItem,
     progress: progress,
     subscribe: subscribe,
+    /**
+     * Whether the last read / write reached localStorage (false = goals live in memory for this tab only).
+     * @returns {boolean}
+     */
     storageOk: function () {
       return storageOk;
     }
@@ -446,6 +492,7 @@ window.AQ = window.AQ || {};
     );
     return s;
   }
+  // With reduced motion the completion confetti becomes a short static highlight (.gl-pop-static).
   function reducedMotion() {
     try {
       return matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -674,6 +721,13 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 8. the card =====
+  /**
+   * Draws the goals card into `container` and keeps it live (goals, activity and store changes, midnight).
+   * Goal titles and checklist items are typed by the user, so they only ever go in with textContent
+   * (AQ.util.el), never as HTML.
+   * @param {HTMLElement} container
+   * @returns {{destroy: function(): void}}
+   */
   function mount(container) {
     var root = el("section", "gl");
     root.setAttribute("aria-label", "Goals");
@@ -818,6 +872,8 @@ window.AQ = window.AQ || {};
       return li;
     }
 
+    // Every render rebuilds the card, so the focused control is remembered by its data-focus key and
+    // focused again afterwards: keyboard users do not lose their place when a goal changes.
     function render() {
       var focusKey = root.contains(document.activeElement) && document.activeElement.dataset.focus;
       var all = AQ.goals.list();

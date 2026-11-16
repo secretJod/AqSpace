@@ -1,31 +1,30 @@
 /* =====================================================================================================
    What this file does:
-     The daily learning streak: records activity per day (`AQ.streak`) and draws the streak card
-     (`AQ.streakView`) in two modes: a compact hero card (flame inside a daily-goal ring, week dots)
-     that expands into the full view (stats, heatmap, milestone timeline, badges). Styles: css/streak.css.
+     The daily learning streak, in two parts:
+       - data: `AQ.streak` records activity per LOCAL calendar day and computes the streak numbers.
+         No DOM code. Saved in localStorage under `aq.activity.v1`:
+         { days: { "YYYY-MM-DD": { count, kinds: { watch, notes, ... }, minutes } }, freezes }
+       - view: `AQ.streakView` draws the streak card (classes start with `stk-`, styles in css/streak.css)
+         in two modes: a compact hero card (flame inside a daily-goal ring, week dots) that expands into
+         the full view (stats, year heatmap / month calendar, milestone timeline, badges).
 
    How it fits:
-     app.js calls `AQ.streak.record(...)` when you watch or take notes; dashboard.js mounts the card
-     with `AQ.streakView.mount(slot, { mode: "compact" })`. The compact -> full morph uses AQ.expand
-     (expand.js) and the spotlight uses AQ.motion (motion.js); both are optional and load before this file.
+     Uses AQ.util (`el()`), AQ.expand (expand.js) for the compact -> full morph and AQ.motion (motion.js)
+     for the spotlight; all three are optional and load before this file. activity-log.js calls
+     `AQ.streak.record(...)` for every logged session; achievements.js and hud-metrics.js read `stats()` /
+     `days()`; dashboard.js mounts the compact card with `AQ.streakView.mount(slot, { mode: "compact" })`.
 
    Start reading at:
-     The data part (`record()`, `stats()`), then `mount()` in the view part.
+     The data part (`record()`, `stats()`), then `mount()` in the view part. Next: achievements.js.
    ===================================================================================================== */
-
-/* AQspace - daily streak tracker.
-   AQ.streak      : activity data + stats (no DOM). localStorage key `aq.activity.v1`:
-                    { days: { "YYYY-MM-DD": { count, kinds: {watch, notes, ...}, minutes } }, freezes }
-                    Dates are LOCAL calendar days. Works in memory if storage is unavailable.
-   AQ.streakView  : mount(container, { mode: "compact" | "full" }) -> { destroy(), open()?, close()? }
-                    renders the streak card (classes prefixed `stk-`). "compact" is the small hero card
-                    that expands (via AQ.expand) into the "full" view; "full" (default) is the whole card. */
 window.AQ = window.AQ || {};
 (function (AQ) {
   "use strict";
 
   // ===== PART 1: the data (AQ.streak) - no DOM code until PART 2 =====
 
+  // localStorage keeps the streak across reloads. When storage is blocked (private mode, quota) the
+  // streak still works in memory for this tab and stats().storageOk turns false.
   var KEY = "aq.activity.v1";
   var data = { days: {}, freezes: 0 };
   var storageOk = true;
@@ -102,8 +101,13 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 3. API =====
-  /** Log activity for today. kind: "watch" | "notes" | "playlist" | ...; amount defaults to 1.
-      opts.minutes adds study minutes. Returns today's entry. */
+  /**
+   * Logs activity for today (local date) and notifies subscribers.
+   * @param {string} kind "watch" | "notes" | "playlist" | ... (cut to 24 characters)
+   * @param {number} [amount=1] how many activities to add
+   * @param {{minutes?: number}} [opts] study minutes to add to today
+   * @returns {{date: string, count: number, kinds: Object<string, number>, minutes: number}} today's entry
+   */
   function record(kind, amount, opts) {
     var n = Math.max(1, Math.floor(+amount || 1));
     var k = keyOf(today());
@@ -132,6 +136,12 @@ window.AQ = window.AQ || {};
     return n;
   }
 
+  /**
+   * Computes the streak numbers from the stored days.
+   * @returns {Object} { current, longest, total, activeDays, minutes, today, todayKey, bestDay,
+   *   state: "done" | "at-risk" | "idle", hoursLeft, week: [{ date, count, future }], weekTotal,
+   *   lastWeekTotal, weekActive, freezes, storageOk }
+   */
   function stats() {
     var t = today(),
       tk = keyOf(t);
@@ -188,11 +198,19 @@ window.AQ = window.AQ || {};
     };
   }
 
-  /** Copy of the day map: { "YYYY-MM-DD": { count, kinds, minutes } } */
+  /**
+   * Returns a deep copy of the day map, so callers cannot change the stored data.
+   * @returns {Object<string, {count: number, kinds: Object<string, number>, minutes: number}>} keyed by "YYYY-MM-DD"
+   */
   function days() {
     return JSON.parse(JSON.stringify(data.days));
   }
 
+  /**
+   * Calls `fn(event)` after every change: { type: "record", kind, first, date } or { type: "sync" }.
+   * @param {function(Object): void} fn
+   * @returns {function(): void} unsubscribe
+   */
   function subscribe(fn) {
     if (typeof fn !== "function") return function () {};
     listeners.push(fn);
@@ -203,8 +221,8 @@ window.AQ = window.AQ || {};
     };
   }
 
-  // the streak only counts real days (the old ?demo=streak sample history is gone; see js/core/demo-cleanup.js)
   load();
+  // another tab changed the streak: reload it so every open tab shows the same numbers
   window.addEventListener("storage", function (e) {
     if (e.key === KEY) {
       load();
@@ -213,25 +231,15 @@ window.AQ = window.AQ || {};
   });
 
   AQ.streak = {
-    KEY: KEY,
     record: record,
     stats: stats,
     days: days,
-    subscribe: subscribe,
-    keyOf: keyOf,
-    storageOk: function () {
-      return storageOk;
-    }
+    subscribe: subscribe
   };
 
   // =====================================================================================
   // ===== PART 2: the view (AQ.streakView) - everything below draws the streak card =====
   // =====================================================================================
-  /* AQ.streakView.mount(container, opts) -> { destroy(), open()?, close()? }
-       opts.mode        "compact" (small hero card: flame + ring + week dots; click opens the full view)
-                        or "full" (hero, stats, week, heatmap/month, milestone timeline, badges). Default "full".
-       opts.expandable  compact only, default true: wires the card to AQ.expand so a click opens the full view.
-       opts.dailyTarget activities that "close the ring" for the day (default 3). */
   var SVG_NS = "http://www.w3.org/2000/svg";
   var MILESTONES = [
     { n: 7, name: "Spark", sub: "1 week" },
@@ -281,6 +289,7 @@ window.AQ = window.AQ || {};
       return WD[dayIdx(d)] + ", " + MON[d.getMonth()] + " " + d.getDate();
     }
   }
+  // The particle burst and ring snap are decorative: with reduced motion a short static highlight replaces them.
   function reducedMotion() {
     try {
       return matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -508,6 +517,16 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 10. mount =====
+  /**
+   * Draws the streak card into `container` and keeps it live (re-renders on every record and after midnight).
+   * All text goes in with textContent, so nothing is ever parsed as HTML.
+   * @param {HTMLElement} container
+   * @param {Object} [opts]
+   * @param {"compact"|"full"} [opts.mode="full"] compact = small hero card that opens the full view on click
+   * @param {boolean} [opts.expandable=true] compact only: wire the card to AQ.expand
+   * @param {number} [opts.dailyTarget=3] activities that "close the ring" for the day
+   * @returns {{destroy: function(): void, open?: function(): void, close?: function(): void}}
+   */
   function mount(container, opts) {
     opts = opts || {};
     var mode = opts.mode === "compact" ? "compact" : "full";
@@ -621,6 +640,7 @@ window.AQ = window.AQ || {};
       var scroll = el("div", "stk-heat__scroll");
       var months = el("div", "stk-heat__months");
       var grid = el("div", "stk-heat__grid");
+      // Keyboard access: an ARIA grid with one roving tab stop; arrows move by day / week, Home / End jump.
       grid.setAttribute("role", "grid");
       grid.setAttribute("aria-label", "Activity over the last year. Use arrow keys to move between days.");
       var cells = [],

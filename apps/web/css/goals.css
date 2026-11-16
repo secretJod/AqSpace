@@ -1,6 +1,17 @@
-/* What this file styles:
-   The goals card on the dashboard (js/features/dashboard/goals.js). Classes start with `gl-`.
-   Linked from index.html after dashboard.css (order matters: see README.md). Uses tokens from styles.css. */
+/* =====================================================================================================
+   What this file does:
+     Styles the goals card (js/features/dashboard/goals.js, classes start with `gl-`): the list, progress
+     rings, status chips, checklist, add / edit form and the completion confetti. The last section also
+     gives the dashboard's HUD instruments (hud-gauges.js and hud.js widgets inside `.dash`) their
+     hairline "instrument" finish.
+
+   How it fits:
+     Linked from index.html after dashboard.css and before mirror.css (order matters: see README.md).
+     Uses the tokens from styles.css and the --hud-* palette from dashboard.css, with fallbacks.
+
+   Start reading at:
+     "card", then "list" and "ring". Next: css/sticky-board.css.
+   ===================================================================================================== */
 
 /* ---------- card ---------- */
 .gl {
@@ -431,7 +442,8 @@
   }
 }
 
-/* ---------- reduced motion ---------- */
+/* ---------- reduced motion ----------
+   The ring sweep and confetti are decoration: the numbers already tell the story, so they are switched off. */
 @media (prefers-reduced-motion: reduce) {
   .gl-ring__bar {
     transition: none;
@@ -442,8 +454,8 @@
   }
 }
 
-/* ===== HUD skin (dashboard redesign): green line work, mono numerals, square corners =====
-   Visual overrides only; goals.js markup and logic are unchanged. */
+/* ===== HUD skin: green line work, mono numerals, square corners =====
+   Visual overrides on top of the rules above, so the card matches the dashboard. */
 .gl {
   --gl-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
 }
@@ -489,9 +501,9 @@
   border-color: rgba(62, 240, 160, 0.25);
 }
 
-/* ===== Instrument realism pass (Dev B): gauges, scales, reactor, satellites, rings =====
+/* ===== Dashboard instruments: gauges, scales, reactor, satellites, rings =====
    Scoped under .dash so these win over the base widget rules regardless of load order.
-   Colours come from Dev A's palette tokens (css/dashboard.css) with fallbacks. */
+   Colours come from the --hud-* palette tokens in css/dashboard.css, with fallbacks. */
 .dash {
   --i-cyan: var(--hud-cyan, #5fd4ff);
   --i-steel: var(--hud-steel, #8a9bb0);
@@ -795,34 +807,10 @@
   color: var(--i-dim);
 }
 
-/* satellites: fixed squared readout tags with hairline leader lines to the reactor */
+/* satellites: fixed squared readout tags around the reactor */
 .dash .hg-orbit__ring,
 .dash .hg-sat {
   animation: none;
-}
-.dash .hg-orbit__path.is-outer {
-  border: 1px dashed var(--i-line);
-}
-.dash .hg-orbit__path.is-inner {
-  border-color: var(--i-line);
-}
-.dash .hg-sat__lead {
-  position: absolute;
-  left: 0;
-  top: 24px;
-  width: 1px;
-  height: 38px;
-  background: var(--i-line2);
-  pointer-events: none;
-}
-.dash .hg-sat__lead::after {
-  content: "";
-  position: absolute;
-  left: -1.5px;
-  bottom: -1.5px;
-  width: 4px;
-  height: 4px;
-  background: var(--i-cyan);
 }
 .dash .hg-sat {
   border-radius: 0;
@@ -855,11 +843,7 @@
   outline: 1px solid var(--i-cyan);
   outline-offset: 2px;
 }
-@media (max-width: 720px) {
-  .dash .hg-sat__lead {
-    height: 26px;
-  }
-}
+/* reduced motion: the reactor rings stop turning and the needles / fills jump straight to their values */
 @media (prefers-reduced-motion: reduce) {
   .dash .hud-core__ring--a,
   .dash .hud-core__ring--b,

@@ -1,9 +1,17 @@
-/* =====================================================================================
-   achievements.css - the "achievement unlocked" modal (js/features/achievements/achievements.js)
-   Sections: 1. overlay + rays  2. dialog  3. medal + entrance  4. shine, wave, idle float
-             5. text reveal + buttons  6. badge glow in the streak panel  7. reduced motion  8. phones
-   --ach-accent is set per tier from JS.
-   ===================================================================================== */
+/* =====================================================================================================
+   What this file does:
+     Styles the "achievement unlocked" modal (js/features/achievements/achievements.js).
+     Sections: 1. overlay + rays  2. dialog  3. medal + entrance  4. shine, wave, idle float
+               5. text reveal + buttons  6. badge glow in the streak panel  7. reduced motion  8. phones
+
+   How it fits:
+     Linked from index.html after css/streak.css (section 6 decorates its badges). The JS sets the tier
+     class (.ach-tier-bronze / silver / gold / legend), --ach-accent and the .is-open / .is-landed /
+     .is-closing / .is-calm states; the entrance spin length must match SPIN_MS in achievements.js.
+
+   Start reading at:
+     section 3 (medal + entrance). Next: css/goals.css.
+   ===================================================================================================== */
 
 /* ===== 1. overlay + rotating light rays ===== */
 .ach-overlay {

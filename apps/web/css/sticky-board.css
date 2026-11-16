@@ -1,9 +1,16 @@
 /* =====================================================================================================
-   What this file does:  styles for the Sticky board (js/features/dashboard/sticky-board.js): the paper
-                         notes, the compact stack on the dashboard card, the full board and the editor.
-   How it fits:          loaded after dashboard.css; uses its --hud-* tokens for the board chrome. The
-                         notes themselves are deliberately "real paper" colours so they stand out on the HUD.
-   Start reading at:     section 1 (paper colours), then 3 (the note) and 5 (the editor).
+   What this file does:
+     Styles the Sticky board (js/features/dashboard/sticky-board.js): the paper notes, the compact
+     stack on the dashboard card, the full board and the editor. Section 6 also styles the goals
+     progress list that dashboard.js draws in the expanded Goals card (`gprog`).
+
+   How it fits:
+     Linked from index.html after dashboard.css and goals.css; uses the --hud-* tokens from dashboard.css
+     for the board chrome. The notes themselves are deliberately "real paper" colours so they stand out
+     on the HUD.
+
+   Start reading at:
+     section 1 (paper colours), then 3 (the note) and 5 (the editor). Next: css/motion.css.
    ===================================================================================================== */
 
 /* ===== 1. paper colours (background, darker fold, ink) ===== */
@@ -472,7 +479,8 @@ a.gprog__name::after {
   color: var(--hud-dim, #8b98a8);
 }
 
-/* ===== 7. reduced motion ===== */
+/* ===== 7. reduced motion =====
+   Notes keep their resting tilt but never drop in, lift or zoom; the editor opens and closes at once. */
 @media (prefers-reduced-motion: reduce) {
   .sticky,
   .sboard__grid .sticky,

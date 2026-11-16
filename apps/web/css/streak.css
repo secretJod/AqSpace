@@ -1,9 +1,19 @@
-/* What this file styles:
-   The streak card (js/features/streak/streak.js) in both modes. Classes start with `stk-`.
-     .stk--compact  the small hero card on the dashboard (ring + flame, number, week dots, "tap to expand")
-     .stk--full     the whole card: hero + stats, week, heatmap / month, milestone timeline, badges
-   Inside an expand panel (.xp__body) the full card drops its own frame and widens the heatmap.
-   Linked from index.html (order matters: see README.md). Uses tokens from styles.css. */
+/* =====================================================================================================
+   What this file does:
+     Styles the streak card (js/features/streak/streak.js) in both modes. Classes start with `stk-`.
+       .stk--compact  the small hero card on the dashboard (ring + flame, number, week dots, "tap to expand")
+       .stk--full     the whole card: hero + stats, week, heatmap / month, milestone timeline, badges
+     Inside an expand panel (.xp__body) the full card drops its own frame and widens the heatmap.
+     State classes come from JS: .stk--done / --at-risk / --idle, .stk-tier-0..4 (streak length) and
+     heatmap levels .l0..l4.
+
+   How it fits:
+     Linked from index.html after styles.css (order matters: see README.md). Uses the tokens from
+     styles.css and --hud-amber from dashboard.css; css/achievements.css adds the badge glow.
+
+   Start reading at:
+     section 1 (card frame), 2 (ring + flame) and 9 (heatmap). Next: css/achievements.css.
+   ===================================================================================================== */
 
 /* ===== 1. the card frame (both modes) ===== */
 .stk {
@@ -484,7 +494,7 @@
   font-weight: 600;
 }
 
-/* ===== 7. full mode: standalone (legacy, 560px) and inside an expand panel ===== */
+/* ===== 7. full mode: standalone (560px wide) and inside an expand panel ===== */
 .stk--full .stk-hero {
   flex-wrap: wrap;
 }
@@ -955,7 +965,7 @@
 }
 .stk-badge__s {
   font-size: 10px;
-  color: var(--muted, #9a9a9a); /* #77: --muted-dark is too low for 10px text */
+  color: var(--muted, #9a9a9a); /* --muted-dark is too low-contrast for 10px text */
   letter-spacing: 0.04em;
 }
 .stk-badge.is-on {
@@ -1073,6 +1083,8 @@
     height: 60px;
   }
 }
+/* Reduced motion: every streak animation and transition is decoration, so all of them stop
+   (streak.js also swaps the particle burst for a static highlight). */
 @media (prefers-reduced-motion: reduce) {
   .stk *,
   .stk *::before,
@@ -1082,8 +1094,9 @@
   }
 }
 
-/* ===== Instrument skin (realism pass): amber tick-scale ring, hairline borders, crisp notches =====
-   Visual overrides only; streak.js markup and logic are unchanged. Amber is the streak's caution colour. */
+/* ===== 15. instrument skin: amber tick-scale ring, hairline borders, crisp notches =====
+   Visual overrides on top of the sections above, so the card matches the dashboard HUD.
+   Amber is the streak's caution colour. */
 .stk {
   --stk-amb: var(--hud-amber, #ffb020);
   --stk-l0: rgba(255, 176, 32, 0.08);
@@ -1293,7 +1306,9 @@
 .xp__body .stk--full .stk-badge {
   border-radius: 2px;
 }
-/* #77: forced colors - keep the heatmap scale and the selected tab readable; gradient-clipped text gets a real colour */
+/* ===== 16. forced colors (Windows high contrast) =====
+   Gradients and backgrounds are dropped there, so the heatmap scale and the selected tab get system
+   colours to stay readable, and gradient-clipped text gets a real colour. */
 @media (forced-colors: active) {
   .stk {
     border-color: CanvasText;

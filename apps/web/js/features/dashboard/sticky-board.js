@@ -2,16 +2,19 @@
    What this file does:
      The Sticky board: small coloured notes the learner pins on the dashboard ("revise chapter 3",
      "ask about backprop"...). Two parts in one file:
-       - data:  AQ.sticky        -> list / add / update / remove / subscribe, saved in localStorage
+       - data:  AQ.sticky        -> list / get / add / update / remove / subscribe, saved in this
+                                    browser's localStorage under `aq.sticky.v1` (never sent to the server)
        - views: AQ.stickyBoard   -> compact(container, opts) for the dashboard card,
                                     full(container, opts) for the expanded board with the note editor
 
    How it fits:
-     dashboard.js builds the "board" card and calls compact() inside it and full() inside the expanded
-     panel (expand.js). No other file depends on this one. Styles: css/sticky-board.css.
+     Needs no other AQ piece (it has its own small `el()` helper). dashboard.js builds the "board" card,
+     calls compact() inside it and full() inside the expanded panel (expand.js); it also reads
+     `AQ.sticky.list()` for the card title. Styles: css/sticky-board.css.
 
    Start reading at:
      section 4 (`full`), the board + the editor overlay; sections 1-2 are the plain data layer.
+     Next: dashboard.js (the "board" card).
    ===================================================================================================== */
 window.AQ = window.AQ || {};
 (function (AQ) {
@@ -89,7 +92,13 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 2. data API =====
-  /* newest first; pinned notes always stay on top */
+  // Every write goes through clean(), so stored notes always have the same shape and capped lengths
+  // (localStorage is shared with other tabs and can be edited by hand).
+
+  /**
+   * Returns every note: pinned notes first, then the most recently edited.
+   * @returns {Object[]} notes { id, title, text, color, pinned, created, updated } (a new array each call)
+   */
   function list() {
     return load()
       .slice()
@@ -98,6 +107,10 @@ window.AQ = window.AQ || {};
         return a.updated < b.updated ? 1 : a.updated > b.updated ? -1 : 0;
       });
   }
+  /**
+   * @param {string} id
+   * @returns {Object|null} the note, or null for an unknown id
+   */
   function get(id) {
     return (
       load().filter(function (n) {
@@ -105,6 +118,11 @@ window.AQ = window.AQ || {};
       })[0] || null
     );
   }
+  /**
+   * Creates a note.
+   * @param {{title?: string, text?: string, color?: string, pinned?: boolean}} data
+   * @returns {Object|null} the stored note, or null when it is empty or the board already holds 200 notes
+   */
   function add(data) {
     load();
     if (memory.length >= MAX_NOTES) return null;
@@ -123,6 +141,12 @@ window.AQ = window.AQ || {};
     save();
     return n;
   }
+  /**
+   * Changes a note and marks it as just edited.
+   * @param {string} id
+   * @param {{title?: string, text?: string, color?: string, pinned?: boolean}} patch
+   * @returns {Object|null} the stored note, or null for an unknown id or a note left empty
+   */
   function update(id, patch) {
     var n = get(id);
     if (!n) return null;
@@ -140,6 +164,11 @@ window.AQ = window.AQ || {};
     save();
     return next;
   }
+  /**
+   * Deletes a note (unknown ids are ignored).
+   * @param {string} id
+   * @returns {void}
+   */
   function remove(id) {
     load();
     var before = memory.length;
@@ -148,6 +177,11 @@ window.AQ = window.AQ || {};
     });
     if (memory.length !== before) save();
   }
+  /**
+   * Calls `fn()` after every change, in this tab or another one.
+   * @param {function(): void} fn
+   * @returns {function(): void} unsubscribe
+   */
   function subscribe(fn) {
     listeners.push(fn);
     return function () {
@@ -171,9 +205,6 @@ window.AQ = window.AQ || {};
   });
 
   AQ.sticky = {
-    KEY: KEY,
-    COLORS: COLORS,
-    MAX_NOTES: MAX_NOTES,
     list: list,
     get: get,
     add: add,
@@ -183,12 +214,14 @@ window.AQ = window.AQ || {};
   };
 
   // ===== 3. small DOM helpers =====
+  // Note titles and text are typed by the user, so they only ever go in with textContent, never as HTML.
   function el(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
   }
+  // With reduced motion the editor closes at once instead of playing its zoom-out animation.
   function reducedMotion() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -241,7 +274,14 @@ window.AQ = window.AQ || {};
 
   // ===== 4. views =====
   // --- 4a. compact: the most recent notes, newest on top, plus a "New note" button ---------------------
-  // opts.onOpenNote(id) / opts.onNew() are given by dashboard.js (they open the expanded board).
+  /**
+   * Draws the small board for the dashboard card: the first four notes and a "New note" button.
+   * @param {HTMLElement} container
+   * @param {Object} [opts]
+   * @param {function(string): void} [opts.onOpenNote] a note was clicked (gets its id)
+   * @param {function(): void} [opts.onNew] "New note" was clicked
+   * @returns {{destroy: function(): void}}
+   */
   function compact(container, opts) {
     opts = opts || {};
     var box = el("div", "sboard sboard--compact");
@@ -291,7 +331,6 @@ window.AQ = window.AQ || {};
     draw();
     var unsub = subscribe(draw);
     return {
-      refresh: draw,
       destroy: function () {
         unsub();
         box.remove();
@@ -300,7 +339,14 @@ window.AQ = window.AQ || {};
   }
 
   // --- 4b. full: the whole board + an editor that zooms open over it ----------------------------------
-  // opts.openId: open that note right away; opts.startNew: open an empty editor right away.
+  /**
+   * Draws the whole board with the note editor (used inside the expanded dashboard panel).
+   * @param {HTMLElement} container
+   * @param {Object} [opts]
+   * @param {string} [opts.openId] open this note in the editor right away
+   * @param {boolean} [opts.startNew] open an empty editor right away
+   * @returns {{destroy: function(): void}}
+   */
   function full(container, opts) {
     opts = opts || {};
     var box = el("div", "sboard sboard--full");
@@ -396,7 +442,8 @@ window.AQ = window.AQ || {};
       text.value = note ? note.text : "";
       paper.appendChild(text);
 
-      // colour preference: one swatch per paper colour
+      // colour preference: one swatch per paper colour, exposed as a radio group so screen readers
+      // announce the colour name and which one is chosen (the colour alone carries no meaning)
       var picker = el("div", "snote__colors");
       picker.setAttribute("role", "radiogroup");
       picker.setAttribute("aria-label", "Note colour");

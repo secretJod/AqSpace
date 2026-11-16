@@ -1,31 +1,22 @@
-/* =====================================================================================
-   achievements.js - the "achievement unlocked" celebration (AQ.achievements)
+/* =====================================================================================================
+   What this file does:
+     The "achievement unlocked" celebration (`AQ.achievements`). When the learner earns a badge, a
+     centred modal shows a 3D metal medal that spins in and settles, a shine sweeps across it, a
+     shockwave ring and confetti fire on landing, then "Congratulations!", the badge name, its criteria
+     and the date fade in. Several unlocks are queued and shown one after another.
 
-   What this file does
-     Shows a centred celebration modal when the learner earns a badge: a large 3D metal
-     medal spins in and settles, a shine sweeps across it, a shockwave ring and confetti
-     fire on landing, then "Congratulations!", the badge name, its criteria and the date
-     fade in. Several unlocks are queued and shown one after another.
+   How it fits:
+     Depends on AQ.streak (streak.js) for the numbers, and wraps AQ.neural.mount (neural.js) to keep the
+     dashboard's neural handle for a pulse, so it loads after both and before dashboard.js. It never
+     changes streak.js: it subscribes from the outside. Styles: css/achievements.css.
+     Celebrated badge ids are kept in localStorage `aq.achievements.seen.v1` so a badge is shown once
+     per browser. On the very first run, badges the user already has are marked as seen silently.
+     `?celebrate=<id>` (e.g. ?celebrate=blaze) forces the modal, for testing and demos.
 
-   How it fits
-     Loaded after streak.js (it reads AQ.streak) and before dashboard.js (it wraps
-     AQ.neural.mount so it can remember the dashboard's neural handle for a pulse).
-     It never touches streak.js: it subscribes from the outside. Styles: css/achievements.css.
-     Celebrated badge ids are kept in localStorage `aq.achievements.seen.v1`.
-     On the very first run, badges the user already has are marked as seen silently.
-     `?celebrate=<id>` (e.g. ?celebrate=blaze) forces the modal for testing / demos.
-
-   Public API
-     AQ.achievements.register(defs)   defs: [{ id, name, tier, icon, title?, criteria, number?, isEarned?(stats) }]
-     AQ.achievements.celebrate(badge) badge: { id, name, tier: bronze|silver|gold|legend, icon: flame|star,
-                                              title?, criteria, number?, earnedAt? }  -> queues the modal
-     AQ.achievements.check()          re-evaluates the registered defs against AQ.streak.stats()
-     AQ.achievements.pending()        ids waiting in the queue (for tests / debugging)
-     AQ.achievements.seen()           ids already celebrated
-
-   Start reading at
-     section 4 (evaluate) for "when does it trigger", section 7 (openModal) for the UI.
-   ===================================================================================== */
+   Start reading at:
+     section 4 (evaluate) for "when does it trigger", section 7 (openModal) for the UI,
+     section 11 (register / celebrate) to add a new badge.
+   ===================================================================================================== */
 window.AQ = window.AQ || {};
 (function (AQ) {
   "use strict";
@@ -165,6 +156,7 @@ window.AQ = window.AQ || {};
     for (var a in attrs) n.setAttribute(a, attrs[a]);
     return n;
   }
+  // With reduced motion the medal appears without the spin and no confetti is drawn (CSS .is-calm).
   function reducedMotion() {
     try {
       return matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -192,7 +184,9 @@ window.AQ = window.AQ || {};
     var previousFocus = document.activeElement;
     var titleId = "ach-title-" + uid();
 
-    // 7a. structure: overlay > rays + confetti canvas + dialog (medal + text + buttons)
+    // 7a. structure: overlay > rays + confetti canvas + dialog (medal + text + buttons).
+    // A real modal dialog for screen readers (role=dialog, aria-modal, labelled by the title); focus moves
+    // in, Tab is trapped and focus returns to where it was on close. Badge text goes in with textContent.
     var overlay = el("div", "ach-overlay ach-tier-" + tier + (calm ? " is-calm" : ""));
     overlay.style.setProperty("--ach-accent", palette.accent);
     var rays = el("div", "ach-rays");
@@ -602,6 +596,13 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 11. public API =====
+  /**
+   * Adds badge definitions (a definition with the same id replaces the old one). Each is checked
+   * against AQ.streak.stats() after every streak change.
+   * @param {Object|Object[]} list { id, name, tier: "bronze"|"silver"|"gold"|"legend", icon: "flame"|"star",
+   *   title?, criteria, number?, source?, isEarned?(stats) -> boolean }
+   * @returns {void}
+   */
   function register(list) {
     (Array.isArray(list) ? list : [list]).forEach(function (d) {
       if (!d || !d.id) return;
@@ -611,6 +612,11 @@ window.AQ = window.AQ || {};
       defs.push(d);
     });
   }
+  /**
+   * Queues the celebration modal for a badge, whether or not it was registered.
+   * @param {Object} badge { id, name, tier, icon, title?, criteria, number?, earnedAt? (ISO, defaults to now) }
+   * @returns {void}
+   */
   function celebrate(badge) {
     enqueue(withDate(badge || {}));
   }
@@ -649,19 +655,7 @@ window.AQ = window.AQ || {};
 
   AQ.achievements = {
     register: register,
-    celebrate: celebrate,
-    check: function () {
-      evaluate(false);
-    },
-    pending: function () {
-      return queue.map(function (b) {
-        return b.id;
-      });
-    },
-    seen: function () {
-      return readSeen() || [];
-    },
-    TIERS: Object.keys(TIERS)
+    celebrate: celebrate
   };
 
   // ===== 12. start: first-run silence, ?celebrate=<id>, then watch the streak =====
@@ -671,10 +665,10 @@ window.AQ = window.AQ || {};
     evaluate(firstRun); // first run: mark old badges seen, no modal
     if (AQ.streak && typeof AQ.streak.subscribe === "function") {
       AQ.streak.subscribe(function (evt) {
-        // Silent for: demo seeding, a change synced from another tab (that tab celebrates), and the
-        // first seconds of a first-ever run. Only real activity in this tab shows the modal.
+        // Silent for a change synced from another tab (that tab celebrates) and for the first seconds
+        // of a first-ever run. Only real activity in this tab shows the modal.
         var type = evt && evt.type;
-        evaluate(type === "seed" || type === "sync" || Date.now() < graceUntil);
+        evaluate(type === "sync" || Date.now() < graceUntil);
       });
     }
     var forced = null;
