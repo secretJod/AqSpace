@@ -153,7 +153,7 @@ test("claim: the first Google user takes over all local-user data once, in one g
     "INSERT INTO watch_progress (user_id, video_id, pos_sec, dur_sec, updated_ms) VALUES (1, ?, 10, 60, 1)"
   ).run(VID(1));
   db.prepare(
-    "INSERT INTO notes_jobs (video_id, status, requested_by, created_at, updated_at) VALUES (?, 'done', 1, 'x', 'x')"
+    "INSERT INTO notes_jobs (user_id, video_id, status, requested_by, created_at, updated_at) VALUES (1, ?, 'done', 1, 'x', 'x')"
   ).run(VID(1));
   db.prepare(
     "INSERT INTO smart_runs (playlist_pk, fingerprint, status, requested_by, created_at, updated_at) VALUES (?, 'f', 'done', 1, 'x', 'x')"
@@ -179,6 +179,7 @@ test("claim: the first Google user takes over all local-user data once, in one g
   for (const [tb, c] of [
     ["playlists", "user_id"],
     ["watch_progress", "user_id"],
+    ["notes_jobs", "user_id"],
     ["notes_jobs", "requested_by"],
     ["smart_runs", "requested_by"]
   ]) {

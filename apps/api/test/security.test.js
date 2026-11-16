@@ -247,16 +247,21 @@ test("migrations are idempotent and create the expected tables", async () => {
   const fs = await import("node:fs");
   const files = fs.readdirSync(cfg.sqlDir).filter((f) => /^\d+.*\.sql$/.test(f)).length;
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get().n, files); // each applied exactly once
-  // the "one live job per video" rule is enforced by the database itself
+  // the "one live job per user and video" rule is enforced by the database itself
   db.prepare("INSERT INTO videos (id) VALUES ('aaaaaaaaaaa')").run();
-  const ins = (s) =>
+  db.prepare("INSERT INTO users (id, name) VALUES (2, 'other')").run();
+  const ins = (s, user = 1) =>
     db
-      .prepare("INSERT INTO notes_jobs (video_id, status, created_at, updated_at) VALUES ('aaaaaaaaaaa', ?, 'x', 'x')")
-      .run(s);
+      .prepare(
+        "INSERT INTO notes_jobs (user_id, video_id, status, created_at, updated_at) VALUES (?, 'aaaaaaaaaaa', ?, 'x', 'x')"
+      )
+      .run(user, s);
   ins("running");
   assert.throws(() => ins("done"), /UNIQUE/);
   ins("error");
   ins("error");
+  ins("done", 2); // another user may have their own live job for the same video
+  assert.throws(() => ins("queued", 2), /UNIQUE/);
   db.close();
 });
 

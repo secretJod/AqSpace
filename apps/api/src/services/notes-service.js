@@ -1,11 +1,14 @@
 /* notes-service.js - lecture notes for a video: start them, follow progress, serve the files.
 
-   What:  the Python worker generates the notes; this service remembers each job per video
-          in the `notes_jobs` table so finished notes are reused (a cache shared by all users).
-   How it fits: routes/notes.js calls status() / list() / start() / file().
+   What:  the Python worker generates the notes; this service remembers each job per user and video
+          in the `notes_jobs` table so finished notes are reused by the user who made them.
+   How it fits: routes/notes.js calls status() / list() / start() / file(), always with the signed-in user.
    Rules:
-     - one live job (queued / running / done) per video across all users
-       (a partial unique index in the DB + an in-process lock);
+     - notes are private: every lookup is scoped to the owner (notes_jobs.user_id). Another user's job
+       looks exactly like no job (state "none" / 404) and never shows up in list();
+     - one live job (queued / running / done) per user and video (a partial unique index in the DB +
+       an in-process lock keyed by user and video). Two users who make notes for the same video each
+       get their own worker job;
      - start(): a ready video returns immediately (cached); a running one returns its progress;
        otherwise a new job is started in the worker;
      - jobs on the local model can run for hours (24h videos): nothing here expires or times out a
@@ -40,17 +43,21 @@ const EXPIRED_MESSAGE = "Notes expired - generate again";
  */
 export function createNotesService({ db, repo, py, config, clock = Date.now, onChange = null }) {
   const timings = config.notes;
-  const withLock = createKeyedLock(); // key: videoId
+  const withLock = createKeyedLock(); // key: lockKey(userId, videoId)
+  const lockKey = (userId, videoId) => `${userId}:${videoId}`;
 
   // -------------------------------------------------------------------------
-  // 1. Reading and writing notes_jobs rows
+  // 1. Reading and writing notes_jobs rows (always scoped to the owning user)
   // -------------------------------------------------------------------------
 
-  const findLiveRow = (videoId) =>
-    db.prepare("SELECT * FROM notes_jobs WHERE video_id = ? AND status IN ('queued','running','done')").get(videoId) ||
-    null;
-  const findLastRow = (videoId) =>
-    db.prepare("SELECT * FROM notes_jobs WHERE video_id = ? ORDER BY id DESC LIMIT 1").get(videoId) || null;
+  const findLiveRow = (userId, videoId) =>
+    db
+      .prepare("SELECT * FROM notes_jobs WHERE user_id = ? AND video_id = ? AND status IN ('queued','running','done')")
+      .get(userId, videoId) || null;
+  const findLastRow = (userId, videoId) =>
+    db
+      .prepare("SELECT * FROM notes_jobs WHERE user_id = ? AND video_id = ? ORDER BY id DESC LIMIT 1")
+      .get(userId, videoId) || null;
   const findRowById = (id) => db.prepare("SELECT * FROM notes_jobs WHERE id = ?").get(id);
 
   /** Updates the given columns (and updated_at) of one row, then tells onChange. */
@@ -96,7 +103,7 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
 
   /** The worker lost a queued/running job (restart): submit the same video again so it resumes from its checkpoints. */
   function resume(row) {
-    return withLock(row.video_id, async () => {
+    return withLock(lockKey(row.user_id, row.video_id), async () => {
       const cur = findRowById(row.id);
       if (cur.job_id !== row.job_id || (cur.status !== "queued" && cur.status !== "running")) return cur; // already handled
       if (cur.resumes >= maxResumes()) {
@@ -208,9 +215,9 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
     }
   }
 
-  /** The live row for a video, brought up to date (or null). */
-  async function currentRow(videoId) {
-    const row = findLiveRow(videoId);
+  /** The user's live row for a video, brought up to date (or null). */
+  async function currentRow(userId, videoId) {
+    const row = findLiveRow(userId, videoId);
     if (!row) return null;
     return row.status === "done" ? verify(row) : refresh(row);
   }
@@ -219,20 +226,26 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
   // 3. Public functions (used by routes/notes.js)
   // -------------------------------------------------------------------------
 
-  /** Status for the UI: {state: none|queued|running|ready|error, pct, stage, message, error, jobId}. */
-  async function status(videoId) {
-    const row = await currentRow(videoId);
+  /**
+   * The user's notes status for a video, for the UI: {state: none|queued|running|ready|error, pct, stage, message,
+   * error, jobId}. Another user's notes for the same video are invisible here (state "none").
+   *
+   * @param {{id: number}} user
+   * @param {string} videoId
+   */
+  async function status(user, videoId) {
+    const row = await currentRow(user.id, videoId);
     if (row) return toPublic(videoId, row);
     // Nothing live: show the last error/expiry so the UI can explain it.
-    const last = findLastRow(videoId);
+    const last = findLastRow(user.id, videoId);
     return toPublic(videoId, last && (last.status === "error" || last.status === "expired") ? last : null);
   }
 
-  /** Every record that is queued / running / ready (database only, no calls to the worker). */
-  function list() {
+  /** The user's records that are queued / running / ready (database only, no calls to the worker). */
+  function list(user) {
     return db
-      .prepare("SELECT * FROM notes_jobs WHERE status IN ('queued','running','done') ORDER BY id")
-      .all()
+      .prepare("SELECT * FROM notes_jobs WHERE user_id = ? AND status IN ('queued','running','done') ORDER BY id")
+      .all(user.id)
       .map((row) => toPublic(row.video_id, row));
   }
 
@@ -243,8 +256,8 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
         new HttpError(403, "Add this video to one of your playlists first.", { code: "not_in_playlist" })
       );
     }
-    return withLock(videoId, async () => {
-      const existing = await currentRow(videoId);
+    return withLock(lockKey(user.id, videoId), async () => {
+      const existing = await currentRow(user.id, videoId);
       if (existing && existing.status !== "expired" && existing.status !== "error") {
         return { started: false, status: toPublic(videoId, existing, { cached: true }) };
       }
@@ -255,9 +268,16 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
     });
   }
 
-  /** The finished file for a video: a Response from the worker to stream through. Throws 404 when there is none. */
-  async function file(videoId, kind) {
-    const row = findLiveRow(videoId);
+  /**
+   * The user's finished file for a video: a Response from the worker to stream through.
+   * Throws 404 when the user has no ready notes for it (also when only another user has).
+   *
+   * @param {{id: number}} user
+   * @param {string} videoId
+   * @param {"html" | "pdf"} kind
+   */
+  async function file(user, videoId, kind) {
+    const row = findLiveRow(user.id, videoId);
     if (!row || row.status !== "done") throw new HttpError(404, "Notes are not ready for this video.");
     const res = await py.raw(`/api/jobs/${row.job_id}/notes.${kind}`);
     if (res.status === 404) {
@@ -293,9 +313,9 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
     return Number(
       db
         .prepare(
-          "INSERT INTO notes_jobs (video_id, job_id, status, pct, message, requested_by, created_at, updated_at, checked_at) VALUES (?, ?, 'queued', 0, 'Queued...', ?, ?, ?, ?)"
+          "INSERT INTO notes_jobs (user_id, video_id, job_id, status, pct, message, requested_by, created_at, updated_at, checked_at) VALUES (?, ?, ?, 'queued', 0, 'Queued...', ?, ?, ?, ?)"
         )
-        .run(videoId, jobId, userId, now, now, clock()).lastInsertRowid
+        .run(userId, videoId, jobId, userId, now, now, clock()).lastInsertRowid
     );
   }
 

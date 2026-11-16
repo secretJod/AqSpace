@@ -13,6 +13,7 @@ import { tx } from "./database.js";
 const USER_KEYED = [
   ["playlists", "user_id"],
   ["watch_progress", "user_id"],
+  ["notes_jobs", "user_id"],
   ["notes_jobs", "requested_by"],
   ["smart_runs", "requested_by"]
 ];

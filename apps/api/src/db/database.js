@@ -55,7 +55,8 @@ const BASELINE_PROBES = {
   "002_notes_resumes.sql": (db) => hasColumn(db, "notes_jobs", "resumes"),
   "003_smart_runs.sql": (db) => hasTable(db, "smart_runs"),
   "004_sessions.sql": (db) => hasTable(db, "sessions"),
-  "005_user_picture.sql": (db) => hasColumn(db, "users", "picture")
+  "005_user_picture.sql": (db) => hasColumn(db, "users", "picture"),
+  "006_notes_per_user.sql": (db) => hasColumn(db, "notes_jobs", "user_id")
 };
 /* Migrations that were once shipped under another file name: old name -> current name. smart_runs used to be
    002_smart_runs.sql; a database that recorded that name already has the table, so 003 is recorded as done

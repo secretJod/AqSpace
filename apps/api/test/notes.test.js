@@ -84,7 +84,7 @@ test("ready notes are cached: start returns immediately without a new job; html 
   );
 });
 
-test("another user gets the same cached notes (one job per video across users)", async () => {
+test("another user does not get the first user's notes: each user makes their own job", async () => {
   const two = await startApp({
     py,
     authenticate: (req, _res, next) => {
@@ -98,10 +98,13 @@ test("another user gets the same cached notes (one job per video across users)",
     await two.post("/api/v1/playlists", { name: "P2", videos: [{ id: VID(5) }] }, { "x-user": "2" });
     const a = await two.post(`${N}/${VID(5)}`, undefined, { "x-user": "1" });
     py.state.jobs.get(a.json.jobId).status = "done";
+    assert.equal((await two.get(`${N}/${VID(5)}`, { "x-user": "2" })).json.state, "none");
+    assert.equal((await two.get(`${N}/${VID(5)}/html`, { "x-user": "2" })).status, 404);
     const b = await two.post(`${N}/${VID(5)}`, undefined, { "x-user": "2" });
-    assert.equal(b.json.state, "ready");
-    assert.equal(b.json.cached, true);
-    assert.equal(py.state.jobsCreated.filter((j) => j.body.url.endsWith(VID(5))).length, 1);
+    assert.equal(b.status, 202);
+    assert.notEqual(b.json.jobId, a.json.jobId);
+    assert.equal(py.state.jobsCreated.filter((j) => j.body.url.endsWith(VID(5))).length, 2);
+    assert.equal((await two.get(`${N}/${VID(5)}`, { "x-user": "1" })).json.state, "ready");
   } finally {
     await two.close();
   }

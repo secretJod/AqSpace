@@ -15,14 +15,14 @@ import { pipeFile } from "../utils/pipe-file.js";
 export function notesRoutes(notes, heavyLimiter) {
   const router = Router();
 
-  /** GET /notes - {notes: [status, ...]} for every queued, running or ready video (database only). */
-  router.get("/notes", (_req, res) => {
-    res.json({ notes: notes.list() });
+  /** GET /notes - {notes: [status, ...]} for each of the user's queued, running or ready videos (database only). */
+  router.get("/notes", (req, res) => {
+    res.json({ notes: notes.list(req.user) });
   });
 
-  /** GET /notes/:videoId - the notes status for one video (see notes-service status()). */
+  /** GET /notes/:videoId - the user's notes status for one video (see notes-service status()). */
   router.get("/notes/:videoId", async (req, res) => {
-    res.json(await notes.status(videoId(req.params.videoId)));
+    res.json(await notes.status(req.user, videoId(req.params.videoId)));
   });
 
   /**
@@ -36,14 +36,14 @@ export function notesRoutes(notes, heavyLimiter) {
 
   /** GET /notes/:videoId/html - the finished notes page, streamed from the worker (404 when not ready). */
   router.get("/notes/:videoId/html", async (req, res) => {
-    const upstream = await notes.file(videoId(req.params.videoId), "html");
+    const upstream = await notes.file(req.user, videoId(req.params.videoId), "html");
     // The worker's own CSP allows exactly the inline scripts in the generated page (by hash) - pass it through.
     await pipeFile(res, upstream, ["content-type", "content-security-policy", "content-length"]);
   });
 
   /** GET /notes/:videoId/pdf - the finished notes PDF, streamed from the worker (404 when not ready). */
   router.get("/notes/:videoId/pdf", async (req, res) => {
-    const upstream = await notes.file(videoId(req.params.videoId), "pdf");
+    const upstream = await notes.file(req.user, videoId(req.params.videoId), "pdf");
     await pipeFile(res, upstream, ["content-type", "content-disposition", "content-length"]);
   });
 
