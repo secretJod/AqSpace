@@ -1,62 +1,58 @@
-# Environment variables and secrets
+# Git ignore rules for the whole repository.
+# Everything the app creates at runtime lives in one of the paths below, and
+# scripts/nuke.sh removes all of it.
+
+# Environment files and secrets (only the .example templates are committed)
 .env
 .env.*
 !.env.example
 
-# Dependencies
+# Dependencies and build output
 node_modules/
-
-# Build output
 dist/
+*.egg-info/
+
+# Python caches and virtual environments
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
 
 # Logs
 *.log
 
-# Local IDE and OS files
+# Editor and OS files
 .vscode/
 .DS_Store
 
-# Repo-local app data and caches (see scripts/nuke.sh)
+# Runtime data, caches and scratch space (see scripts/nuke.sh)
 .data/
-.npm-cache/
-
-# Personal Claude Code settings
-.claude/settings.local.json
-
-# AQspace notes app (repo-local runtime, venv and caches; see scripts/nuke.sh)
 .run/
+.npm-cache/
 .pip-cache/
-.venv/
+**/.cache/
+**/.tmp/
 **/output/
+*.db
+apps/api/data/
 apps/worker/backend/output/
 apps/worker/backend/.env
-apps/api/data/
-*.db
-__pycache__/
-.pytest_cache/
-*.egg-info/
 
-# Repo-local GitHub CLI binary + login
+# Repo-local tool binaries and their login state
 .tools/
 .gh-config/
 
-# Agent git worktrees
-.claude/worktrees/
-
-# Local LLM weights (GGUF), several GB, never committed
+# Local model weights (several GB)
 models/
-.run/
-**/.cache/
-**/.tmp/
 
-# #61: notes cache (F4 LNA_CACHE_DIR) and devlogs, explicit
-apps/worker/backend/output/cache/
-apps/api/data/devlogs/
-
-# Playwright MCP output (screenshots, snapshots, downloads)
+# Browser automation output (screenshots, snapshots, downloads)
 .playwright-mcp/
 
-# Internal team workspace (kept on the development machine only)
+# Local-only helper scripts for the project board
+/scripts/gh.sh
+/scripts/board.sh
+
+# Local working notes (kept on the development machine only)
 /.claude/
 /docs/PLAN.md
 /docs/AGENT_JOURNAL.md
