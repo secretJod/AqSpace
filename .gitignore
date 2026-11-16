@@ -55,3 +55,17 @@ aq-api/data/devlogs/
 
 # Playwright MCP output (screenshots, snapshots, downloads)
 .playwright-mcp/
+
+# Internal team workspace (kept on the development machine only)
+/.claude/
+/docs/PLAN.md
+/docs/AGENT_JOURNAL.md
+/docs/ARCHITECTURE.md
+/docs/daily/
+/docs/qa/
+/docs/client/
+/docs/decisions/
+/docs/deploy/
+/docs/upstream/
+/docs/dev-notebook.json
+/docs/AQ-Learning-Dev-Notebook.pdf
