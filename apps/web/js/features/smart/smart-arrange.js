@@ -1,35 +1,38 @@
 /* =====================================================================================================
+   smart-arrange.js - "Smart arrange" and the learning-path drawer (AQ.smart)
+
    What this file does:
-     "Smart arrange": asks the server for the best order of a playlist's videos and missing topics,
-     and shows the result in a drawer on the right side of the playlist page.
+     The playlist name is the learning goal and its videos are what is already covered. One run on the
+     server orders the videos, finds the missing topics and suggests real YouTube videos for them. This
+     file starts and polls that run and shows the result in a drawer on the right of the playlist page
+     (a waiting skeleton while it runs, an error with Retry, or the topics). The drawer is closed on page
+     load and opens by itself when a run the user just started finishes. On wide screens the page shrinks
+     to make room; below 1024px the drawer is an overlay.
 
-   How it fits:
-     app.js calls `AQ.smart.button(playlist)` and `AQ.smart.panel(playlist)` while rendering a playlist.
-     The animation is done by smart-magic.js. The run state is kept here, per playlist id.
+   How it talks to the server:
+     Through AQ.api.request only (the API in apps/api asks the worker; the UI never calls the worker).
+       POST /api/v1/playlists/<id>/smart   start a run (200 cached result, 202 started)
+       GET  /api/v1/playlists/<id>/smart   latest run: {state: none|queued|running|ready|error, pct, stage,
+                                           error, current, generatedAt, result, usage}
+     The full contract is in apps/worker/docs/smart-playlist-contract.md.
 
-   Start reading at:
-     "run state" (`start()`, `tick()`), then `panel()` and `paintDock()` near the end.
+   Run state:
+     Kept at module level per playlist id, not in the DOM, so app.js may rebuild the page at any time
+     without losing a running poll or starting a second one. The button and the panel register as views
+     and are repainted when the run changes; views that left the page are dropped. Polling stops when the
+     user leaves the playlist (the server keeps the run, and coming back reads it again).
+
+   Depends on:
+     AQ.util, AQ.store, AQ.api and AQ.smartmagic (smart-magic.js, loaded before this file). app.js calls
+     init() once, then button() and panel() while it renders a playlist page.
+
+   Security:
+     All server text is written with textContent, never innerHTML, and YouTube ids are validated before
+     any URL is built from them.
+
+   Read next:
+     Section 2 (`start()`, `tick()`), then `panel()` and `paintDock()` near the end; smart-magic.js for the animation.
    ===================================================================================================== */
-
-/* AQspace - smart playlist: the "Smart arrange" button + the learning-path panel on the playlist detail screen.
-
-   The playlist name is the learning goal, its videos are what is already covered. One run (aq-api, which asks the Python worker)
-   orders the videos, finds the missing topics and suggests real YouTube videos for them. Contract: lecture-notes-ai/docs/smart-playlist-contract.md
-     POST /api/v1/playlists/<id>/smart   start (200 cached / 202 started)
-     GET  /api/v1/playlists/<id>/smart   latest run: { state: none|queued|running|ready|error, pct, stage, error, current, generatedAt, result, usage }
-
-   API (used by app.js):
-     AQ.smart.init({ toast, announce })   the page's toast + live-region helpers (kept private in app.js)
-     AQ.smart.button(playlist)            -> liquid-glass <button class="wbtn smart-wbtn"> (smart-magic.js; click = start a run + the 3 s charge / burst / row glide)
-     AQ.smart.panel(playlist)             -> <div class="smart"> placeholder (empty, display:none; only a hint note in rare cases). The learning path
-                                             itself lives in a RIGHT-SIDE DRAWER (one per page, in <body>) with a slim handle on the right edge: waiting
-                                             skeleton while running, error + Retry, or the topics. Closed on page load; it opens by itself when a run the
-                                             user just started finishes. On wide screens the page content shrinks to make room, below 1024px it is an overlay.
-
-   Run state lives at module level (per playlist id), NOT in the DOM, so render() may rebuild the page at any time without losing a
-   running poll or starting a second one. The button and panel register as views and are repainted when the run changes; views that
-   left the DOM are dropped. Polling stops when the user leaves the playlist (the server keeps the run; coming back reads it again).
-   All server text is written with textContent (never innerHTML); YouTube ids are validated before any URL is built. */
 (function () {
   "use strict";
   var AQ = (window.AQ = window.AQ || {});
@@ -131,7 +134,7 @@
     return r.posting || r.holding || r.state === "queued" || r.state === "running";
   } // holding = the magic sequence (smart-magic.js) has not revealed yet
 
-  /** JSON request against aq-api, always through api.js (one base URL, one timeout policy; no direct calls to the Python worker). */
+  /** JSON request against the API, always through api.js (one base URL, one timeout policy; no direct calls to the worker). */
   function request(method, path, body) {
     if (!AQ.api || typeof AQ.api.request !== "function") return Promise.reject(new Error("api.js not loaded"));
     return AQ.api.request(method, path, body, { timeout: 20000 });
@@ -481,6 +484,12 @@
     };
   }
 
+  /**
+   * The "Smart arrange" button for a playlist page. A click starts a run and plays the charge, burst and
+   * row-glide animation of smart-magic.js; the button repaints itself as the run changes.
+   * @param {{id: string, videos: Array}} playlist The playlist on screen.
+   * @returns {HTMLButtonElement} A liquid-glass button (`.wbtn.smart-wbtn`).
+   */
   function button(playlist) {
     var pid = playlist.id,
       magic = AQ.smartmagic,
@@ -1383,7 +1392,8 @@
     d.host.appendChild(d.drawer);
     d.host.appendChild(d.handle);
     d.drawer.addEventListener("keydown", function (e) {
-      // overlay mode: Tab stays inside the sheet
+      // Accessibility: as an overlay the sheet covers the page, so Tab cycles inside it (a focus trap) instead
+      // of moving to controls the user cannot see. On wide screens the page stays usable, so no trap there.
       if (e.key !== "Tab" || WIDE.matches) return;
       var f = Array.prototype.filter.call(
         d.drawer.querySelectorAll('a[href], button:not([disabled]), summary, [tabindex="0"]'),
@@ -1591,6 +1601,13 @@
     } // a repaint must not drop the keyboard user's place
   }
 
+  /**
+   * The learning-path placeholder for a playlist page. The visible content lives in one shared drawer
+   * appended to <body>; the placeholder ties that drawer to this page (it hides with the placeholder,
+   * for example while the notes split view is open) and loads the latest run.
+   * @param {{id: string}} playlist The playlist on screen.
+   * @returns {HTMLDivElement} An empty `.smart` element to place on the page.
+   */
   function panel(playlist) {
     var pid = playlist.id,
       r = runOf(pid);
@@ -1637,7 +1654,11 @@
     return root;
   }
 
-  /** Hand over the page's toast + live-region helpers (they are private to app.js). */
+  /**
+   * Hand over the page's toast and live-region helpers, which are private to app.js.
+   * @param {{toast?: function(string, string=, function=): void, announce?: function(string): void}} h
+   * @returns {void}
+   */
   function init(h) {
     if (h && typeof h.toast === "function") hooks.toast = h.toast;
     if (h && typeof h.announce === "function") hooks.announce = h.announce;

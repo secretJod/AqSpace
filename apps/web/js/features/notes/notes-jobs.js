@@ -1,34 +1,31 @@
 /* =====================================================================================================
+   notes-jobs.js - "Get notes" jobs: start, poll and remember them (AQ.notesJobs)
+
    What this file does:
-     Keeps track of "Get notes" jobs: starts them on the notes server, polls their progress and
-     remembers finished notes (localStorage `aq.notes.v1`).
+     Starts a notes job for a video through the API, polls its progress and remembers which videos
+     have finished notes. It is the single source of truth for notes state: the notes button, the
+     notes panel and the video rows all read `status(videoId)` and listen with `subscribe(fn)`.
 
-   How it fits:
-     `AQ.notesJobs` is the shared source of truth: note-button.js, notes-view.js and the player all read
-     `status(videoId)` and `subscribe(fn)` for live updates. Uses aq-api when `AQ.api.available()`.
+   Depends on:
+     AQ.util (ID_RE) and AQ.api (base, available(), ready(), flush()). Loaded after api.js and before
+     note-button.js and notes-view.js.
 
-   Start reading at:
-     `start()` in "starting", then `postJob()` and `poll()`.
+   How it talks to the server:
+     Only through the API's /api/v1/notes/* endpoints (apps/api), which hand the work to the worker.
+     The server keeps one job per video and caches finished notes, so a video that is already "ready"
+     comes back at once. Without a reachable API every job fails with OFFLINE_MSG.
+
+   Storage:
+     {videoId: {jobId, state}} is kept in localStorage (`aq.notes.v1`) so queued and running jobs resume
+     polling after a reload and ready ones are re-checked lazily (the server may have dropped them).
+     At most MAX_RUNNING jobs run at once (the server's limit); extra videos wait here until a slot frees.
+
+   Read next:
+     `start()` in section 3, then `postJobServer()` and `poll()`. note-button.js draws the state.
    ===================================================================================================== */
-
-/* AQspace - notes jobs manager for the Lecture Notes AI server (http://127.0.0.1:5055).
-
-   AQ.notesJobs (the shared brain; rows, the player and the notes button all read it):
-     status(videoId)      -> {state:'none'|'queued'|'running'|'ready'|'error', pct:0-100, stage, message, jobId, error}
-     start(video)         -> starts a job unless one is already queued / running / ready ({id,title})
-     retry(videoId)       -> forget the old result and start again
-     subscribe(fn)        -> fn(videoId, status) on every change; returns an unsubscribe function
-     urls(videoId)        -> {html, pdf} (aq-api URLs) or null unless the notes are ready
-
-   Jobs live in the server's memory (a restart loses them -> 404), so {videoId:{jobId,state}} is kept in localStorage
-   (`aq.notes.v1`), queued / running jobs resume polling after a reload and ready ones are re-checked lazily.
-   At most 2 jobs run at once (the server's limit); extra videos wait client-side and start as slots free up.
-
-   AQ.notes.mount(container, video) - small panel used by the player dialog (button + download link). */
 (function () {
   "use strict";
-  var u = AQ.util,
-    el = u.el;
+  var u = AQ.util;
 
   var KEY = "aq.notes.v1";
   var JOB_RE = /^[a-f0-9]{32}$/;
@@ -45,8 +42,7 @@
   var posting = 0; // POSTs in flight
   var tickTimer = null;
 
-  /* Notes go through aq-api's /api/v1/notes/* endpoints only. The server keeps one job per video for everybody and caches
-     finished notes, so a video that is already "ready" comes back immediately. When aq-api is unreachable, jobs fail with OFFLINE_MSG. */
+  /* True once the API answered its health probe. Notes need the server: there is no offline mode. */
   function serverMode() {
     return !!(AQ.api && AQ.api.available && AQ.api.available());
   }
@@ -65,6 +61,8 @@
   }
 
   // ===== 1. persistence =====
+  // Only ready / queued / running entries are saved; errors are per session. Every storage call is wrapped
+  // in try/catch because localStorage throws in private mode or when it is full, and the app must keep working.
   function save() {
     try {
       var out = {};
@@ -134,6 +132,13 @@
       error: e.error || ""
     };
   }
+  /**
+   * Current notes state of a video. A "ready" entry restored from localStorage is re-checked with
+   * the server the first time it is read.
+   * @param {string} id YouTube video id.
+   * @returns {{state: string, pct: number, stage: string, message: string, jobId: (string|null), error: string}}
+   *   state is one of "none", "queued", "running", "ready", "error"; pct is 0-100.
+   */
   function status(id) {
     var e = entries[id];
     if (e && e.needsCheck) {
@@ -142,12 +147,22 @@
     }
     return snapshot(id);
   }
+  /**
+   * Links to the finished notes of a video.
+   * @param {string} id YouTube video id.
+   * @returns {{html: string, pdf: string}|null} API URLs, or null unless the notes are ready and the API is reachable.
+   */
   function urls(id) {
     var e = entries[id];
     if (!e || e.state !== "ready" || !e.jobId) return null;
     if (!serverMode()) return null;
     return { html: nurl(id) + "/html", pdf: nurl(id) + "/pdf" };
   }
+  /**
+   * Listen for notes state changes of any video.
+   * @param {function(string, object): void} fn Called with (videoId, status) after every change.
+   * @returns {function(): void} Call it to stop listening.
+   */
   function subscribe(fn) {
     listeners.push(fn);
     return function () {
@@ -168,6 +183,11 @@
   }
 
   // ===== 3. starting =====
+  /**
+   * Queue a notes job for a video. Does nothing while a job for it is queued, running or ready.
+   * @param {{id: string, title?: string}} video The video; the id must be a valid YouTube id.
+   * @returns {void}
+   */
   function start(video) {
     var id = video && video.id;
     if (!id || !u.ID_RE.test(id)) return;
@@ -180,6 +200,11 @@
     changed(id);
     pump();
   }
+  /**
+   * Forget the previous result (usually an error) and start the job again.
+   * @param {string} id YouTube video id.
+   * @returns {void}
+   */
   function retry(id) {
     var e = entries[id],
       video = (e && e.video) || { id: id };
@@ -200,7 +225,7 @@
     });
     return n;
   }
-  var apiSettled = true; // false until api.js has found (or failed to find) aq-api (see the end of this file)
+  var apiSettled = true; // false until api.js has found (or failed to find) the API (see the end of this file)
   function pump() {
     if (!apiSettled) return;
     while (waiting.length && serverActive() < MAX_RUNNING) postJob(waiting.shift());
@@ -406,49 +431,8 @@
       });
   }
 
-  // ===== 5. player dialog panel =====
-  function mount(box, video) {
-    box.textContent = "";
-    box.className = "notes";
-    box.appendChild(
-      el(
-        "p",
-        null,
-        "We send this lecture to the AQspace server and build a hand-drawn notes notebook. It usually takes a few minutes, and you can close this window while it works."
-      )
-    );
-    var row = el("div", "modal__row");
-    var b = AQ.noteButton(video, {
-      onView: function () {
-        var l = urls(video.id);
-        if (l) window.open(l.html, "_blank", "noopener");
-      }
-    });
-    row.appendChild(b);
-    var pdf = el("a", "btn btn--ghost btn--sm", "Download PDF");
-    pdf.target = "_blank";
-    pdf.rel = "noopener noreferrer";
-    pdf.hidden = true;
-    row.appendChild(pdf);
-    function sync() {
-      var l = urls(video.id);
-      pdf.hidden = !l;
-      if (l) pdf.href = l.pdf;
-    }
-    var off = subscribe(function (id) {
-      if (!box.isConnected) {
-        off();
-        return;
-      }
-      if (id === video.id) sync();
-    });
-    sync();
-    box.appendChild(row);
-  }
-
   load();
   AQ.notesJobs = { status: status, start: start, subscribe: subscribe, urls: urls, retry: retry };
-  AQ.notes = { mount: mount };
 
   // resume anything that was in flight when the page was closed
   function resume() {
@@ -468,7 +452,7 @@
   if (!AQ.api || !AQ.api.ready) {
     resume();
   } else {
-    // wait until we know whether aq-api is there (it answers in well under a second on localhost, 1.5 s at most per probe)
+    // wait until we know whether the API is there (it answers in well under a second on localhost, 1.5 s at most per probe)
     apiSettled = false;
     AQ.api.ready().then(function () {
       apiSettled = true;

@@ -1,24 +1,27 @@
 /* =====================================================================================================
+   import-playlist.js - the "Import from YouTube" dialog (AQ.importPlaylist)
+
    What this file does:
-     The "Import from YouTube" dialog: paste a playlist link, preview it, save it as a new playlist.
+     Paste a YouTube playlist link, preview it, then save it as a new playlist. Imported playlists are
+     copies: they are stored with AQ.store.createWithVideos (source {type: "youtube", listId}) and nothing
+     syncs back from YouTube later.
 
-   How it fits:
-     Opened by the button on the home screen (app.js). Saves with `AQ.store.createWithVideos(...)`.
+   How it talks to the server:
+     Only through the API (apps/api), which asks the worker to read the playlist:
+       GET <AQ.api.base>/api/v1/import/youtube?url=<link>
+       -> {id, title, channel, count, videos: [{id, title, channel, duration_sec}], truncated, skipped}
+     cleanResponse() checks every field of that answer before anything reaches the page.
 
-   Start reading at:
-     `open()` in the "dialog" section.
+   Depends on:
+     AQ.util, AQ.store (LIMITS, nameTaken, createWithVideos, clock), AQ.dialog and AQ.api.
+     app.js opens it from the button on the home screen.
+
+   Security:
+     All text from YouTube is untrusted, so it is written with textContent and DOM APIs only, never innerHTML.
+
+   Read next:
+     `open()` in section 3; store.js createWithVideos() for how the playlist is saved.
    ===================================================================================================== */
-
-/* AQspace - "Import from YouTube" dialog (playlist link -> preview -> new local playlist).
-
-   AQ.importPlaylist.open(opener)         opens the dialog (focus returns to `opener` when it closes)
-   AQ.importPlaylist.uniqueName(title)    free playlist name for `title` ("Title", else "Title (2)", "Title (3)"...), <= LIMITS.name
-   AQ.importPlaylist.cleanResponse(data)  validates / normalises aq-api's /api/v1/import/youtube JSON (null when unusable)
-
-   Talks to aq-api only: GET <AQ.api.base>/api/v1/import/youtube?url=<link> (aq-api proxies the notes engine)
-   -> {id, title, channel, count, videos:[{id, title, channel, duration_sec}], truncated, skipped}.
-   Imported playlists are local copies (stored via AQ.store.createWithVideos with source {type:"youtube", listId}); nothing syncs back.
-   All text is written with textContent / DOM APIs (never innerHTML). */
 (function () {
   "use strict";
   var u = AQ.util,
@@ -55,7 +58,8 @@
     return base.slice(0, max - 6) + " (" + (Date.now() % 100000) + ")";
   }
 
-  /** Validate the server response: only well-formed videos survive, durations become "m:ss" / "h:mm:ss". */
+  /** Validate the server response: only well-formed videos survive (ids must match AQ.util.ID_RE, text is
+      trimmed to the store limits), durations become "m:ss" / "h:mm:ss". Returns null when the answer is unusable. */
   function cleanResponse(d) {
     if (
       !d ||
@@ -107,6 +111,8 @@
     return sec ? u.humanDuration(sec) + (unknown ? "+" : "") : "";
   }
 
+  // Screen readers hear progress through the shared polite live region; clearing it first makes a repeated
+  // message ("Preview ready") be read again.
   function announce(text) {
     var live = u.$("#live");
     if (!live) return;
@@ -181,6 +187,11 @@
   }
 
   // ===== 3. dialog =====
+  /**
+   * Open the import dialog.
+   * @param {HTMLElement} [opener] Element that gets focus back when the dialog closes.
+   * @returns {void}
+   */
   function open(opener) {
     var L = S.LIMITS;
     var current = null; // cleaned preview data once fetched
@@ -477,5 +488,5 @@
     return d;
   }
 
-  AQ.importPlaylist = { open: open, uniqueName: uniqueName, cleanResponse: cleanResponse };
+  AQ.importPlaylist = { open: open };
 })();

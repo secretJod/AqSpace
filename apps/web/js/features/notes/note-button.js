@@ -1,26 +1,22 @@
 /* =====================================================================================================
+   note-button.js - the "Get notes" button (AQ.noteButton)
+
    What this file does:
-     The "Get notes" button that turns into a progress bar and then into "View notes".
+     One button that follows a video's notes job through every state:
+       none            "Get notes" (doc icon); a click starts a job
+       queued/running  a silver fill grows with the percentage and the label names the stage
+                       ("Writing notes… 42%"); a shimmer shows while the percentage is unknown
+       ready           when it has just finished: the fill completes, a light sweeps, a check draws and the
+                       button morphs into the white "View notes" button; a click calls onView(video)
+       error           "Retry", with the message in the tooltip
 
-   How it fits:
-     `AQ.noteButton(video, opts)` is used by video rows (app.js), the player and notes-view.js.
-     It reads `AQ.notesJobs` and re-draws itself whenever the job changes.
+   Depends on:
+     AQ.util (el, icon) and AQ.notesJobs (notes-jobs.js), so it loads after both. Styles: `.nbtn` in css/styles.css.
+     Used by the video rows (app.js) and the notes panel (notes-view.js).
 
-   Start reading at:
-     `noteButton()` and its inner `render()`.
+   Read next:
+     `noteButton()` and its inner `render()`; the job states come from notes-jobs.js.
    ===================================================================================================== */
-
-/* AQspace - the "Get notes" button.
-
-   AQ.noteButton(video, { onView(video) }) -> <button class="nbtn">
-   Renders from AQ.notesJobs.status(video.id) and updates live:
-     none            "Get notes" (doc icon); click starts a job
-     queued/running  progressive button: a silver fill grows left -> right with the percentage, label "Preparing notes... 42%"
-                     (stage-aware), shimmer while the percentage is unknown; role=progressbar + aria-valuenow + aria-busy
-     ready           when it just finished: fill completes, a soft light sweep, a check draws, then it morphs into the white
-                     "View notes" button; click -> onView(video)
-     error           "Retry" with the message in the tooltip
-   The subscription is released automatically when the button leaves the DOM (or call button.dispose()). */
 (function () {
   "use strict";
   var u = AQ.util,
@@ -76,7 +72,8 @@
   }
 
   // ===== 3. Cleaning up buttons that were removed from the page =====
-  /* release buttons that left the DOM (checked once per burst of DOM changes) */
+  /* Screens re-render by replacing their DOM, so nobody calls dispose() by hand. Instead a MutationObserver
+     releases the subscription of every button that has left the page (checked once per burst of DOM changes). */
   function sweep() {
     sweeper = null;
     registry.slice().forEach(function (r) {
@@ -95,7 +92,13 @@
   }
 
   // ===== 4. The button =====
-  // Builds the button once; render() then updates it every time the job status changes.
+  /**
+   * Build a notes button for one video. It renders from AQ.notesJobs.status(video.id) and updates live;
+   * its subscription is released when it leaves the page, or earlier with `button.dispose()`.
+   * @param {{id: string, title?: string}} video The video the button belongs to.
+   * @param {{onView?: function(object): void}} [opts] onView runs on "View notes"; without it the notes open in a new tab.
+   * @returns {HTMLButtonElement} The button, with an extra `dispose()` method.
+   */
   function noteButton(video, opts) {
     opts = opts || {};
     var jobs = AQ.notesJobs;
@@ -151,6 +154,8 @@
       btn.title = "";
       btn.removeAttribute("data-phase");
 
+      // While busy the button acts as a progress bar for screen readers (role, aria-value*, aria-busy) and is
+      // aria-disabled rather than disabled, so it keeps focus and its label is still announced.
       if (busy) {
         var known = st.pct > 0;
         btn.dataset.state = "busy";
@@ -176,6 +181,7 @@
 
       if (state === "ready") {
         btn.setAttribute("aria-label", "View notes for " + (video.title || "this lecture"));
+        // The finishing animation is skipped for users who ask the OS for reduced motion.
         if (animate && !reduced()) {
           // completion: fill finishes -> light sweep + check draws -> morph into the white "View notes" button
           btn.dataset.state = "busy";

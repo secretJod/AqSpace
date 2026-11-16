@@ -1,37 +1,29 @@
 /* =====================================================================================================
+   smart-magic.js - the visuals of "Smart arrange" (AQ.smartmagic)
+
    What this file does:
-     The visuals of "Smart arrange": the glowing button, the charge / burst animation and the
-     rows gliding into their new order. Styles live in css/smart-magic.css.
+     Drives the look of one Smart arrange click. The run itself (POST and polling) stays in
+     smart-arrange.js; this file only animates around it and says when to reveal the result:
+       charge   at least 3 s, and until the run is ready: the sparkle spins up, a purple/pink glow gathers
+                under the glass and small motes are pulled into the button (one fixed canvas, pooled particles)
+       burst    a shock ring and particles leave the button, the button pops and the playlist's video rows
+                glide to the recommended order (FLIP, staggered, about 600 ms); moved rows glow briefly
+       reveal   once the glide is done smart-arrange.js shows the drawer and the "Undo" toast
+     A cached result still shows the full 3 s. An error skips the burst and lets smart-arrange.js show it.
+     Nothing runs unless a sequence is active: the animation loop and the canvas go away when it ends,
+     when the user leaves the playlist or when the button is gone.
 
-   How it fits:
-     Only smart-arrange.js uses it (through `AQ.smartmagic`). It never talks to the server itself.
+   Reduced motion:
+     With prefers-reduced-motion there is no spin, no motes, no burst and no glide: the 3 s wait is
+     skipped and the rows simply jump to their new order.
 
-   Start reading at:
-     `begin()`, `finish()` and `tick()` in "the sequence".
+   Depends on:
+     AQ.water (water-button.js) for the liquid-glass button. Only smart-arrange.js uses this file, and it
+     never talks to the server. Styles: css/smart-magic.css.
+
+   Read next:
+     `begin()`, `finish()` and `tick()` in section 4; `flip()` in section 2 for the row glide.
    ===================================================================================================== */
-
-/* AQspace - "Smart arrange" magic: the glass button + the click choreography (smart-magic.css has the looks).
-
-   One Smart arrange click runs this sequence (the real run itself - POST / poll - stays in smart-arrange.js; this file only drives visuals
-   from it and tells smart-arrange.js when to reveal):
-     charge   >= 3 s, and until the run is ready: the sparkle spins up, a purple/pink glow gathers under the glass and small
-              silver / purple motes are pulled into the button (one fixed canvas, a pooled handful of particles).
-     burst    a shock ring + particles leave the button (+ the global silver click spark), the button pops, and the playlist's
-              video rows glide to the recommended order (FLIP, staggered, ~600 ms), the moved rows glow briefly.
-     reveal   when the glide is done smart-arrange.js shows the panel and the toast ("Videos arranged for ...", Undo).
-   A cached result still shows the whole 3 s. An error skips the burst (calm: smart-arrange.js shows the error + Retry).
-   Nothing runs unless a sequence is active; the rAF loop and the canvas go away when it ends, when the user leaves the playlist
-   or when the button is gone. prefers-reduced-motion: no spin / motes / burst / glide - the 3 s is skipped and the order jumps.
-
-   API (used by smart-arrange.js):
-     AQ.smartmagic.button(pid, iconNode, onClick)  -> <button class="wbtn smart-wbtn"> (AQ.water liquid glass; click -> onClick)
-     AQ.smartmagic.paint(pid, btn)                 re-apply the sequence look to a (re-created) button
-     AQ.smartmagic.begin(pid, cb)                  the user started a run. cb = { reorder(flip) -> {state, ms, ...}, reveal(res), abort(), paint() }
-     AQ.smartmagic.finish(pid, ok)                 the run ended (ok = a usable result is in); burst once the 3 s have passed
-     AQ.smartmagic.abort(pid)                      the user left: drop everything, no reorder
-     AQ.smartmagic.phase(pid)                      "" | "charge" | "burst"
-     AQ.smartmagic.flip(fn) -> ms                  run fn() (a store reorder that re-renders the page) and glide the video rows
-                                                   from where they were to where they are now */
 (function () {
   "use strict";
   var AQ = (window.AQ = window.AQ || {});
@@ -76,6 +68,14 @@
     return !!(b && b.isConnected && b.getClientRects().length);
   }
 
+  /**
+   * Create the Smart arrange button for a playlist. Several may exist briefly while the page re-renders;
+   * the newest connected one is the one that gets animated.
+   * @param {string} pid Playlist id.
+   * @param {Node} iconNode Icon shown before the label.
+   * @param {function(): void} onClick Runs when the button is activated.
+   * @returns {HTMLButtonElement} A `.wbtn.smart-wbtn` liquid-glass button.
+   */
   function button(pid, iconNode, onClick) {
     var b = AQ.water.button("Smart arrange", {
       iconNode: iconNode,
@@ -93,7 +93,13 @@
     return b;
   }
 
-  /** Classes + custom properties of one button for the current phase (cheap: only changed values are written). */
+  /**
+   * Apply the current phase's classes and custom properties (--ch, --sp, --bf) to a button, for example
+   * one that was just re-created by a page re-render.
+   * @param {string} pid Playlist id.
+   * @param {HTMLElement} b The button.
+   * @returns {void}
+   */
   function paint(pid, b) {
     var s = seqs[pid],
       ph = s ? s.phase : "";
@@ -128,14 +134,20 @@
     return document.querySelector("#view .vlist");
   }
 
+  /**
+   * Run a store reorder and glide the video rows from their old places to their new ones (FLIP).
+   * Without animation support or with reduced motion the rows simply jump.
+   * @param {function(): void} fn The reorder; it re-renders the page synchronously.
+   * @param {number} [lead] Milliseconds to wait before the first row moves (while the list scrolls into view).
+   * @returns {number} How long the glide takes in ms (0 when nothing animates).
+   */
   function flip(fn, lead) {
-    // lead: ms to wait before the first row moves (the page is scrolling the list into view)
     var list = listEl(),
       first = list && !reduced() ? rowRects(list) : null;
     fn(); // the store reorder: the page re-renders (synchronously, new nodes)
     if (!first) return 0;
     list = listEl();
-    if (!list || typeof list.animate !== "function") return 0; // old browser: the rows simply jump
+    if (!list || typeof list.animate !== "function") return 0; // no Web Animations support: the rows simply jump
     var moved = [];
     Array.prototype.forEach.call(list.children, function (li) {
       var f = first[li.getAttribute("data-vid")];
@@ -488,6 +500,14 @@
     s.raf = requestAnimationFrame(s.step);
   }
 
+  /**
+   * Start the charge phase because the user started a run.
+   * @param {string} pid Playlist id.
+   * @param {{reorder: function(function): object, reveal: function(object): void, abort: function(): void, paint: function(): void}} cb
+   *   Hooks back into smart-arrange.js: reorder(flip) applies the new order and returns {state, ms},
+   *   reveal(res) shows the result, abort() cleans up, paint() repaints the button label.
+   * @returns {boolean} false when a sequence for this playlist is already running.
+   */
   function begin(pid, cb) {
     if (seqs[pid]) return false;
     var s = (seqs[pid] = {
@@ -520,6 +540,13 @@
     return true;
   }
 
+  /**
+   * The run has ended. With a usable result the burst follows once the 3 s charge has passed;
+   * on an error the sequence ends quietly.
+   * @param {string} pid Playlist id.
+   * @param {boolean} ok Whether a usable result is in.
+   * @returns {void}
+   */
   function finish(pid, ok) {
     var s = seqs[pid];
     if (!s || s.ok !== undefined) return;
@@ -549,6 +576,11 @@
     }
   }
 
+  /**
+   * Drop the sequence without reordering, for example because the user left the playlist.
+   * @param {string} pid Playlist id.
+   * @returns {void}
+   */
   function abort(pid) {
     var s = seqs[pid];
     if (!s) return;
@@ -572,6 +604,11 @@
     finish: finish,
     abort: abort,
     flip: flip,
+    /**
+     * Current phase of a playlist's sequence.
+     * @param {string} pid Playlist id.
+     * @returns {string} "" when idle, "charge" or "burst".
+     */
     phase: function (pid) {
       return seqs[pid] ? seqs[pid].phase : "";
     }

@@ -1,12 +1,18 @@
-/* What this file styles:
-   Looks of the "Smart arrange" button and its charge / burst animation (js/features/smart/smart-magic.js).
-   Linked from index.html (order matters: see README.md). */
+/* =====================================================================================================
+   smart-magic.css - the "Smart arrange" button and its charge / burst animation
 
-/* smart: button + magic (smart-magic.js).
-   The Smart arrange button is the liquid-glass lens from water-button.js (.wbtn), 42px like its siblings on the playlist screen.
-   Idle = plain glass + a white four-point sparkle (quiet twinkle). Charging / burst add a purple->pink back-light and ring that
-   follow three custom properties the script writes each frame: --ch (charge 0..1), --sp (spin, deg), --bf (burst flash 0..1).
-   Nothing here changes layout. */
+   What it styles:
+     The button is the liquid-glass lens from water-button.js (.wbtn), 42px high like its siblings on the
+     playlist page. Idle it is plain glass with a white four-point sparkle. While charging and bursting a
+     purple-to-pink back-light and ring follow three custom properties that smart-magic.js writes every
+     frame: --ch (charge 0..1), --sp (spin in degrees) and --bf (burst flash 0..1). Nothing here changes layout.
+
+   Depends on:
+     Tokens from styles.css and the .wbtn rules there; loaded right after styles.css in index.html.
+
+   Read next:
+     js/features/smart/smart-magic.js (who sets the classes and variables); the reduced-motion block at the end.
+   ===================================================================================================== */
 .wbtn.smart-wbtn {
   height: 42px;
   padding: 0 22px 0 18px;
@@ -143,6 +149,8 @@
     flex: 1 1 calc(50% - 10px);
   }
 }
+/* Reduced motion: no particle canvas, no sparkle spin and no landing glow. The script also skips the
+   charge wait and the row glide, so the new order simply appears. */
 @media (prefers-reduced-motion: reduce) {
   .smart-fx {
     display: none !important;

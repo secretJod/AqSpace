@@ -1,21 +1,18 @@
 /* =====================================================================================================
+   notes-view.js - the content of the notes panel (AQ.notesView)
+
    What this file does:
-     The notes panel content: header (title, Download PDF, Open in new tab, Close) and the notes
-     notebook shown in an iframe once ready.
+     Draws a header (title, channel, Download PDF, Open in new tab, Close) and a body that shows the
+     finished notes page in an iframe, or the notes button with its progress while the notes are not ready.
 
-   How it fits:
-     `AQ.notesView.mount(container, video, opts)` is called by split-view.js.
+   Depends on:
+     AQ.util, AQ.notesJobs (status, subscribe, urls, start, retry) and AQ.noteButton. The two notes
+     pieces are optional: every call is guarded, so the panel still renders without them.
+     The API must allow this origin to frame the notes page (CSP frame-ancestors).
 
-   Start reading at:
-     `mount()`.
+   Read next:
+     `mount()`. split-view.js opens the panel that hosts this view; notes-jobs.js owns the job state.
    ===================================================================================================== */
-
-/* AQspace - center notes panel content.
-   AQ.notesView.mount(container, video, { onClose }) -> { destroy() }
-   Renders a header (title, channel, Download PDF, Open in new tab, Close) and a body that shows the generated notebook
-   (notes.html from the notes server) in an iframe once ready, or the progressive AQ.noteButton while it is not.
-   Depends on C1's AQ.notesJobs {status, subscribe, urls, start} and AQ.noteButton(video, {onView}); both are guarded.
-   The notes server must allow framing of notes.html by this origin (CSP frame-ancestors, see server.py). */
 (function () {
   "use strict";
   var AQ = (window.AQ = window.AQ || {});
@@ -74,11 +71,19 @@
     svg.appendChild(p);
     return svg;
   }
-  // absolute http(s) URLs, or same-origin paths ("/api/v1/..." when the UI is served by aq-api); never "//host" or other schemes
+  // Security: these URLs end up in href and iframe src, so only absolute http(s) URLs and same-origin paths
+  // ("/api/v1/..." when the UI is served by the API) pass. "javascript:", "data:" and "//host" are rejected.
   function safeUrl(s) {
     return typeof s === "string" && (/^https?:\/\//i.test(s) || /^\/(?!\/)/.test(s)) ? s : "";
   }
 
+  /**
+   * Render the notes panel for one video into a container and keep it in sync with its notes job.
+   * @param {HTMLElement} container Where the panel is appended.
+   * @param {{id: string, title: string, channel?: string}} video The video whose notes are shown.
+   * @param {{onClose?: function(): void}} [opts] onClose runs when the Close button is pressed.
+   * @returns {{destroy: function(): void}} destroy() stops live updates, blanks the iframe and removes the panel.
+   */
   function mount(container, video, opts) {
     opts = opts || {};
     var root = el("section", "nview");
@@ -148,6 +153,7 @@
       var skel = el("div", "nview__skeleton");
       skel.setAttribute("aria-hidden", "true");
       for (var i = 0; i < 3; i++) skel.appendChild(el("span", "nview__sheet"));
+      // a screen-reader-only status line, because the skeleton and the fade-in are purely visual
       var status = el("p", "sr", "Loading notes");
       status.setAttribute("role", "status");
       var frame = el("iframe", "nview__frame");

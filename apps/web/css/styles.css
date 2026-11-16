@@ -1,13 +1,24 @@
-/* What this file styles:
-   Base styles for the whole app: colours, typography, top bar, buttons, dialog, playlist cards,
-   playlist detail rows, split view, notes button and the liquid-glass button. Loaded first.
-   Linked from index.html (order matters: see README.md). */
+/* =====================================================================================================
+   styles.css - base styles for the whole app
 
-/* ============================================================
-   AQspace - playlists app UI. All-black. Restyle by editing the tokens below.
-   Sections: tokens | base | buttons | top bar | page head | playlist grid | detail + rows | add form |
-             menus + toasts | modal + forms + notes | empty states | responsive | reduced motion
-   ============================================================ */
+   What it styles:
+     The all-black look and the design tokens (colours, type, radii) every other stylesheet uses, plus the
+     shared screens and components: top bar, buttons, the liquid-glass button, playlist cards, the playlist
+     page and its video rows, the dialog, toasts, the notes panel, the notes button, the split view, watch
+     progress, the import dialog and the Smart arrange drawer. Restyle the app by editing the tokens below.
+
+   Sections, in order:
+     tokens | base | buttons | top bar | page head | playlist grid | liquid glass button | card menu |
+     detail | add video | toast | empty states | modal | responsive | reduced motion | click spark |
+     accessibility overrides | notes view | notes button | split view | watch progress | import playlist |
+     Smart arrange drawer
+
+   Depends on:
+     Nothing; it is the first stylesheet in index.html and the later ones build on its tokens.
+
+   Read next:
+     The feature stylesheets listed after it in index.html (smart-magic.css, streak.css, navbar.css, ...).
+   ===================================================================================================== */
 :root {
   /* colors */
   --bg: #050505;
@@ -436,50 +447,9 @@ code {
   outline: 2px solid var(--white);
   outline-offset: 3px;
 }
-.pcard__desc {
-  color: #c4c4c4;
-  font-size: 14px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
 .pcard__meta {
   font-size: 13px;
   margin-top: 6px;
-  font-weight: 500;
-}
-.pcard__upd {
-  font-size: 12px;
-}
-
-.pcard--new {
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  aspect-ratio: 16 / 10;
-  min-height: 220px;
-  background: transparent;
-  border: 1px dashed var(--line-strong);
-  color: var(--muted);
-}
-.pcard--new:hover {
-  color: var(--white);
-  border-color: var(--white);
-  background: rgba(255, 255, 255, 0.03);
-}
-.pcard--new__plus {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: 1px solid currentColor;
-  font-size: 28px;
-  line-height: 1;
-}
-.pcard--new__label {
   font-weight: 500;
 }
 
@@ -1333,59 +1303,6 @@ code {
   color: var(--danger);
 }
 
-.notes {
-  display: grid;
-  gap: 16px;
-}
-.notes p {
-  margin: 0;
-}
-.progress {
-  height: 10px;
-  border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
-}
-.progress i {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: var(--white);
-  border-radius: var(--r-pill);
-  transition: width 0.5s var(--ease);
-}
-.notes__meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 14px;
-  color: var(--muted);
-}
-.notice {
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  padding: 16px 18px;
-  background: var(--bg);
-}
-.notice strong {
-  display: block;
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: 20px;
-  margin-bottom: 6px;
-}
-.notice--err {
-  border-color: rgba(255, 138, 138, 0.55);
-}
-.notice--ok {
-  background: var(--white);
-  color: var(--ink);
-  border-color: var(--white);
-}
-.notice--ok .muted {
-  color: var(--muted-dark);
-}
-
 @keyframes fade {
   from {
     opacity: 0;
@@ -1488,7 +1405,10 @@ code {
   }
 }
 
-/* ---------- reduced motion ---------- */
+/* ---------- reduced motion ----------
+   Users who ask the OS for less motion get (almost) instant animations and transitions everywhere.
+   Durations are made tiny instead of removed so animationend / transitionend events still fire and the
+   scripts that wait for them keep working. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1515,8 +1435,9 @@ code {
     display: none !important;
   }
 }
-/* reused from #10 (PR #20): spinners keep a slow spin under reduced motion so progress stays visible
-   (the catch-all above would stop them after one turn) */
+/* ---------- accessibility overrides ----------
+   Spinners keep a slow spin under reduced motion so progress stays visible
+   (the catch-all above would stop them after one turn). */
 @media (prefers-reduced-motion: reduce) {
   .imp__spin {
     animation-duration: 2.4s !important;
@@ -1526,7 +1447,7 @@ code {
     animation: sp-spin 2.4s linear infinite !important;
   }
 }
-/* reused from #10: visible focus ring in Windows high-contrast / forced-colors mode */
+/* Forced-colors mode (Windows high contrast) drops box-shadow focus rings, so draw a real outline there. */
 @media (forced-colors: active) {
   :focus-visible,
   .pcard__name a:focus-visible::after,
@@ -1535,7 +1456,7 @@ code {
   }
 }
 
-/* C3: notes view */
+/* ---------- notes view (notes-view.js) ---------- */
 .nview {
   display: flex;
   flex-direction: column;
@@ -1776,7 +1697,7 @@ code {
   }
 }
 
-/* C1: notes button */
+/* ---------- notes button (note-button.js) ---------- */
 .nbtn {
   --nbtn-w: 12.5rem;
   position: relative;
@@ -2021,7 +1942,7 @@ code {
   }
 }
 
-/* C2: split view */
+/* ---------- split view (split-view.js) ---------- */
 .wrap--split {
   max-width: 1680px;
   padding-bottom: 24px;
@@ -2260,7 +2181,7 @@ code {
   }
 }
 
-/* A2: progress & resume */
+/* ---------- watch progress and resume ---------- */
 .woverall {
   margin-top: 14px;
   width: min(420px, 100%);
@@ -2317,7 +2238,7 @@ code {
   }
 }
 
-/* import playlist */
+/* ---------- import playlist (import-playlist.js) ---------- */
 .pagehead__actions {
   display: flex;
   flex-wrap: wrap;

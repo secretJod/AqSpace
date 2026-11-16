@@ -1,29 +1,20 @@
 /* =====================================================================================================
+   split-view.js - notes beside the video list on a playlist page (AQ.split)
+
    What this file does:
-     The split view on a playlist page: the notes panel slides in on the right and the video list
-     shrinks into a small navigation column on the left.
+     Route #/playlist/<id>/notes/<videoId>. Opening a video's notes slides the notes panel in from the
+     right while the video list shrinks into a compact navigation column on the left (a horizontal strip
+     under 900px). Close, Esc or the browser's Back button reverses it. The list element is the SAME node
+     in both states, so the list <-> nav change is a FLIP animation (transform and opacity only).
 
-   How it fits:
-     app.js wraps the video list with `AQ.split.shell(...)`; the notes button opens it via `AQ.split.open(video)`.
-     The panel content comes from notes-view.js.
+   Depends on:
+     AQ.util, AQ.store, and optionally AQ.notesView (panel content), AQ.notesJobs (state dots) and
+     AQ.noteButton (fallback panel); the optional pieces are guarded. app.js calls shell() while it renders
+     a playlist page.
 
-   Start reading at:
-     The "public" section at the bottom, then `openSplit()` / `closeSplit()`.
+   Read next:
+     The public section (6) at the bottom, then `openSplit()` / `closeSplit()`. notes-view.js draws the panel.
    ===================================================================================================== */
-
-/* AQspace - split view on the playlist detail screen (Agent C2).
-
-   Route: #/playlist/<id>/notes/<videoId>. When a video's notes are opened, the notes panel slides in from the right while the
-   video list shrinks to a compact left nav (a horizontal strip under 900px). Close / Esc / browser Back reverses it.
-   The list element is the SAME node in both states, so the list <-> nav morph is a FLIP animation (transform + opacity only).
-
-   API (used by app.js):
-     AQ.split.shell({playlist, list, hide:[elements], openId}) -> element to append in place of the bare list
-     AQ.split.open(video)   open or switch the notes panel (pushes a history entry the first time)
-     AQ.split.close()       close it (history.back() when we pushed the entry)
-     AQ.split.reset()       tear down before another screen renders
-     AQ.split.owns()        true while the current hash belongs to the live shell (app.js then skips its own re-render)
-   Uses AQ.notesView.mount(container, video, {onClose}) (C3), AQ.notesJobs.status/subscribe (C1); all guarded. */
 (function () {
   "use strict";
   var AQ = (window.AQ = window.AQ || {});
@@ -35,6 +26,7 @@
   var cur = null; // the live shell state
   var pushed = false; // did we push the notes history entry (so Close can go Back)?
 
+  // Users who ask the OS for reduced motion get the same layout changes without the slide and FLIP animations.
   function reduced() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -53,6 +45,11 @@
     var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?$/.exec(location.hash || "");
     return m ? { pid: m[1], vid: m[2] || null } : null;
   }
+  /**
+   * Whether the current address belongs to the live split shell. app.js skips its own re-render then,
+   * so the open panel is not rebuilt on every hash change.
+   * @returns {boolean}
+   */
   function owns() {
     var r = parse();
     return !!(cur && cur.root.isConnected && r && r.pid === cur.pid);
@@ -66,6 +63,8 @@
   function rowOf(st, vid) {
     return st.ol.querySelector('[data-vid="' + vid + '"]');
   }
+  // Announce a change to screen readers through the shared polite live region. It is cleared first and
+  // refilled a moment later, so the same sentence is read again when it repeats.
   function say(text) {
     var l = document.getElementById("live");
     if (l) {
@@ -198,7 +197,8 @@
       });
   }
 
-  /** Fade a fixed clone of the header away while the real one is hidden. */
+  /** Fade a fixed clone of the header away while the real one is hidden. The clone is aria-hidden, loses
+      its ids and is taken out of the tab order, so assistive tech and keyboard users never meet a duplicate. */
   function ghostOf(node) {
     if (!canAnimate(node) || node.hidden) return;
     var r = node.getBoundingClientRect();
@@ -234,7 +234,7 @@
     };
   }
 
-  // ===== 3. the notes panel (content comes from C3's AQ.notesView) =====
+  // ===== 3. the notes panel (content comes from AQ.notesView) =====
   function makeSwap(st, v) {
     var box = el("div", "spanel__swap");
     var mounted = null;
@@ -506,6 +506,12 @@
   }
 
   // ===== 6. public =====
+  /**
+   * Open the notes panel for a video, or switch it to that video. The first open pushes a history
+   * entry so the browser's Back button closes the panel; later switches replace it.
+   * @param {{id: string}} video A video of the playlist shown by the live shell.
+   * @returns {void}
+   */
   function open(video) {
     var st = cur;
     if (!st || !st.root.isConnected || !video) return;
@@ -521,6 +527,10 @@
     }
     sync();
   }
+  /**
+   * Close the notes panel. Goes Back in history when open() pushed the entry, so Back and Close agree.
+   * @returns {void}
+   */
   function close() {
     var st = cur;
     if (!st || !st.vid) return;
@@ -532,6 +542,10 @@
     sync();
   }
 
+  /**
+   * Tear down the live shell (subscriptions and panels). app.js calls it before another screen renders.
+   * @returns {void}
+   */
   function reset() {
     var st = cur;
     cur = null;
@@ -551,6 +565,15 @@
     if (v) v.classList.remove("wrap--split");
   }
 
+  /**
+   * Wrap a playlist's video list in the split layout.
+   * @param {object} o
+   * @param {object} o.playlist The playlist being shown (id, name, videos).
+   * @param {HTMLOListElement} o.list The rendered video list; it becomes the navigation column.
+   * @param {HTMLElement[]} [o.hide] Page parts hidden while the panel is open (header, toolbar, ...).
+   * @param {string} [o.openId] Video id from the address; its notes open straight away without animation.
+   * @returns {HTMLElement} The element to put on the page in place of the bare list.
+   */
   function shell(o) {
     var p = o.playlist,
       prev = cur;

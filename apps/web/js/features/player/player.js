@@ -1,21 +1,18 @@
 /* =====================================================================================================
+   player.js - the video player dialog (AQ.player)
+
    What this file does:
-     The video player dialog (YouTube embed with previous / next) that also saves how far you watched.
+     Plays a queue of lectures in the app dialog: a youtube-nocookie.com embed with previous / next.
+     The YouTube IFrame Player API (loaded once, on first use) reports the real playback position, which
+     is saved per video through AQ.store (localStorage `aq.watch.v1`), so a video left half-way resumes there.
 
-   How it fits:
-     `AQ.player.open({queue, index, ...})` is called from app.js. It saves progress with `AQ.store.watchSave()`.
+   Depends on:
+     AQ.util (el, icon, ID_RE), AQ.store (watchSave, watchInfo, learnDuration, notify) and AQ.dialog.
+     app.js opens it from the playlist screens.
 
-   Start reading at:
-     `open()`, then the "tracking" part inside it.
+   Read next:
+     `open()`, then the tracking part inside it (`sample()` and the `directTrack()` fallback).
    ===================================================================================================== */
-
-/* AQspace - player dialog: a youtube-nocookie embed (validated 11-char id) with previous/next through a queue.
-   The YouTube IFrame Player API (loaded once) reports the real playback position, which is saved per video in
-   AQ.store (`aq.watch.v1`); opening a video that was left half-way resumes there.
-
-   AQ.player.open({ queue: [video, ...], index: 0, opener, restore })
-     opener  = element to refocus on close; restore = function returning the element to refocus when the opener was
-     re-rendered meanwhile (the watch state change re-renders the page behind the dialog when the player closes). */
 (function () {
   "use strict";
   var u = AQ.util,
@@ -71,6 +68,8 @@
     document.head.appendChild(s);
   }
 
+  // Security and privacy: the id has already passed AQ.util.ID_RE (exactly 11 YouTube id characters) and is
+  // URL-encoded anyway; youtube-nocookie.com does not set tracking cookies until the video plays.
   function embedSrc(id, start) {
     return (
       "https://www.youtube-nocookie.com/embed/" +
@@ -82,6 +81,16 @@
     );
   }
 
+  /**
+   * Open the player dialog on one video of a queue.
+   * @param {object} opts
+   * @param {Array<{id: string, title: string}>} opts.queue Videos to step through; entries with an invalid id are dropped.
+   * @param {number} [opts.index=0] Position in the queue to start at.
+   * @param {HTMLElement} [opts.opener] Element that gets focus back when the dialog closes.
+   * @param {function(): HTMLElement} [opts.restore] Returns the element to focus when the opener was re-rendered
+   *   meanwhile (closing the player saves progress, which re-renders the page behind it).
+   * @returns {object|null} The dialog handle from AQ.dialog.open, or null when the queue has no valid video.
+   */
   function open(opts) {
     var queue = (opts.queue || []).filter(function (v) {
       return v && u.ID_RE.test(v.id);
@@ -311,6 +320,8 @@
       row.appendChild(yt);
       d.body.appendChild(row);
 
+      // The body is rebuilt on every step, so keyboard users get focus back on the Previous / Next button
+      // they pressed (or on the dialog when that button is now disabled) instead of losing it to <body>.
       var target = focusRole && d.body.querySelector('[data-role="' + focusRole + '"]:not([disabled])');
       (target || d.element).focus();
     }
