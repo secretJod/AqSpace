@@ -1,4 +1,4 @@
-/* smart.js - /api/v1/playlists/:id/smart : AI "smart arrange" runs for a playlist.
+/* smart.js - /api/v1/playlists/:id/smart : "smart arrange" runs (a language model orders the videos) for a playlist.
 
    How it fits: mounted in routes/index.js; the logic lives in services/smart-service.js.
    Read next: routes/youtube-import.js */

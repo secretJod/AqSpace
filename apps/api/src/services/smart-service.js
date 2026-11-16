@@ -1,6 +1,6 @@
-/* smart-service.js - "smart playlist" runs: the AI suggests an order for the videos and topics to cover.
+/* smart-service.js - "smart playlist" runs: a language model suggests an order for the videos and topics to cover.
 
-   What:  the Python worker does the AI work (POST /api/smart, GET /api/smart/<id>);
+   What:  the Python worker does the model work (POST /api/smart, GET /api/smart/<id>);
           this service remembers each run per playlist in the `smart_runs` table and
           stores the finished result there.
    How it fits: routes/smart.js calls status() and start().
@@ -164,7 +164,7 @@ export function createSmartService({ db, repo, py, config, clock = Date.now, onC
     return findRowById(row.id);
   }
 
-  /** Stores the AI result, unless it is missing or too big. */
+  /** Stores the model result, unless it is missing or too big. */
   function saveFinishedResult(row, job) {
     const result = JSON.stringify(job.result ?? null);
     const usage = JSON.stringify(isObj(job.usage) ? job.usage : {});

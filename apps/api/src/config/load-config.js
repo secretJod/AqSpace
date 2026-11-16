@@ -46,7 +46,7 @@ export function loadConfig(env = process.env, overrides = {}) {
     sqlDir: path.join(ROOT, "sql"),
     uiDir: env.UI_DIR || path.resolve(ROOT, "..", "web"),
 
-    // The Python worker (notes + AI)
+    // The Python worker (transcripts, notes, language-model calls)
     pyUrl: (env.PY_NOTES_URL || "http://127.0.0.1:5055").replace(/\/+$/, ""),
     pyProvider: env.PY_NOTES_PROVIDER || "groq",
     pySmartProvider: env.PY_SMART_PROVIDER || "gemini", // provider for smart playlist runs

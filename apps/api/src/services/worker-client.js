@@ -1,4 +1,4 @@
-/* worker-client.js - a thin client for the Python worker (notes + AI, http://127.0.0.1:5055).
+/* worker-client.js - a thin client for the Python worker (transcripts, notes and language-model work, http://127.0.0.1:5055).
 
    What:  json() for API calls that answer JSON, raw() for files we stream to the browser.
           When the worker cannot be reached, both throw a 503 HttpError with code "py_offline".
