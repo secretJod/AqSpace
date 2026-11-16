@@ -10,6 +10,7 @@ import pytest
 
 
 from app import server as srv  # noqa: E402
+from app.settings import GENERIC_ERROR  # noqa: E402
 
 SECRET = "sk-test-SECRET-1234567890"
 GOOD_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
@@ -133,20 +134,16 @@ def post(client, **body):
 
 
 # ---- tests -------------------------------------------------------------------
-def test_index_and_static_headers(make_client):
+def test_security_headers_on_non_api_paths(make_client):
     client, _, _ = make_client()
     r = client.get("/")
-    assert r.status_code == 200
+    assert r.status_code == 404
+    assert r.get_json() == {"error": "Not found."}
     assert r.headers["X-Content-Type-Options"] == "nosniff"
     assert r.headers["X-Frame-Options"] == "SAMEORIGIN"
     assert "default-src 'self'" in r.headers["Content-Security-Policy"]
     csp = {d.split()[0]: d.split()[1:] for d in r.headers["Content-Security-Policy"].split(";") if d.strip()}
-    assert "https://www.youtube-nocookie.com" in csp["frame-src"]
-    assert "https://www.youtube.com" in csp["frame-src"]
-    assert "'self'" in csp["frame-src"]
-    assert csp["script-src"] == ["'self'"]          # the player embed must not loosen script rules
-    assert client.get("/app.js").status_code == 200
-    assert client.get("/styles.css").status_code == 200
+    assert csp["script-src"] == ["'self'"]
     assert client.get("/nope").status_code == 404
 
 
@@ -242,7 +239,7 @@ def test_unknown_exception_is_generic_and_redacted(make_client, caplog):
     with caplog.at_level("DEBUG", logger="lna"):
         d = wait_done(client, post(client).get_json()["job_id"])
     assert d["status"] == "error"
-    assert d["error"] == srv.GENERIC_ERROR
+    assert d["error"] == GENERIC_ERROR
     assert SECRET not in json.dumps(d)
     assert SECRET not in caplog.text
     assert "RuntimeError" in caplog.text

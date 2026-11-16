@@ -7,6 +7,7 @@ import types
 import pytest
 
 from app import server as srv  # noqa: E402
+from app.settings import GENERIC_ERROR  # noqa: E402
 from notes_engine import smart_playlist as sp
 
 SECRET = "AIza-test-SECRET-1234567890"
@@ -424,7 +425,7 @@ def test_smart_error_is_safe_and_redacted(smart_client):
     mod2.analyze = lambda *a, **k: (_ for _ in ()).throw(RuntimeError(f"internal {a[3]}"))
     client2, _, _ = smart_client(mod2)
     data = wait_smart(client2, client2.post("/api/smart", json=body()).get_json()["job_id"])
-    assert data["status"] == "error" and data["error"] == srv.GENERIC_ERROR and SECRET not in json.dumps(data)
+    assert data["status"] == "error" and data["error"] == GENERIC_ERROR and SECRET not in json.dumps(data)
 
 
 def test_smart_unknown_job_and_isolated_from_notes_jobs(smart_client):

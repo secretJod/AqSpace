@@ -25,16 +25,10 @@ from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 
-# Re-exported so older imports (``from app.server import GENERIC_ERROR`` etc.) keep working.
-from .helpers import cleanup_old_jobs, format_duration as _fmt_duration, redact as _redact, slugify as _slug  # noqa: F401
-from .jobs import run_note_job as _run_job, run_smart_job as _run_smart, scaled_progress as _safe_progress  # noqa: F401
+from .helpers import cleanup_old_jobs
 from .routes import register_routes
 from .security import register_security
-from .settings import (  # noqa: F401
-    BACKEND_DIR, CSP_APP, CSP_FILE, CSP_NOTES, DEFAULT_OUTPUT_DIR, ENGINE_DIR, ENV_KEYS, FALLBACK_PROVIDERS,
-    FRONTEND_DIR, GENERIC_ERROR, JOB_ID_RE, KEY_RE, LOCAL_HOST_RE, LOCAL_ORIGIN_RE, MODEL_RE, PROJECT_DIR,
-    PROVIDER_ORDER, VIDEO_ID_RE, KEYLESS, CHUNK_RE,
-)
+from .settings import BACKEND_DIR, DEFAULT_OUTPUT_DIR, ENGINE_DIR, LOCAL_ORIGIN_RE
 from .state import State
 
 try:  # python-dotenv is in requirements, but never let a missing .env library kill the server
@@ -89,8 +83,3 @@ def create_app(config: dict | None = None) -> Flask:
     register_security(app)
     register_routes(app, state)
     return app
-
-
-# convenience for `flask --app app.server run` style usage
-def _default_app() -> Flask:  # pragma: no cover
-    return create_app()

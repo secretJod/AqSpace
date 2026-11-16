@@ -1,7 +1,6 @@
 """All HTTP routes of the worker.
 
 Routes:
-    GET  /, /app.js, /styles.css, /favicon.ico   the frontend
     GET  /api/providers                           AI providers (+ whether a server key exists)
     POST /api/jobs                                start a lecture -> notes job      -> 202 {job_id}
     GET  /api/jobs/<id>                           job progress
@@ -27,12 +26,12 @@ import threading
 import time
 import uuid
 
-from flask import Flask, Response, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, jsonify, request, send_file
 
 from .helpers import redact, slugify
 from .jobs import run_note_job, run_smart_job
 from .providers import provider_rows, provider_table, server_key
-from .settings import CSP_NOTES, ENV_KEYS, FRONTEND_DIR, JOB_ID_RE, KEY_RE, MODEL_RE, PROVIDER_ORDER, VIDEO_ID_RE
+from .settings import CSP_NOTES, ENV_KEYS, JOB_ID_RE, KEY_RE, MODEL_RE, PROVIDER_ORDER, VIDEO_ID_RE
 from .settings import KEYLESS
 from .state import State
 
@@ -95,25 +94,6 @@ def notes_page_csp(html: str) -> str:
 
 
 def register_routes(app: Flask, state: State) -> None:
-    # ------------------------------------------------------------------------------------------
-    # 2. Frontend
-    # ------------------------------------------------------------------------------------------
-    @app.get("/")
-    def index():
-        return send_from_directory(FRONTEND_DIR, "index.html", max_age=0)
-
-    @app.get("/app.js")
-    def frontend_js():
-        return send_from_directory(FRONTEND_DIR, "app.js", max_age=0)
-
-    @app.get("/styles.css")
-    def frontend_css():
-        return send_from_directory(FRONTEND_DIR, "styles.css", max_age=0)
-
-    @app.get("/favicon.ico")
-    def favicon():
-        return Response(status=204)
-
     # ------------------------------------------------------------------------------------------
     # 3. Providers
     # ------------------------------------------------------------------------------------------

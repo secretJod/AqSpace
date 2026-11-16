@@ -17,7 +17,6 @@ from pathlib import Path
 # ----------------------------------------------------------------------------------------------
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = BACKEND_DIR.parent
-FRONTEND_DIR = PROJECT_DIR / "frontend"
 ENGINE_DIR = PROJECT_DIR / "notes_engine"  # fonts are served from notes_engine/static/fonts
 DEFAULT_OUTPUT_DIR = BACKEND_DIR / "output"
 
