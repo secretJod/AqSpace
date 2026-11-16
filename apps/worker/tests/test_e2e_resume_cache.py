@@ -6,8 +6,7 @@ digest call repeated), and a later job for the same video with checkpoints wiped
 cache with no extra digest/compose model calls. Also guards the demo import side-effect fix.
 Offline: ingest and pdf are fakes, no model runs.
 """
-import importlib.util
-import os
+
 import sys
 from pathlib import Path
 
@@ -18,7 +17,6 @@ import test_e2e_local as base  # noqa: E402  (reuse FakeLlama, fake modules and 
 
 from app import server as srv  # noqa: E402
 from notes_engine import llm  # noqa: E402
-
 
 
 class RichFakeLlama(base.FakeLlama):
@@ -83,4 +81,3 @@ def test_crash_resume_with_cache_on_makes_no_extra_model_calls(cached_stack):
     assert d["status"] == "done", d
     assert "digest" not in fake.calls and "batch" not in fake.calls, fake.calls
     assert len(fake.calls) <= len(first_resume_calls)
-

@@ -12,6 +12,7 @@ yt-dlp gives us: ``parse_json3()`` and ``parse_vtt()``.
 
 Read next: ``chunking.py``.
 """
+
 from __future__ import annotations
 
 import html
@@ -32,11 +33,11 @@ _SOUND_WORDS = (
     r"clapping|audience|background|bell|beep|chuckles|coughs|sighs|gasps|"
     r"upbeat|soft|gentle|dramatic|intro|outro|jingle|chatter|static|buzz"
 )
-_SOUND_CUE_RE = re.compile(   # "[Music]", "(applause)", "[soft music playing]" ...
+_SOUND_CUE_RE = re.compile(  # "[Music]", "(applause)", "[soft music playing]" ...
     r"[\[\(]\s*(?:" + _SOUND_WORDS + r")\b[^\]\)]{0,40}[\]\)]", re.IGNORECASE
 )
 _MUSIC_NOTE_RE = re.compile(r"[♪♫♬♩]+[^♪♫♬♩]*[♪♫♬♩]*")
-_CENSOR_RE = re.compile(r"\[\s*_+\s*\]")       # "[ __ ]" = a bleeped word
+_CENSOR_RE = re.compile(r"\[\s*_+\s*\]")  # "[ __ ]" = a bleeped word
 _SPEAKER_RE = re.compile(r"^\s*(?:>>+|-)\s+")  # ">> " / "- " speaker-change markers
 WS_RE = re.compile(r"\s+")
 
@@ -87,7 +88,7 @@ def drop_word_overlap(prev: str, new: str) -> str:
     nl = [w.lower() for w in nw]
     if nl == pl:
         return ""
-    if len(nl) >= 3 and len(nl) <= len(pl) and pl[-len(nl):] == nl:
+    if len(nl) >= 3 and len(nl) <= len(pl) and pl[-len(nl) :] == nl:
         return ""
     max_k = min(len(pl), len(nl))
     for k in range(max_k, 2, -1):  # longest overlap first, at least 3 words
@@ -163,9 +164,7 @@ def build_segments(raw_cues: list[RawCue]) -> list[dict]:
 # 4. Subtitle file formats (from yt-dlp)
 # --------------------------------------------------------------------------- #
 
-_VTT_TIME_RE = re.compile(
-    r"(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})\s*-->\s*(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})"
-)
+_VTT_TIME_RE = re.compile(r"(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})\s*-->\s*(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})")
 
 
 def parse_json3(data: dict) -> list[RawCue]:
@@ -197,7 +196,7 @@ def parse_vtt(text: str) -> list[RawCue]:
             h1, m1, s1, ms1, h2, m2, s2, ms2 = m.groups()
             start = int(h1 or 0) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000
             end = int(h2 or 0) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000
-            body = [l for l in lines[i + 1:] if l.strip()]
+            body = [l for l in lines[i + 1 :] if l.strip()]
             if body:
                 cues.append((start, max(0.0, end - start), body))
             break

@@ -2,6 +2,7 @@
 
 API keys are read from backend/.env into memory only. They are never printed, logged or written.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -15,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent                      # apps/worker/
+ROOT = HERE.parent.parent  # apps/worker/
 OUT = HERE / "out"
 TRANSCRIPTS = OUT / "transcripts"
 GOLD = OUT / "gold"
@@ -39,18 +40,28 @@ CONTESTANTS = {
     "gemini": {"provider": "gemini", "model": None, "env": "GEMINI_API_KEY"},
     "groq": {"provider": "groq", "model": None, "env": "GROQ_API_KEY"},
     "nvidia-super": {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "env": "NVIDIA_API_KEY"},
-    "nvidia-lightning": {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "env": "NVIDIA_API_KEY"},
+    "nvidia-lightning": {
+        "provider": "nvidia",
+        "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "env": "NVIDIA_API_KEY",
+    },
     "local": {"provider": "local", "model": None, "env": None, "url": None},
 }
 UNAVAILABLE = {
     "huggingface": "Hugging Face Inference: not available (no credits)",
 }
-KEY_ENV = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY", "nvidia": "NVIDIA_API_KEY",
-           "xai": "XAI_API_KEY", "huggingface": "HF_TOKEN", "local": None}
+KEY_ENV = {
+    "gemini": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
+    "xai": "XAI_API_KEY",
+    "huggingface": "HF_TOKEN",
+    "local": None,
+}
 
 # The judge. Default Gemini, which is ALSO a contestant: expect self-preference bias in its favour.
 # Change with run_eval --judge groq | nvidia | local[:alias][@url] (see README "Judge bias").
-SELECTED: list[str] = []   # contestants of the current run (aggregate only reports these)
+SELECTED: list[str] = []  # contestants of the current run (aggregate only reports these)
 JUDGE_PROVIDER = "gemini"
 JUDGE_MODEL: str | None = None
 JUDGE_URL: str | None = None
@@ -63,6 +74,7 @@ def _slug(s: str) -> str:
 def parse_spec(spec: str) -> dict:
     """``provider[:model][@url]`` -> {provider, model, env, url}. ``@url`` is only allowed for local."""
     from notes_engine.llm import PROVIDERS
+
     spec = spec.strip()
     url = None
     if "@" in spec:
@@ -111,12 +123,14 @@ def set_out(path: Path) -> None:
 
 def model_of(cid: str) -> str:
     from notes_engine.llm import PROVIDERS
+
     c = CONTESTANTS[cid]
     return c["model"] or PROVIDERS[c["provider"]]["default_model"]
 
 
 def judge_model() -> str:
     from notes_engine.llm import PROVIDERS
+
     return JUDGE_MODEL or PROVIDERS[JUDGE_PROVIDER]["default_model"]
 
 
@@ -153,6 +167,7 @@ def key(env: str | None) -> str:
     if not _KEYS:
         try:
             from dotenv import dotenv_values
+
             for k, v in dotenv_values(ROOT / "backend" / ".env").items():
                 if k and v:
                     _KEYS[k.strip()] = v.strip().strip("\"'")
@@ -235,7 +250,7 @@ class Meter:
         self.sleep_sec = 0.0
         self.prompt_tokens = 0
         self.output_tokens = 0
-        self.usage_reported = 0      # responses that carried usage
+        self.usage_reported = 0  # responses that carried usage
         self.ok_responses = 0
 
 
@@ -249,6 +264,7 @@ def install_meter() -> None:
     if _installed:
         return
     from notes_engine import llm
+
     orig_sleep = llm._sleep
     orig_post = llm.requests.post
 
@@ -284,7 +300,9 @@ def install_meter() -> None:
                     if isinstance(u, dict):
                         METER.usage_reported += 1
                         METER.prompt_tokens += int(u.get("promptTokenCount") or 0)
-                        METER.output_tokens += int(u.get("candidatesTokenCount") or 0) + int(u.get("thoughtsTokenCount") or 0)
+                        METER.output_tokens += int(u.get("candidatesTokenCount") or 0) + int(
+                            u.get("thoughtsTokenCount") or 0
+                        )
                     u = d.get("usage")
                     if isinstance(u, dict):
                         METER.usage_reported += 1
@@ -317,8 +335,12 @@ def classify_error(msg: str) -> str:
 
 
 def scrub(s: str) -> str:
-    s = re.sub(r"(AIza[0-9A-Za-z_\-]{20,}|gsk_[A-Za-z0-9]{20,}|nvapi-[A-Za-z0-9_\-]{20,}|hf_[A-Za-z0-9]{20,}"
-               r"|xai-[A-Za-z0-9]{20,}|Bearer\s+\S+)", "[redacted]", s or "")
+    s = re.sub(
+        r"(AIza[0-9A-Za-z_\-]{20,}|gsk_[A-Za-z0-9]{20,}|nvapi-[A-Za-z0-9_\-]{20,}|hf_[A-Za-z0-9]{20,}"
+        r"|xai-[A-Za-z0-9]{20,}|Bearer\s+\S+)",
+        "[redacted]",
+        s or "",
+    )
     for v in _KEYS.values():
         if len(v) >= 12:
             s = s.replace(v, "[redacted]")

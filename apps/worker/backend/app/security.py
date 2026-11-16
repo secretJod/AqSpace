@@ -10,6 +10,7 @@ What this file does
 Read next
     ``providers.py``.
 """
+
 from __future__ import annotations
 
 from flask import Flask, Response, jsonify, request
@@ -26,8 +27,11 @@ def register_security(app: Flask) -> None:
             return jsonify(error="Forbidden host."), 403
         origin = request.headers.get("Origin")
         # POSTs, and the GET that makes the server call out to YouTube, must come from a local page
-        if origin and (request.method == "POST" or request.path == "/api/playlist") \
-                and not LOCAL_ORIGIN_RE.match(origin):
+        if (
+            origin
+            and (request.method == "POST" or request.path == "/api/playlist")
+            and not LOCAL_ORIGIN_RE.match(origin)
+        ):
             return jsonify(error="Forbidden origin."), 403
         return None
 

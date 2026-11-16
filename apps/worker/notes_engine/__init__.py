@@ -28,6 +28,7 @@ Package map (see docs/ARCHITECTURE.md, section "AI engine")::
 
 Read next: ``generate()`` below, then ``ingest.get_transcript`` and ``llm.generate_notes``.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -54,11 +55,17 @@ _LAZY = ("ingest", "llm", "pdf", "notes_schema", "prompts")
 
 # name -> submodule that defines it (resolved on first access)
 _EXPORTS = {
-    "parse_video_id": "ingest", "get_transcript": "ingest", "chunk_transcript": "ingest",
+    "parse_video_id": "ingest",
+    "get_transcript": "ingest",
+    "chunk_transcript": "ingest",
     "IngestError": "ingest",
-    "generate_notes": "llm", "LLMError": "llm", "PROVIDERS": "llm",
+    "generate_notes": "llm",
+    "LLMError": "llm",
+    "PROVIDERS": "llm",
     "validate_notes": "notes_schema",
-    "render_html": "pdf", "render_pdf": "pdf", "PdfError": "pdf",
+    "render_html": "pdf",
+    "render_pdf": "pdf",
+    "PdfError": "pdf",
 }
 
 __all__ = ["generate", "render_notes", "ENV_KEYS", "__version__", *_LAZY, *_EXPORTS]
@@ -96,8 +103,16 @@ def _scaled(progress, lo: float, hi: float):
     return cb
 
 
-def render_notes(notes: dict, out_dir: str | Path = ".", basename: str = "notes", *, pdf: bool = True,
-                 html: bool = True, json_file: bool = True, pdf_path: str | Path | None = None) -> dict:
+def render_notes(
+    notes: dict,
+    out_dir: str | Path = ".",
+    basename: str = "notes",
+    *,
+    pdf: bool = True,
+    html: bool = True,
+    json_file: bool = True,
+    pdf_path: str | Path | None = None,
+) -> dict:
     """Write ``<basename>.json`` / ``.html`` / ``.pdf`` for a Notes dict (each can be switched off).
 
     Returns ``{"json_path", "html_path", "pdf_path", "warning"}`` (None for files not written). A
@@ -127,11 +142,21 @@ def render_notes(notes: dict, out_dir: str | Path = ".", basename: str = "notes"
     return res
 
 
-def generate(url: str, provider: str, api_key: str | None = None, model: str | None = None,
-             groq_key: str | None = None, out_dir: str | Path = ".", progress=None, *,
-             basename: str = "notes", pdf_path: str | Path | None = None,
-             write_html: bool = True, write_json: bool = True,
-             checkpoint_dir: str | Path | None = None) -> dict:
+def generate(
+    url: str,
+    provider: str,
+    api_key: str | None = None,
+    model: str | None = None,
+    groq_key: str | None = None,
+    out_dir: str | Path = ".",
+    progress=None,
+    *,
+    basename: str = "notes",
+    pdf_path: str | Path | None = None,
+    write_html: bool = True,
+    write_json: bool = True,
+    checkpoint_dir: str | Path | None = None,
+) -> dict:
     """YouTube URL -> study notes. Returns ``dict(notes=..., pdf_path=..., html_path=...)``.
 
     Keys: ``api_key`` falls back to the provider's environment variable (GROQ_API_KEY, GEMINI_API_KEY,
@@ -160,13 +185,23 @@ def generate(url: str, provider: str, api_key: str | None = None, model: str | N
         gkey = key if provider == "groq" else _env("GROQ_API_KEY")
 
     transcript = ingest.get_transcript(url, groq_key=gkey, progress=_scaled(progress, 0, 25))
-    notes = llm.generate_notes(transcript, provider=provider, api_key=key, model=model,
-                               progress=_scaled(progress, 25, 85),
-                               checkpoint_dir=checkpoint_dir or Path(out_dir) / "checkpoints")
+    notes = llm.generate_notes(
+        transcript,
+        provider=provider,
+        api_key=key,
+        model=model,
+        progress=_scaled(progress, 25, 85),
+        checkpoint_dir=checkpoint_dir or Path(out_dir) / "checkpoints",
+    )
     if progress:
         progress("pdf", 85, "Drawing the notebook...")
     files = render_notes(notes, out_dir, basename, html=write_html, json_file=write_json, pdf_path=pdf_path)
     if progress:
         progress("pdf", 100, "Your notebook is ready.")
-    return {"notes": notes, "pdf_path": files["pdf_path"], "html_path": files["html_path"],
-            "json_path": files["json_path"], "warning": files["warning"]}
+    return {
+        "notes": notes,
+        "pdf_path": files["pdf_path"],
+        "html_path": files["html_path"],
+        "json_path": files["json_path"],
+        "warning": files["warning"],
+    }

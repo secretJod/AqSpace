@@ -20,6 +20,7 @@ Files, in reading order:
 
 Safety: all text from the notes is escaped; only **bold** and `code` are re-introduced after escaping.
 """
+
 from .diagrams import build_diagram_svg
 from .page_layout import render_html
 from .pdf_export import PdfError, render_pdf

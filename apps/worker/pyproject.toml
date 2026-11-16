@@ -25,16 +25,16 @@ dependencies = [
 
 [project.optional-dependencies]
 web = ["flask>=3.0", "flask-cors>=4.0", "python-dotenv>=1.0"]
-dev = ["pytest>=8"]
-# local speech-to-text for videos without captions (CPU int8; model downloads on first use
-# into <repo>/.tools/whisper-models). imageio-ffmpeg ships a static ffmpeg into the venv.
+dev = ["pytest>=8", "ruff>=0.6"]
+# Local speech-to-text for videos without captions (CPU int8). The model downloads on first use
+# into <repo>/.tools/whisper-models; imageio-ffmpeg ships a static ffmpeg into the venv.
 whisper = ["faster-whisper>=1.0", "imageio-ffmpeg>=0.5"]
 
 [project.scripts]
 lecture-notes = "notes_engine.__main__:main"
 
-[tool.setuptools]
-packages = ["notes_engine", "notes_engine.render"]
+[tool.setuptools.packages.find]
+include = ["notes_engine*"]
 
 [tool.setuptools.package-data]
 notes_engine = ["templates/*", "templates/vendor/*", "static/fonts/*"]
@@ -42,3 +42,19 @@ notes_engine = ["templates/*", "templates/vendor/*", "static/fonts/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "backend"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["notes_engine/templates/vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+    # The renderer builds HTML and SVG with printf-style templates, where "%d" deliberately
+    # truncates float sizes and coordinates; a mechanical rewrite to f-strings would change output.
+    "UP031",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["notes_engine", "app", "tools"]

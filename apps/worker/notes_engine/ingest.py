@@ -39,6 +39,7 @@ request; it is never logged and never included in an error message.
 
 Read next: ``transcripts/cleaning.py`` and ``transcripts/chunking.py``.
 """
+
 from __future__ import annotations
 
 import glob
@@ -53,13 +54,19 @@ from urllib.parse import urlparse
 import requests
 
 from . import cache as disk_cache
-from .transcripts.chunking import (chunk_transcript, format_timestamp)
-from .transcripts.cleaning import (build_segments, clean_text, dedupe_cues, merge_cues,
-                                   parse_json3, parse_vtt)
-from .transcripts.errors import MSG_CHANNEL, MSG_NO_CAPTIONS
-from .transcripts.errors import (FAILURE_MESSAGES, FAILURE_PRIORITY, MSG_NO_CAPTIONS_WHISPER_FAILED, IngestError, StageFailure,
-                                 ytdlp_error_kind)
-from .transcripts.playlists import (PLAYLIST_SLACK, get_playlist, plain_text)
+from .transcripts.chunking import chunk_transcript, format_timestamp
+from .transcripts.cleaning import build_segments, clean_text, dedupe_cues, merge_cues, parse_json3, parse_vtt
+from .transcripts.errors import (
+    FAILURE_MESSAGES,
+    FAILURE_PRIORITY,
+    MSG_CHANNEL,
+    MSG_NO_CAPTIONS,
+    MSG_NO_CAPTIONS_WHISPER_FAILED,
+    IngestError,
+    StageFailure,
+    ytdlp_error_kind,
+)
+from .transcripts.playlists import PLAYLIST_SLACK, get_playlist, plain_text
 from .transcripts.youtube_urls import VIDEO_ID_RE, canonical_url, parse_playlist_id, parse_video_id
 
 TRANSCRIPT_CACHE_DAYS = 30  # a video's captions rarely change; auto-captions may improve, so not forever
@@ -99,7 +106,7 @@ DOWNLOAD_RETRIES = 4
 MAX_SUBTITLE_BYTES = 200 * 1024 * 1024
 GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 GROQ_MODEL = "whisper-large-v3-turbo"
-WHISPER_CHUNK_SECONDS = 600          # 10 min of 32 kbps mono mp3 ~ 2.4 MB
+WHISPER_CHUNK_SECONDS = 600  # 10 min of 32 kbps mono mp3 ~ 2.4 MB
 WHISPER_MAX_UPLOAD_BYTES = 24 * 1024 * 1024
 # 24 h of ~50 kbps opus is ~540 MB; refuse anything absurdly larger
 MAX_AUDIO_BYTES = 2 * 1024 * 1024 * 1024
@@ -107,7 +114,7 @@ MAX_VIDEO_SECONDS = 25 * 3600
 
 # local speech-to-text (faster-whisper, CPU int8); see LocalWhisperTranscriber
 LOCAL_WHISPER_MODEL = "small"
-_APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))   # apps/worker
+_APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # apps/worker
 _REPO_ROOT = os.path.abspath(os.path.join(_APP_ROOT, "..", ".."))
 WHISPER_MODEL_DIR = os.path.join(_REPO_ROOT, ".tools", "whisper-models")  # gitignored, nuked
 DEFAULT_WORK_DIR = os.path.join(_APP_ROOT, "backend", "output", "_cache")
@@ -153,11 +160,12 @@ class _TimeoutSession(requests.Session):
 
 def _backoff(attempt: int) -> float:
     """Seconds to wait before retry number attempt+1 (1.5, 3, 6, 12 ... capped at 30)."""
-    return min(30.0, 1.5 * (2 ** attempt))
+    return min(30.0, 1.5 * (2**attempt))
 
 
-def _download_to_file(url: str, dest: str, *, max_bytes: int = MAX_SUBTITLE_BYTES,
-                      retries: int = DOWNLOAD_RETRIES, sleep=time.sleep) -> str:
+def _download_to_file(
+    url: str, dest: str, *, max_bytes: int = MAX_SUBTITLE_BYTES, retries: int = DOWNLOAD_RETRIES, sleep=time.sleep
+) -> str:
     """Stream ``url`` to ``dest`` in 64 KB pieces (no whole-body buffering in memory).
 
     Retries timeouts, connection errors, 429 and 5xx with exponential backoff.
@@ -429,7 +437,7 @@ def _fetch_via_ytdlp(video_id: str, cache: dict) -> tuple[list[dict], str, str, 
     try:
         path = _download_to_file(url, os.path.join(tmp, "subs." + str(chosen.get("ext"))))
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            with open(path, encoding="utf-8", errors="replace") as fh:
                 if chosen.get("ext") == "json3":
                     cues = _parse_json3(json.load(fh))
                 else:
@@ -488,7 +496,7 @@ def _atomic_write_json(path: str, data) -> None:
 
 def _read_json(path: str):
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, ValueError):
         return None
@@ -509,7 +517,7 @@ def _download_audio(video_id: str, out_dir: str, cache: dict) -> str:
         format="bestaudio[abr<=64]/worstaudio[acodec!=none]/bestaudio/best",
         outtmpl=os.path.join(out_dir, "audio.%(ext)s"),
         max_filesize=MAX_AUDIO_BYTES,
-        continuedl=True,          # resume a .part file after a restart
+        continuedl=True,  # resume a .part file after a restart
         http_chunk_size=10 * 1024 * 1024,
         skip_download=False,
     )
@@ -531,7 +539,7 @@ def _read_segment_list(chunk_dir: str) -> list[tuple[str, float]]:
     chunks = sorted(glob.glob(os.path.join(chunk_dir, "chunk_*.mp3")))
     starts: dict[str, float] = {}
     try:
-        with open(os.path.join(chunk_dir, "segments.csv"), "r", encoding="utf-8") as fh:
+        with open(os.path.join(chunk_dir, "segments.csv"), encoding="utf-8") as fh:
             for line in fh:
                 parts = line.strip().split(",")
                 if len(parts) >= 2:
@@ -541,8 +549,7 @@ def _read_segment_list(chunk_dir: str) -> list[tuple[str, float]]:
                         pass
     except OSError:
         pass
-    return [(c, starts.get(os.path.basename(c), i * float(WHISPER_CHUNK_SECONDS)))
-            for i, c in enumerate(chunks)]
+    return [(c, starts.get(os.path.basename(c), i * float(WHISPER_CHUNK_SECONDS))) for i, c in enumerate(chunks)]
 
 
 def _split_audio(ffmpeg: str, src: str, out_dir: str) -> list[tuple[str, float]]:
@@ -552,11 +559,33 @@ def _split_audio(ffmpeg: str, src: str, out_dir: str) -> list[tuple[str, float]]
         os.remove(old)
     pattern = os.path.join(out_dir, "chunk_%04d.mp3")
     cmd = [
-        ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", src,
-        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k",
-        "-f", "segment", "-segment_time", str(WHISPER_CHUNK_SECONDS),
-        "-segment_list", os.path.join(out_dir, "segments.csv"), "-segment_list_type", "csv",
-        "-reset_timestamps", "1", pattern,
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        src,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "32k",
+        "-f",
+        "segment",
+        "-segment_time",
+        str(WHISPER_CHUNK_SECONDS),
+        "-segment_list",
+        os.path.join(out_dir, "segments.csv"),
+        "-segment_list_type",
+        "csv",
+        "-reset_timestamps",
+        "1",
+        pattern,
     ]
     try:
         # 24 h of audio re-encodes in a few minutes; allow plenty
@@ -575,11 +604,31 @@ def _split_audio(ffmpeg: str, src: str, out_dir: str) -> list[tuple[str, float]]
 
 
 _WHISPER_LANGS = {
-    "english": "en", "hindi": "hi", "spanish": "es", "french": "fr", "german": "de",
-    "portuguese": "pt", "italian": "it", "russian": "ru", "japanese": "ja", "korean": "ko",
-    "chinese": "zh", "arabic": "ar", "turkish": "tr", "dutch": "nl", "polish": "pl",
-    "indonesian": "id", "tamil": "ta", "telugu": "te", "marathi": "mr", "bengali": "bn",
-    "urdu": "ur", "gujarati": "gu", "ukrainian": "uk", "vietnamese": "vi", "thai": "th",
+    "english": "en",
+    "hindi": "hi",
+    "spanish": "es",
+    "french": "fr",
+    "german": "de",
+    "portuguese": "pt",
+    "italian": "it",
+    "russian": "ru",
+    "japanese": "ja",
+    "korean": "ko",
+    "chinese": "zh",
+    "arabic": "ar",
+    "turkish": "tr",
+    "dutch": "nl",
+    "polish": "pl",
+    "indonesian": "id",
+    "tamil": "ta",
+    "telugu": "te",
+    "marathi": "mr",
+    "bengali": "bn",
+    "urdu": "ur",
+    "gujarati": "gu",
+    "ukrainian": "uk",
+    "vietnamese": "vi",
+    "thai": "th",
 }
 
 
@@ -656,17 +705,24 @@ class LocalWhisperTranscriber:
 
             os.makedirs(self.model_dir, exist_ok=True)
             threads = max(1, (os.cpu_count() or 4) - 1)
-            self._model = WhisperModel(self.model_name, device="cpu", compute_type="int8",
-                                       cpu_threads=threads, download_root=self.model_dir)
+            self._model = WhisperModel(
+                self.model_name, device="cpu", compute_type="int8", cpu_threads=threads, download_root=self.model_dir
+            )
         return self._model
 
     def transcribe(self, path: str) -> tuple[list[dict], str]:
         try:
             model = self._load()
-            segs, info = model.transcribe(path, beam_size=1, vad_filter=True,
-                                          condition_on_previous_text=False)
-            out = [{"start": float(s.start), "end": float(s.end), "text": str(s.text),
-                    "no_speech_prob": float(getattr(s, "no_speech_prob", 0.0) or 0.0)} for s in segs]
+            segs, info = model.transcribe(path, beam_size=1, vad_filter=True, condition_on_previous_text=False)
+            out = [
+                {
+                    "start": float(s.start),
+                    "end": float(s.end),
+                    "text": str(s.text),
+                    "no_speech_prob": float(getattr(s, "no_speech_prob", 0.0) or 0.0),
+                }
+                for s in segs
+            ]
         except _Fail:
             raise
         except Exception as e:  # model download / decode problems
@@ -697,8 +753,9 @@ def _pick_transcriber(groq_key: str | None):
     return None
 
 
-def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
-                       work_dir: str | None = None) -> tuple[list[dict], str, str, float]:
+def _fetch_via_whisper(
+    video_id: str, transcriber, cache: dict, progress, work_dir: str | None = None
+) -> tuple[list[dict], str, str, float]:
     base = os.path.join(work_dir or DEFAULT_WORK_DIR, video_id, "stt")
     final = os.path.join(base, "transcript.json")
     cached = _read_json(final)
@@ -741,8 +798,12 @@ def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
         ck = os.path.join(done_dir, os.path.splitext(os.path.basename(path))[0] + ".json")
         rec = _read_json(ck)
         if not (isinstance(rec, dict) and isinstance(rec.get("segments"), list)):
-            _progress(progress, "transcript", 55 + int(40 * i / n),
-                      f"Transcribing audio {i + 1}/{n} ({format_timestamp(offset)})...")
+            _progress(
+                progress,
+                "transcript",
+                55 + int(40 * i / n),
+                f"Transcribing audio {i + 1}/{n} ({format_timestamp(offset)})...",
+            )
             segs, lang = transcriber.transcribe(path)
             kept = []
             for seg in segs:
@@ -765,8 +826,9 @@ def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
         raise _Fail("other", "no speech was detected in the audio")
     est = max((c[0] + c[1] for c in cues), default=0.0)
     language = _WHISPER_LANGS.get(language.lower(), language.lower()) or "en"
-    _atomic_write_json(final, {"segments": segments, "language": language, "est": est,
-                               "engine": getattr(transcriber, "name", "")})
+    _atomic_write_json(
+        final, {"segments": segments, "language": language, "est": est, "engine": getattr(transcriber, "name", "")}
+    )
     shutil.rmtree(chunk_dir, ignore_errors=True)  # transcript.json is the resume point now
     return segments, language, "whisper", est
 
@@ -776,8 +838,7 @@ def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
 # --------------------------------------------------------------------------- #
 
 
-def get_transcript(url: str, *, groq_key: str | None = None, progress=None,
-                   work_dir: str | None = None) -> dict:
+def get_transcript(url: str, *, groq_key: str | None = None, progress=None, work_dir: str | None = None) -> dict:
     """Fetch and clean the transcript for a YouTube video. Raises IngestError.
 
     ``work_dir`` holds the speech-to-text checkpoints (``<work_dir>/<video_id>/stt``);

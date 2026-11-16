@@ -8,13 +8,23 @@ arbitrary server.  Two public functions:
 
 Read next: ``cleaning.py``.
 """
+
 from __future__ import annotations
 
 import re
 from urllib.parse import parse_qs, urlparse
 
-from .errors import (MSG_CHANNEL, MSG_INVALID, MSG_NOT_VIDEO, MSG_PLAYLIST, MSG_NOT_PLAYLIST, MSG_PLAYLIST_MIX, MSG_PLAYLIST_PRIVATE, IngestError,
-                     PlaylistError)
+from .errors import (
+    MSG_CHANNEL,
+    MSG_INVALID,
+    MSG_NOT_PLAYLIST,
+    MSG_NOT_VIDEO,
+    MSG_PLAYLIST,
+    MSG_PLAYLIST_MIX,
+    MSG_PLAYLIST_PRIVATE,
+    IngestError,
+    PlaylistError,
+)
 
 # --------------------------------------------------------------------------- #
 # 1. What a valid id / host looks like
@@ -35,8 +45,7 @@ SHORT_HOSTS = {"youtu.be", "www.youtu.be"}
 PATH_PREFIXES = ("shorts", "embed", "live", "v", "e", "watch")  # youtube.com/<prefix>/<id>
 CHANNEL_PREFIXES = ("channel", "c", "user")  # youtube.com/<prefix>/<name> is a channel, not a video
 
-_NOT_YOUTUBE = ("Only YouTube links are supported (youtube.com or youtu.be). "
-                "That link points somewhere else.")
+_NOT_YOUTUBE = "Only YouTube links are supported (youtube.com or youtu.be). That link points somewhere else."
 
 
 def canonical_url(video_id: str) -> str:
@@ -92,7 +101,7 @@ def parse_video_id(url: str) -> str:
 
     candidate = None
     segments = [s for s in parsed.path.split("/") if s]
-    if host in SHORT_HOSTS:                      # youtu.be/<id>
+    if host in SHORT_HOSTS:  # youtu.be/<id>
         if segments:
             candidate = segments[0]
     elif host in YOUTUBE_HOSTS:
@@ -142,8 +151,7 @@ def parse_playlist_id(url: str) -> str:
         if len(segments) != 1 or not VIDEO_ID_RE.match(segments[0]):
             raise PlaylistError(MSG_NOT_PLAYLIST)
     elif host in YOUTUBE_HOSTS:
-        ok = (segments == ["playlist"] or segments == ["watch"]
-              or segments == ["embed", "videoseries"])
+        ok = segments == ["playlist"] or segments == ["watch"] or segments == ["embed", "videoseries"]
         if not ok:
             raise PlaylistError(MSG_NOT_PLAYLIST)
     else:

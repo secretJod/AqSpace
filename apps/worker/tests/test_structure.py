@@ -1,5 +1,6 @@
 """#159: the upstream folder layout (ai/, render/, transcripts/, backend/app modules) with every
 AQspace feature still reachable under its old import path, plus bug #128 (cover summary)."""
+
 import copy
 import json
 from pathlib import Path
@@ -36,8 +37,15 @@ def test_local_provider_and_profiles_live_in_ai_providers():
 def test_ingest_keeps_aqspace_names_and_messages():
     assert ingest.MSG_CHANNEL is ingest_errors.MSG_CHANNEL
     assert ingest.parse_video_id is youtube_urls.parse_video_id
-    for name in ("LocalWhisperTranscriber", "GroqTranscriber", "_pick_transcriber", "_download_to_file",
-                 "DEFAULT_WORK_DIR", "WHISPER_MODEL_DIR", "MAX_VIDEO_SECONDS"):
+    for name in (
+        "LocalWhisperTranscriber",
+        "GroqTranscriber",
+        "_pick_transcriber",
+        "_download_to_file",
+        "DEFAULT_WORK_DIR",
+        "WHISPER_MODEL_DIR",
+        "MAX_VIDEO_SECONDS",
+    ):
         assert hasattr(ingest, name), name
     assert "speech-to-text is not available" in ingest.MSG_NO_CAPTIONS
 
@@ -50,9 +58,11 @@ def test_pdf_keeps_long_notes_helpers():
 
 # ---------------------------------------------------------------- #128: summary cut mid-sentence
 def test_truncate_sentences_ends_on_a_whole_sentence():
-    s = ("Higher order derivatives measure how a rate of change itself changes. The second derivative is "
-         "the derivative of the derivative. Physically it is acceleration, and the third derivative as "
-         "jerk is rarely needed in practice.")
+    s = (
+        "Higher order derivatives measure how a rate of change itself changes. The second derivative is "
+        "the derivative of the derivative. Physically it is acceleration, and the third derivative as "
+        "jerk is rarely needed in practice."
+    )
     out = text.truncate_sentences(s, 200)
     assert out.endswith("derivative of the derivative.")
     assert len(out) <= 200
@@ -67,8 +77,10 @@ def test_truncate_sentences_falls_back_to_a_word_boundary():
 def test_cover_summary_is_never_cut_mid_sentence():
     notes = json.loads(SAMPLE.read_text(encoding="utf-8"))
     notes = copy.deepcopy(notes)
-    notes["cover"]["summary"] = ("This lecture explains the second derivative. " * 3
-                                 + "It then covers higher order derivatives as a way of seeing the second derivative as acceleration.")
+    notes["cover"]["summary"] = (
+        "This lecture explains the second derivative. " * 3
+        + "It then covers higher order derivatives as a way of seeing the second derivative as acceleration."
+    )
     html = pdf.render_html(notes)
     summary = html.split('<div class="cv-sum">', 1)[1].split("</div>", 1)[0]
     assert summary.endswith(".") and "the second derivative as" not in summary[-30:]

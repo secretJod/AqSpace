@@ -11,12 +11,13 @@ itself is the only reliable judge of whether a key is valid.
 Surrounding whitespace and quotes (a common .env copy-paste mistake) are stripped from os.environ in
 place, so every later reader (server.py, notes_engine) sees the clean key.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import re
-from typing import MutableMapping
+from collections.abc import MutableMapping
 
 log = logging.getLogger("lna")
 
@@ -46,8 +47,9 @@ def problems(raw: str) -> list[str]:
     return out
 
 
-def check_keys(env: MutableMapping[str, str] | None = None,
-               logger: logging.Logger | None = None) -> dict[str, list[str]]:
+def check_keys(
+    env: MutableMapping[str, str] | None = None, logger: logging.Logger | None = None
+) -> dict[str, list[str]]:
     """Warn about malformed keys and strip surrounding whitespace/quotes in place. Returns {var: problems}."""
     env = os.environ if env is None else env
     logger = logger or log

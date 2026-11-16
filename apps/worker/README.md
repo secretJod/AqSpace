@@ -71,10 +71,12 @@ Exit codes: `0` ok, `2` bad usage or missing key, `3` transcript error, `4` AI p
 import notes_engine
 
 result = notes_engine.generate(
-    "https://youtu.be/VIDEO_ID", "groq",          # api_key falls back to $GROQ_API_KEY
-    out_dir="out", progress=lambda stage, pct, msg: print(pct, msg),
+    "https://youtu.be/VIDEO_ID",
+    "groq",  # api_key falls back to $GROQ_API_KEY
+    out_dir="out",
+    progress=lambda stage, pct, msg: print(pct, msg),
 )
-result["pdf_path"], result["html_path"], result["notes"]   # notes = the Notes JSON dict
+result["pdf_path"], result["html_path"], result["notes"]  # notes = the Notes JSON dict
 ```
 
 The building blocks are exported too: `parse_video_id`, `get_transcript`, `generate_notes`, `validate_notes`, `render_html`, `render_pdf`, the exceptions `IngestError`, `LLMError`, `PdfError`, and `PROVIDERS`.

@@ -17,6 +17,7 @@ How the worker is organised (read in this order)
 The heavy modules (ingest / llm / pdf) are imported lazily inside the worker so
 the server starts even when one of them is missing or broken.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,7 @@ log = logging.getLogger("lna")
 DEFAULT_CONFIG = {
     "OUTPUT_DIR": DEFAULT_OUTPUT_DIR,
     "MAX_ACTIVE_JOBS": 2,
-    "RATE_LIMIT": (10, 60),      # at most 10 new jobs / 60 s
+    "RATE_LIMIT": (10, 60),  # at most 10 new jobs / 60 s
     "MAX_CONTENT_LENGTH": 64 * 1024,
     "CLEANUP_ON_START": True,
     "LOAD_DOTENV": True,
@@ -78,8 +79,13 @@ def create_app(config: dict | None = None) -> Flask:
     app.extensions["lna"] = state
 
     # 5. CORS (only local pages may call the API), security, routes
-    CORS(app, resources={r"/api/*": {"origins": [LOCAL_ORIGIN_RE]}}, methods=["GET", "POST", "OPTIONS"],
-         allow_headers=["Content-Type"], max_age=600)
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": [LOCAL_ORIGIN_RE]}},
+        methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+        max_age=600,
+    )
     register_security(app)
     register_routes(app, state)
     return app

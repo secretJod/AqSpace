@@ -1,13 +1,12 @@
-﻿"""API tests with fake ingest / llm / pdf modules (no network, no real keys)."""
+"""API tests with fake ingest / llm / pdf modules (no network, no real keys)."""
+
 import json
-import sys
 import threading
 import time
 import types
 from pathlib import Path
 
 import pytest
-
 
 from app import server as srv  # noqa: E402
 from app.settings import GENERIC_ERROR  # noqa: E402
@@ -49,9 +48,16 @@ def make_fakes(*, gate=None, transcript_exc=None, llm_exc=None, pdf_exc=None, ht
             gate.wait(5)
         if transcript_exc:
             raise transcript_exc
-        return {"video_id": "dQw4w9WgXcQ", "url": url, "title": "Test Lecture", "channel": "Chan",
-                "duration_sec": 3725, "language": "en", "source": "captions",
-                "segments": [{"start": 0.0, "text": "hello"}]}
+        return {
+            "video_id": "dQw4w9WgXcQ",
+            "url": url,
+            "title": "Test Lecture",
+            "channel": "Chan",
+            "duration_sec": 3725,
+            "language": "en",
+            "source": "captions",
+            "segments": [{"start": 0.0, "text": "hello"}],
+        }
 
     ingest.parse_video_id = parse_video_id
     ingest.get_transcript = get_transcript
@@ -73,8 +79,13 @@ def make_fakes(*, gate=None, transcript_exc=None, llm_exc=None, pdf_exc=None, ht
             progress("notes", 100, "final")
         if llm_exc:
             raise llm_exc
-        return {"meta": {"title": "Nice Notes", "subtitle": "", "source_url": transcript["url"]},
-                "cover": {}, "sections": [], "glossary": [], "recap": {}}
+        return {
+            "meta": {"title": "Nice Notes", "subtitle": "", "source_url": transcript["url"]},
+            "cover": {},
+            "sections": [],
+            "glossary": [],
+            "recap": {},
+        }
 
     llm.generate_notes = generate_notes
 
@@ -84,8 +95,10 @@ def make_fakes(*, gate=None, transcript_exc=None, llm_exc=None, pdf_exc=None, ht
     def render_html(notes):
         if html_exc:
             raise html_exc
-        return ("<html><body>notes <style>@font-face{src:url('file:///D:/x/app/static/fonts/Kalam-Regular.ttf')}"
-                "</style><script>var x=1;</script><script src=\"evil.js\"></script></body></html>")
+        return (
+            "<html><body>notes <style>@font-face{src:url('file:///D:/x/app/static/fonts/Kalam-Regular.ttf')}"
+            '</style><script>var x=1;</script><script src="evil.js"></script></body></html>'
+        )
 
     def render_pdf(notes, out_path):
         if pdf_exc:
@@ -158,7 +171,15 @@ def test_providers_lists_all_and_server_key_flag(make_client, monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", SECRET)
     data = client.get("/api/providers").get_json()
     flags = {p["id"]: p["server_key"] for p in data["providers"]}
-    assert flags == {"local": False, "gemini": False, "groq": True, "xai": False, "huggingface": False, "nvidia": False, "colab": False}
+    assert flags == {
+        "local": False,
+        "gemini": False,
+        "groq": True,
+        "xai": False,
+        "huggingface": False,
+        "nvidia": False,
+        "colab": False,
+    }
     assert SECRET not in json.dumps(data)
     for p in data["providers"]:
         assert {"id", "label", "default_model", "key_hint", "server_key"} <= set(p)
@@ -189,7 +210,9 @@ def test_full_flow_done(make_client):
     assert b"file:///" not in html.data and b"/static/fonts/Kalam-Regular.ttf" in html.data
     assert "default-src 'none'" in html.headers["Content-Security-Policy"]
     csp = html.headers["Content-Security-Policy"]
-    import base64, hashlib
+    import base64
+    import hashlib
+
     want = base64.b64encode(hashlib.sha256(b"var x=1;").digest()).decode()
     assert f"script-src 'sha256-{want}';" in csp  # only the generated inline script may run
     assert "unsafe-inline'" not in csp.split("style-src")[0]
@@ -361,8 +384,11 @@ def test_host_and_origin_guards(make_client):
     client, _, _ = make_client()
     assert client.get("/api/providers", headers={"Host": "evil.com"}).status_code == 403
     assert client.get("/api/providers", headers={"Host": "127.0.0.1:5055"}).status_code == 200
-    r = client.post("/api/jobs", json={"url": GOOD_URL, "provider": "gemini", "api_key": SECRET},
-                    headers={"Origin": "https://evil.com"})
+    r = client.post(
+        "/api/jobs",
+        json={"url": GOOD_URL, "provider": "gemini", "api_key": SECRET},
+        headers={"Origin": "https://evil.com"},
+    )
     assert r.status_code == 403
 
 
@@ -381,6 +407,7 @@ def test_cleanup_old_jobs(tmp_path):
         (out / name).mkdir(parents=True)
         (out / name / "notes.json").write_text("{}")
     import os
+
     past = time.time() - 48 * 3600
     os.utime(out / old, (past, past))
     os.utime(out / other, (past, past))

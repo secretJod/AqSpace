@@ -16,6 +16,7 @@ How it fits
 Read next
     ``jobs.py``.
 """
+
 from __future__ import annotations
 
 import base64
@@ -31,8 +32,7 @@ from flask import Flask, Response, jsonify, request, send_file
 from .helpers import redact, slugify
 from .jobs import run_note_job, run_smart_job
 from .providers import provider_rows, provider_table, server_key
-from .settings import CSP_NOTES, ENV_KEYS, JOB_ID_RE, KEY_RE, MODEL_RE, PROVIDER_ORDER, VIDEO_ID_RE
-from .settings import KEYLESS
+from .settings import CSP_NOTES, ENV_KEYS, JOB_ID_RE, KEY_RE, KEYLESS, MODEL_RE, PROVIDER_ORDER, VIDEO_ID_RE
 from .state import State
 
 log = logging.getLogger("lna")
@@ -132,8 +132,10 @@ def register_routes(app: Flask, state: State) -> None:
         if provider in KEYLESS:
             api_key = None  # never forward a typed key to the local server
         elif not api_key:
-            return bad(f"No API key for {table[provider]['label']}. Paste one in the form, "
-                       f"or put {ENV_KEYS[provider]} in backend/.env.")
+            return bad(
+                f"No API key for {table[provider]['label']}. Paste one in the form, "
+                f"or put {ENV_KEYS[provider]} in backend/.env."
+            )
         # Whisper fallback key: request > env > the main key when the provider is Groq
         groq_key = groq_key or server_key("groq") or (api_key if provider == "groq" else None) or None
 
@@ -156,18 +158,28 @@ def register_routes(app: Flask, state: State) -> None:
         with state.lock:
             state.prune_memory()
             if state.active_count() >= state.max_active:
-                return bad("The server is busy with other lectures right now. "
-                           "Please wait a minute and try again.", 429)
+                return bad("The server is busy with other lectures right now. Please wait a minute and try again.", 429)
             if state.rate_limited():
                 return bad("Too many requests - please slow down a little.", 429)
             job_id = uuid.uuid4().hex
             now = time.time()
-            job = {"id": job_id, "status": "queued", "stage": "transcript", "pct": 0,
-                   "message": "Queued...", "created": now, "updated": now}
+            job = {
+                "id": job_id,
+                "status": "queued",
+                "stage": "transcript",
+                "pct": 0,
+                "message": "Queued...",
+                "created": now,
+                "updated": now,
+            }
             state.jobs[job_id] = job
 
-        thread = threading.Thread(target=run_note_job, name=f"job-{job_id[:8]}", daemon=True,
-                                  args=(state, job_id, url, provider, api_key, model, groq_key))
+        thread = threading.Thread(
+            target=run_note_job,
+            name=f"job-{job_id[:8]}",
+            daemon=True,
+            args=(state, job_id, url, provider, api_key, model, groq_key),
+        )
         thread.start()
         return jsonify(job_id=job_id), 202
 
@@ -190,7 +202,7 @@ def register_routes(app: Flask, state: State) -> None:
         job = state.jobs.get(job_id)
         if job is not None and job["status"] != "done":
             return None
-        path = (state.output_dir / job_id / name)
+        path = state.output_dir / job_id / name
         try:
             path = path.resolve()
             if state.output_dir.resolve() not in path.parents or not path.is_file():
@@ -214,8 +226,13 @@ def register_routes(app: Flask, state: State) -> None:
         if path is None:
             return bad("File not found.", 404)
         title = (state.jobs.get(job_id) or {}).get("meta", {}).get("title", "")
-        return send_file(path, mimetype="application/pdf", as_attachment=True, max_age=0,
-                         download_name=f"{slugify(title)}-notebook.pdf")
+        return send_file(
+            path,
+            mimetype="application/pdf",
+            as_attachment=True,
+            max_age=0,
+            download_name=f"{slugify(title)}-notebook.pdf",
+        )
 
     @app.get("/api/jobs/<job_id>/notes.html")
     def notes_html(job_id):
@@ -262,10 +279,16 @@ def register_routes(app: Flask, state: State) -> None:
             if dur is not None and (isinstance(dur, bool) or not isinstance(dur, (int, float)) or dur < 0):
                 return bad("duration_sec must be a number of seconds.")
             if vid in seen:
-                continue                      # the same video twice is analysed once
+                continue  # the same video twice is analysed once
             seen.add(vid)
-            videos.append({"id": vid, "title": title.strip()[:200], "channel": (channel or "").strip()[:120],
-                           "duration_sec": int(dur or 0)})
+            videos.append(
+                {
+                    "id": vid,
+                    "title": title.strip()[:200],
+                    "channel": (channel or "").strip()[:120],
+                    "duration_sec": int(dur or 0),
+                }
+            )
         if len(videos) < 2:
             return bad("Send between 2 and 20 different videos.")
 
@@ -273,7 +296,7 @@ def register_routes(app: Flask, state: State) -> None:
         table = provider_table()
         if not isinstance(provider, str) or provider not in table:
             return unknown_provider_error()
-        api_key = server_key(provider)        # keys never come from the browser here
+        api_key = server_key(provider)  # keys never come from the browser here
         if not api_key:
             return bad(f"No API key for {table[provider]['label']}. Put {ENV_KEYS[provider]} in backend/.env.")
 
@@ -292,19 +315,38 @@ def register_routes(app: Flask, state: State) -> None:
         with state.lock:
             state.prune_memory()
             if state.active_smart() >= state.max_active:
-                return bad("The server is busy with other analyses right now. "
-                           "Please wait a minute and try again.", 429)
+                return bad("The server is busy with other analyses right now. Please wait a minute and try again.", 429)
             if state.rate_limited(state.recent_smart):
                 return bad("Too many requests - please slow down a little.", 429)
             job_id = uuid.uuid4().hex
             now = time.time()
-            job = {"id": job_id, "status": "queued", "stage": "transcripts", "pct": 0, "model": used_model,
-                   "message": "Queued...", "created": now, "updated": now}
+            job = {
+                "id": job_id,
+                "status": "queued",
+                "stage": "transcripts",
+                "pct": 0,
+                "model": used_model,
+                "message": "Queued...",
+                "created": now,
+                "updated": now,
+            }
             state.smart_jobs[job_id] = job
 
-        thread = threading.Thread(target=run_smart_job, name=f"smart-{job_id[:8]}", daemon=True,
-                                  args=(state, job_id, goal, videos, provider, api_key, model,
-                                        server_key("groq") or (api_key if provider == "groq" else None)))
+        thread = threading.Thread(
+            target=run_smart_job,
+            name=f"smart-{job_id[:8]}",
+            daemon=True,
+            args=(
+                state,
+                job_id,
+                goal,
+                videos,
+                provider,
+                api_key,
+                model,
+                server_key("groq") or (api_key if provider == "groq" else None),
+            ),
+        )
         thread.start()
         return jsonify(job_id=job_id), 202
 
@@ -342,8 +384,7 @@ def register_routes(app: Flask, state: State) -> None:
                 parse_id(url)
         except Exception as e:
             if IngestError and isinstance(e, IngestError):
-                return bad(str(e) or "That does not look like a YouTube playlist link.",
-                           getattr(e, "status", 400))
+                return bad(str(e) or "That does not look like a YouTube playlist link.", getattr(e, "status", 400))
             return bad("That does not look like a YouTube playlist link.")
 
         with state.lock:

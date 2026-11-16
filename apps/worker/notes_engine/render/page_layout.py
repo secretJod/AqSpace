@@ -17,6 +17,7 @@ How it fits
 Read next
     ``pdf_export.py``, then templates/notebook.js.
 """
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -46,7 +47,7 @@ def rough_js_source() -> str:
 HTML_SKELETON = (
     '<!DOCTYPE html>\n<html lang="%s" data-print="%s" data-doc-title="%s">\n<head>\n<meta charset="utf-8">\n'
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>%s — notebook</title>\n'
-    '<style>%s</style>\n<style>%s</style>\n</head>\n<body>\n'
+    "<style>%s</style>\n<style>%s</style>\n</head>\n<body>\n"
     '<template id="rings-tpl">%s</template>\n<div id="source">%s</div>\n<div id="pages"></div>\n%s<script>%s</script>\n</body>\n</html>\n'
 )
 
@@ -76,8 +77,17 @@ def build_document(notes: dict, for_print: bool, rough_source: str | None = None
 
     # 3. Fill the skeleton
     return HTML_SKELETON % (
-        escape_html(clean_text(meta.get("language")) or "en"), "1" if for_print else "0", escape_html(title), escape_html(title),
-        font_face_css(), css, rings_svg(), "".join(u for u in units if u), rough_tag, js)
+        escape_html(clean_text(meta.get("language")) or "en"),
+        "1" if for_print else "0",
+        escape_html(title),
+        escape_html(title),
+        font_face_css(),
+        css,
+        rings_svg(),
+        "".join(u for u in units if u),
+        rough_tag,
+        js,
+    )
 
 
 def render_html(notes: dict, *, for_print: bool = False, rough_source: str | None = None) -> str:

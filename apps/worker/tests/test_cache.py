@@ -1,4 +1,5 @@
 """Disk cache: unit behaviour, and its use for transcripts, digests and composed sections."""
+
 from __future__ import annotations
 
 import json

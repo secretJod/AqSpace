@@ -11,6 +11,7 @@ How it fits
 Read next
     ``fonts.py`` (measuring text), then ``sketch.py`` (the hand-drawn SVG toolkit).
 """
+
 from __future__ import annotations
 
 import hashlib

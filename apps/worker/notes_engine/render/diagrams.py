@@ -18,6 +18,7 @@ How it fits
 Read next
     ``blocks.py`` (the non-diagram content).
 """
+
 from __future__ import annotations
 
 import math
@@ -34,8 +35,8 @@ MAX_NODES = 8
 MAX_NODES_BY_TYPE = {"mindmap": 10, "sequence": 5}
 MAX_SEQ_MESSAGES = 8
 DIAGRAM_TYPES = ("flow", "stack", "compare", "cycle", "tree", "timeline", "mindmap", "sequence")
-LABEL_SIZE, LABEL_LINE_HEIGHT = 16.5, 19.5     # node titles (Kalam Bold)
-DETAIL_SIZE, DETAIL_LINE_HEIGHT = 13.6, 16.2   # node details (Patrick Hand)
+LABEL_SIZE, LABEL_LINE_HEIGHT = 16.5, 19.5  # node titles (Kalam Bold)
+DETAIL_SIZE, DETAIL_LINE_HEIGHT = 13.6, 16.2  # node details (Patrick Hand)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -64,8 +65,14 @@ def clean_diagram(diagram) -> dict | None:
         if node_id in seen_ids:
             node_id = "%s_%d" % (node_id, i)
         seen_ids.add(node_id)
-        nodes.append({"id": node_id, "label": label, "detail": truncate(node.get("detail", ""), 140),
-                      "parent": clean_text(node.get("parent"))})
+        nodes.append(
+            {
+                "id": node_id,
+                "label": label,
+                "detail": truncate(node.get("detail", ""), 140),
+                "parent": clean_text(node.get("parent")),
+            }
+        )
     if not nodes:
         return None
     if typ == "sequence" and len(nodes) < 2:  # a lifeline diagram needs at least two actors
@@ -82,8 +89,13 @@ def clean_diagram(diagram) -> dict | None:
         elif a in ids and b in ids and a != b and (a, b) not in seen_pairs:
             seen_pairs.add((a, b))
             edges.append({"from": a, "to": b, "label": truncate(edge.get("label", ""), 28)})
-    return {"type": typ, "title": truncate(diagram.get("title", ""), 80), "caption": truncate(diagram.get("caption", ""), 200),
-            "nodes": nodes, "edges": edges}
+    return {
+        "type": typ,
+        "title": truncate(diagram.get("title", ""), 80),
+        "caption": truncate(diagram.get("caption", ""), 200),
+        "nodes": nodes,
+        "edges": edges,
+    }
 
 
 # ----------------------------------------------------------------------------------------------
@@ -94,7 +106,13 @@ def _node_box(node: dict, box_width: float, center=True, max_label=2, max_det=3,
     inner_width = box_width - 2 * pad
     label_lines = wrap_text(node["label"], inner_width, LABEL_SIZE, "kb", max_label)
     detail_lines = wrap_text(node["detail"], inner_width, DETAIL_SIZE, "ph", max_det) if node["detail"] else []
-    h = pad + len(label_lines) * LABEL_LINE_HEIGHT + (len(detail_lines) * DETAIL_LINE_HEIGHT + 3 if detail_lines else 0) + pad - 1
+    h = (
+        pad
+        + len(label_lines) * LABEL_LINE_HEIGHT
+        + (len(detail_lines) * DETAIL_LINE_HEIGHT + 3 if detail_lines else 0)
+        + pad
+        - 1
+    )
     return {"ll": label_lines, "dl": detail_lines, "h": max(h, 40)}
 
 
@@ -181,16 +199,20 @@ def _layout_flow(dg: dict, W: float):
     pos = {}
     for li in range(nl):
         if li > 0:
+
             def key(i):
                 preds = [pos[idx[ed["from"]]] for ed in fwd if idx[ed["to"]] == i and idx[ed["from"]] in pos]
                 return (sum(preds) / len(preds)) if preds else i
+
             groups[li].sort(key=key)
         for k, i in enumerate(groups[li]):
             pos[i] = k - (len(groups[li]) - 1) / 2.0
 
     # gap between consecutive layers (room for edge labels)
     def gap_after(li):
-        labels = [ed["label"] for ed in fwd if ed["label"] and layer[idx[ed["from"]]] == li and layer[idx[ed["to"]]] == li + 1]
+        labels = [
+            ed["label"] for ed in fwd if ed["label"] and layer[idx[ed["from"]]] == li and layer[idx[ed["to"]]] == li + 1
+        ]
         if not labels:
             return 46
         one_line_width = max(sum(text_width(w, 15, "cv") for w in [lab]) for lab in labels)
@@ -227,7 +249,11 @@ def _layout_flow(dg: dict, W: float):
 
     # "skip" edges jump over a layer in the same row and are routed above the row
     def is_skip(ed):
-        return layer[idx[ed["to"]]] - layer[idx[ed["from"]]] > 1 and layer[idx[ed["to"]]] // k == layer[idx[ed["from"]]] // k
+        return (
+            layer[idx[ed["to"]]] - layer[idx[ed["from"]]] > 1
+            and layer[idx[ed["to"]]] // k == layer[idx[ed["from"]]] // k
+        )
+
     skips = [ed for ed in fwd if is_skip(ed)]
     cross = [ed for ed in fwd if layer[idx[ed["to"]]] // k != layer[idx[ed["from"]]] // k]
     top = 10 + (12 * len(skips) + 8 if skips else 0)
@@ -260,8 +286,27 @@ def _layout_flow(dg: dict, W: float):
         y0 = row_y[r] + (rowh - block) / 2
         for si, i in enumerate(groups[li]):
             geo[i] = (layer_x[li], y0 + si * (bh + vgap), bw, bh)
-    return dict(nodes=nodes, edges=edges, fwd=fwd, back=back, geo=geo, layer=layer, idx=idx, k=k, rows=rows, W=W, H=H,
-                skips=skips, row_y=row_y, bh=bh, groups=groups, cross=cross, row_stack=row_stack, vgap=vgap, rowgap=rowgap)
+    return dict(
+        nodes=nodes,
+        edges=edges,
+        fwd=fwd,
+        back=back,
+        geo=geo,
+        layer=layer,
+        idx=idx,
+        k=k,
+        rows=rows,
+        W=W,
+        H=H,
+        skips=skips,
+        row_y=row_y,
+        bh=bh,
+        groups=groups,
+        cross=cross,
+        row_stack=row_stack,
+        vgap=vgap,
+        rowgap=rowgap,
+    )
 
 
 def _svg_flow(dg: dict, W: float) -> tuple[str, float, float]:
@@ -282,7 +327,7 @@ def _svg_flow(dg: dict, W: float) -> tuple[str, float, float]:
         ra, rb = la // k, lb // k  # row of each end
         lab = _label_lines(ed["label"], 80)
         if ra == rb and lb == la + 1:  # neighbours in the same row: straight arrow
-            fwd_dir = (bx > ax)
+            fwd_dir = bx > ax
             p0 = (ax + aw + 3, ay + ah / 2) if fwd_dir else (ax - 3, ay + ah / 2)
             p3 = (bx - 6, by + bh_ / 2) if fwd_dir else (bx + bw_ + 6, by + bh_ / 2)
             sk.arrow([p0, p3])
@@ -297,7 +342,9 @@ def _svg_flow(dg: dict, W: float) -> tuple[str, float, float]:
             if lab:
                 sk.label((p0[0] + p3[0]) / 2, gy, lab)
         else:  # crosses to the next row: via the channel between rows
-            chan = L["row_y"][ra] + L["row_stack"][ra] * L["bh"] + (L["row_stack"][ra] - 1) * L["vgap"] + 24 + 10 * cross_i
+            chan = (
+                L["row_y"][ra] + L["row_stack"][ra] * L["bh"] + (L["row_stack"][ra] - 1) * L["vgap"] + 24 + 10 * cross_i
+            )
             cross_i += 1
             p0 = (ax + aw / 2, ay + ah + 3)
             p3 = (bx + bw_ / 2, by - 7)
@@ -306,15 +353,23 @@ def _svg_flow(dg: dict, W: float) -> tuple[str, float, float]:
             else:
                 sk.arrow([p0, (p0[0], chan), (p3[0], chan), p3])
             if lab:
-                sk.label(p0[0] + 8 + max(text_width(x, 15, "cv") for x in lab) / 2,
-                         chan if abs(p0[0] - p3[0]) >= 2 else (p0[1] + p3[1]) / 2, lab)
+                sk.label(
+                    p0[0] + 8 + max(text_width(x, 15, "cv") for x in lab) / 2,
+                    chan if abs(p0[0] - p3[0]) >= 2 else (p0[1] + p3[1]) / 2,
+                    lab,
+                )
     for ed in L["back"]:  # backward edges: dashed arcs underneath
         a, b = idx[ed["from"]], idx[ed["to"]]
         ax, ay, aw, ah = geo[a]
         bx, by, bw_, bh_ = geo[b]
         yb = L["H"] - 6
-        sk.bezier_arrow((ax + aw / 2, ay + ah + 3), (ax + aw / 2, yb + 10), (bx + bw_ / 2, yb + 10),
-                        (bx + bw_ / 2, by + bh_ + 7), dash="6 5")
+        sk.bezier_arrow(
+            (ax + aw / 2, ay + ah + 3),
+            (ax + aw / 2, yb + 10),
+            (bx + bw_ / 2, yb + 10),
+            (bx + bw_ / 2, by + bh_ + 7),
+            dash="6 5",
+        )
     return sk.out(), W, L["H"]
 
 
@@ -359,7 +414,9 @@ def _svg_stack(dg: dict, W: float) -> tuple[str, float, float]:
         heights.append(max(46, 20 + len(lines[:3]) * 19))
     total = sum(heights) + 18 * (len(nodes) - 1)
     H = y0 + total + 22
-    sk.rect(frame_x, 6, frame_w, H - 12, fill="#faf6e9", stroke=INK, sw=2.6, double=True, hl="#e9dfc2", hl_style="zigzag")
+    sk.rect(
+        frame_x, 6, frame_w, H - 12, fill="#faf6e9", stroke=INK, sw=2.6, double=True, hl="#e9dfc2", hl_style="zigzag"
+    )
     if dg["title"]:
         sk.text(inner_x + 4, y + 30, dg["title"], 20, "kb", "start", INK)
     yy = y0
@@ -369,8 +426,14 @@ def _svg_stack(dg: dict, W: float) -> tuple[str, float, float]:
         sk.rect(inner_x, yy, inner_w, h, fill=CARD, stroke=INK, sw=2.2, hl=highlight)
         ly = yy + h / 2 - (len(runs_list[i]) - 1) * 9.5 + 5.5
         for line in runs_list[i]:
-            spans = "".join('<tspan class="%s" font-size="%s">%s</tspan>' % (face, fmt_num(size), escape_html(wd)) for wd, face, size in line)
-            sk.tx.append('<text x="%s" y="%s" fill="%s" xml:space="preserve">%s</text>' % (fmt_num(inner_x + text_pad), fmt_num(ly), INK, spans))
+            spans = "".join(
+                '<tspan class="%s" font-size="%s">%s</tspan>' % (face, fmt_num(size), escape_html(wd))
+                for wd, face, size in line
+            )
+            sk.tx.append(
+                '<text x="%s" y="%s" fill="%s" xml:space="preserve">%s</text>'
+                % (fmt_num(inner_x + text_pad), fmt_num(ly), INK, spans)
+            )
             ly += 19
         if i < len(nodes) - 1:
             cx = inner_x + inner_w / 2
@@ -457,7 +520,11 @@ def _svg_cycle(dg: dict, W: float) -> tuple[str, float, float]:
     nodes = dg["nodes"]
     n = len(nodes)
     idx = {nd["id"]: i for i, nd in enumerate(nodes)}
-    edges = dg["edges"] or [{"from": nodes[i]["id"], "to": nodes[(i + 1) % n]["id"], "label": ""} for i in range(n)] if n > 1 else []
+    edges = (
+        dg["edges"] or [{"from": nodes[i]["id"], "to": nodes[(i + 1) % n]["id"], "label": ""} for i in range(n)]
+        if n > 1
+        else []
+    )
     bw = 168 if n <= 6 else 150
     for nd in nodes:
         b = _node_box(nd, bw, max_label=2, max_det=2)
@@ -503,7 +570,14 @@ def _svg_cycle(dg: dict, W: float) -> tuple[str, float, float]:
         vl = math.hypot(vx, vy) or 1
         off = 22
         c = (mx + vx / vl * off, my + vy / vl * off)
-        d = "M%s %sQ%s %s %s %s" % (fmt_num(p0[0]), fmt_num(p0[1]), fmt_num(c[0]), fmt_num(c[1]), fmt_num(p3[0]), fmt_num(p3[1]))
+        d = "M%s %sQ%s %s %s %s" % (
+            fmt_num(p0[0]),
+            fmt_num(p0[1]),
+            fmt_num(c[0]),
+            fmt_num(c[1]),
+            fmt_num(p3[0]),
+            fmt_num(p3[1]),
+        )
         sk.path(d)
         sk.head(p3[0], p3[1], math.atan2(p3[1] - c[1], p3[0] - c[0]))
         if ed["label"]:
@@ -560,6 +634,7 @@ def _svg_tree(dg: dict, W: float) -> tuple[str, float, float]:
         depth[i] = d
         for c in children[i]:
             dfs_depth(c, d + 1)
+
     for r in roots:
         dfs_depth(r, 0)
     maxd = max(depth.values())
@@ -575,6 +650,7 @@ def _svg_tree(dg: dict, W: float) -> tuple[str, float, float]:
             for c in children[i]:
                 assign(c)
             slot[i] = (slot[children[i][0]] + slot[children[i][-1]]) / 2
+
     for r in roots:
         assign(r)
     nslots = max(counter[0], 1)
@@ -595,6 +671,7 @@ def _svg_tree(dg: dict, W: float) -> tuple[str, float, float]:
 
     def cx(i):
         return (VW - natural) / 2 + bw / 2 + slot[i] * (bw + gap)
+
     for i, nd in enumerate(nodes):
         _draw_node(sk, nd, cx(i) - bw / 2, ys[depth[i]], bw, level_h[depth[i]], tint=(4, 2, 3)[min(depth[i], 2)])
     for c, p in parent.items():
@@ -624,14 +701,24 @@ def _svg_timeline(dg: dict, W: float) -> tuple[str, float, float]:
         nd["_h"] = len(nd["_ll"]) * 23 + (len(nd["_dl"]) * 17 + 4 if nd["_dl"] else 0)
     y = 16
     for r in range(rows):
-        items = nodes[r * per_row:(r + 1) * per_row]
+        items = nodes[r * per_row : (r + 1) * per_row]
         ly = y + 14
         x_start, x_end = 6, W - 6
         sk.arrow([(x_start, ly), (x_end, ly)], sw=2.6)
         for c, nd in enumerate(items):
             cx = 10 + colw * (c + 0.5)
             dot_radius = 7.5
-            sk.ellipse(cx, ly, 2 * dot_radius, 2 * dot_radius, fill="#fff8d6", stroke=INK, sw=2.4, hl=TINTS[4][2], hl_style="solid")
+            sk.ellipse(
+                cx,
+                ly,
+                2 * dot_radius,
+                2 * dot_radius,
+                fill="#fff8d6",
+                stroke=INK,
+                sw=2.4,
+                hl=TINTS[4][2],
+                hl_style="solid",
+            )
             ty = ly + 22 + 20 * 0.62
             for line in nd["_ll"]:
                 sk.text(cx, ty, line, 20, "kb", "middle", INK)
@@ -789,13 +876,29 @@ def _svg_mindmap(dg: dict, W: float) -> tuple[str, float, float]:
         p3 = (x - 2 if s > 0 else x + w + 2, ty)
         span = abs(p3[0] - p0[0])
         stroke = TINTS[tint_of[i]][1]
-        sk.bezier_arrow(p0, (p0[0] + s * span * 0.55, p0[1]), (p3[0] - s * span * 0.45, p3[1]), p3, stroke=stroke, sw=2.8, head=False)
+        sk.bezier_arrow(
+            p0,
+            (p0[0] + s * span * 0.55, p0[1]),
+            (p3[0] - s * span * 0.45, p3[1]),
+            p3,
+            stroke=stroke,
+            sw=2.8,
+            head=False,
+        )
         for c in kids[i]:
             cx_, cy_, cw_, ch_ = pos[c]
             q0 = (x + w + 2, ty) if s > 0 else (x - 2, ty)
             q3 = (cx_ - 2 if s > 0 else cx_ + cw_ + 2, cy_ + ch_ / 2)
             sp2 = abs(q3[0] - q0[0])
-            sk.bezier_arrow(q0, (q0[0] + s * sp2 * 0.5, q0[1]), (q3[0] - s * sp2 * 0.5, q3[1]), q3, stroke=stroke, sw=2.1, head=False)
+            sk.bezier_arrow(
+                q0,
+                (q0[0] + s * sp2 * 0.5, q0[1]),
+                (q3[0] - s * sp2 * 0.5, q3[1]),
+                q3,
+                stroke=stroke,
+                sw=2.1,
+                head=False,
+            )
     # root
     sk.ellipse(cx0, cy0, rw, rh, fill=TINTS[4][0], stroke=TINTS[4][1], sw=3.0, hl=TINTS[4][2])
     _text_box(sk, rb["ll"], rb["dl"], cx0, cy0 - th / 2 - 2, 0, 18.5, 22, 13.4, 16)
@@ -803,15 +906,33 @@ def _svg_mindmap(dg: dict, W: float) -> tuple[str, float, float]:
         x, y, w, h = pos[i]
         f, st, hl = TINTS[tint_of[i]]
         sk.rect(x, y, w, h, fill=f, stroke=st, sw=2.5, hl=hl)
-        _text_box(sk, box[i]["ll"], box[i]["dl"], x + w / 2,
-                  y + (h - len(box[i]["ll"]) * 19.5 - (len(box[i]["dl"]) * 15.5 + 3 if box[i]["dl"] else 0)) / 2 - 10 + 10,
-                  0, 16.5, 19.5, 13.4, 15.5)
+        _text_box(
+            sk,
+            box[i]["ll"],
+            box[i]["dl"],
+            x + w / 2,
+            y + (h - len(box[i]["ll"]) * 19.5 - (len(box[i]["dl"]) * 15.5 + 3 if box[i]["dl"] else 0)) / 2 - 10 + 10,
+            0,
+            16.5,
+            19.5,
+            13.4,
+            15.5,
+        )
         for c in kids[i]:
             x, y, w, h = pos[c]
             sk.rect(x, y, w, h, fill=f, stroke=st, sw=1.9, hl=None)
-            _text_box(sk, box[c]["ll"], box[c]["dl"], x + w / 2,
-                      y + (h - len(box[c]["ll"]) * 17 - (len(box[c]["dl"]) * 14.5 + 3 if box[c]["dl"] else 0)) / 2,
-                      0, 14.6, 17, 12.6, 14.5)
+            _text_box(
+                sk,
+                box[c]["ll"],
+                box[c]["dl"],
+                x + w / 2,
+                y + (h - len(box[c]["ll"]) * 17 - (len(box[c]["dl"]) * 14.5 + 3 if box[c]["dl"] else 0)) / 2,
+                0,
+                14.6,
+                17,
+                12.6,
+                14.5,
+            )
     return sk.out(), W, H
 
 
@@ -859,7 +980,18 @@ def _svg_sequence(dg: dict, W: float) -> tuple[str, float, float]:
         sk.line(cx[i], y0 + ah + 2, cx[i], life_end, stroke="#7d7466", sw=1.7, dash="7 6", amp=0.8)
         sk.line(cx[i] - 7, life_end + 1, cx[i] + 7, life_end + 1, stroke="#7d7466", sw=1.7, amp=0.4)
         sk.rect(x, y0, bw, ah, fill=tf, stroke=ts_, sw=2.4, hl=thl)
-        _text_box(sk, boxes[i]["ll"], boxes[i]["dl"], cx[i], y0, 10, LABEL_SIZE, LABEL_LINE_HEIGHT, DETAIL_SIZE, DETAIL_LINE_HEIGHT)
+        _text_box(
+            sk,
+            boxes[i]["ll"],
+            boxes[i]["dl"],
+            cx[i],
+            y0,
+            10,
+            LABEL_SIZE,
+            LABEL_LINE_HEIGHT,
+            DETAIL_SIZE,
+            DETAIL_LINE_HEIGHT,
+        )
     for r in rows:
         a, b = r["a"], r["b"]
         if r["self"]:
@@ -880,8 +1012,16 @@ def _svg_sequence(dg: dict, W: float) -> tuple[str, float, float]:
 # ----------------------------------------------------------------------------------------------
 # 12. Public entry points
 # ----------------------------------------------------------------------------------------------
-DIAGRAM_BUILDERS = {"flow": _svg_flow, "stack": _svg_stack, "compare": _svg_compare, "cycle": _svg_cycle,
-                    "tree": _svg_tree, "timeline": _svg_timeline, "mindmap": _svg_mindmap, "sequence": _svg_sequence}
+DIAGRAM_BUILDERS = {
+    "flow": _svg_flow,
+    "stack": _svg_stack,
+    "compare": _svg_compare,
+    "cycle": _svg_cycle,
+    "tree": _svg_tree,
+    "timeline": _svg_timeline,
+    "mindmap": _svg_mindmap,
+    "sequence": _svg_sequence,
+}
 
 
 def build_diagram_svg(diagram, width: float = 690.0, css_class: str = "d") -> tuple[str, float, float] | None:
@@ -896,8 +1036,10 @@ def build_diagram_svg(diagram, width: float = 690.0, css_class: str = "d") -> tu
             inner, vw, vh = _svg_flow({**dg, "edges": []}, width)
         except Exception:
             return None
-    svg = ('<svg class="%s" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s" preserveAspectRatio="xMidYMid meet" role="img" aria-label="%s">%s</svg>'
-           % (css_class, fmt_num(vw), fmt_num(vh), escape_html(dg["title"] or "diagram"), inner))
+    svg = (
+        '<svg class="%s" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s" preserveAspectRatio="xMidYMid meet" role="img" aria-label="%s">%s</svg>'
+        % (css_class, fmt_num(vw), fmt_num(vh), escape_html(dg["title"] or "diagram"), inner)
+    )
     return svg, vw, vh
 
 

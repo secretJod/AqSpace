@@ -13,6 +13,7 @@ How it fits
 Read next
     ``sketch.py``.
 """
+
 from __future__ import annotations
 
 import base64
@@ -57,8 +58,12 @@ def font_face_css() -> str:
 # Short "face" codes used throughout the diagram code -> font file used to measure them.
 # They match the CSS classes on SVG <text> (kb = Kalam Bold, ph = Patrick Hand, cv = Caveat, ...).
 MEASURE_FILES = {
-    "kb": "Kalam-Bold.ttf", "kr": "Kalam-Regular.ttf", "kl": "Kalam-Light.ttf",
-    "ph": "PatrickHand-Regular.ttf", "cv": "Caveat-Regular.ttf", "mono": "JetBrainsMono-Regular.ttf",
+    "kb": "Kalam-Bold.ttf",
+    "kr": "Kalam-Regular.ttf",
+    "kl": "Kalam-Light.ttf",
+    "ph": "PatrickHand-Regular.ttf",
+    "cv": "Caveat-Regular.ttf",
+    "mono": "JetBrainsMono-Regular.ttf",
 }
 _loaded_fonts: dict = {}  # face code -> pymupdf.Font (or None if PyMuPDF is unavailable)
 
@@ -68,6 +73,7 @@ def _measure_font(face: str):
     if face not in _loaded_fonts:
         try:
             import pymupdf  # type: ignore
+
             _loaded_fonts[face] = pymupdf.Font(fontfile=str(FONT_DIR / MEASURE_FILES[face]))
         except Exception:  # pragma: no cover - fall back to heuristics
             _loaded_fonts[face] = None

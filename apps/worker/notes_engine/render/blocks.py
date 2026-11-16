@@ -15,6 +15,7 @@ How it fits
 Read next
     ``sections.py``.
 """
+
 from __future__ import annotations
 
 import re
@@ -48,7 +49,10 @@ def paragraph_block(block) -> str:
         return ""
     sentences = split_sentences(text) if len(text) > 180 else [text]
     spans = "".join('<span class="s">%s </span>' % rich(s) for s in sentences)
-    return ('<div class="item blk b-para" data-split="1" data-minkeep="2" data-minmove="2"><p class="sb para">%s</p></div>' % spans)
+    return (
+        '<div class="item blk b-para" data-split="1" data-minkeep="2" data-minmove="2"><p class="sb para">%s</p></div>'
+        % spans
+    )
 
 
 # ----------------------------------------------------------------------------------------------
@@ -61,7 +65,11 @@ def bullets_block(block) -> str:
     lis = "".join("<li>%s</li>" % rich(i) for i in items)
     # many short bullets -> two columns
     cols = " cols2" if len(items) >= 4 and max(len(plain(i)) for i in items) <= 48 else ""
-    return '<div class="item blk b-bullets' + cols + '" data-split="1" data-minkeep="2" data-minmove="2"><ul class="sb">%s</ul></div>' % lis
+    return (
+        '<div class="item blk b-bullets'
+        + cols
+        + '" data-split="1" data-minkeep="2" data-minmove="2"><ul class="sb">%s</ul></div>' % lis
+    )
 
 
 def steps_block(block) -> str:
@@ -69,7 +77,10 @@ def steps_block(block) -> str:
     if not items:
         return ""
     lis = "".join('<li><span class="num">%d</span>%s</li>' % (n, rich(i)) for n, i in enumerate(items, 1))
-    return '<div class="item blk b-steps" data-split="1" data-minkeep="2" data-minmove="2"><ol class="sb">%s</ol></div>' % lis
+    return (
+        '<div class="item blk b-steps" data-split="1" data-minkeep="2" data-minmove="2"><ol class="sb">%s</ol></div>'
+        % lis
+    )
 
 
 # ----------------------------------------------------------------------------------------------
@@ -79,8 +90,10 @@ def definition_block(block) -> str:
     term, text = clean_text(block.get("term")), clean_text(block.get("text"))
     if not (term or text):
         return ""
-    return ('<div class="item blk b-def"><div class="box"><span class="tag">def.</span><span class="term">%s</span> — %s</div></div>'
-            % (escape_html(term), rich(text)))
+    return (
+        '<div class="item blk b-def"><div class="box"><span class="tag">def.</span><span class="term">%s</span> — %s</div></div>'
+        % (escape_html(term), rich(text))
+    )
 
 
 def example_block(block) -> str:
@@ -102,8 +115,10 @@ def callout_block(block, callout_number: int) -> str:
     style = clean_text(block.get("style")).lower()
     if style not in CALLOUT_LABELS:
         style = "note"
-    return ('<div class="item blk b-call %s t%d"><div class="box"><span class="lbl">%s</span><span class="tx">%s</span></div></div>'
-            % (style, 1 + callout_number % 2, escape_html(CALLOUT_LABELS[style]), rich(text)))
+    return (
+        '<div class="item blk b-call %s t%d"><div class="box"><span class="lbl">%s</span><span class="tx">%s</span></div></div>'
+        % (style, 1 + callout_number % 2, escape_html(CALLOUT_LABELS[style]), rich(text))
+    )
 
 
 def formula_block(block) -> str:
@@ -127,8 +142,10 @@ def code_block(block) -> str:
     language = clean_text(block.get("language"))[:24]
     body = "".join('<div class="ln">%s</div>' % (escape_html(line) if line.strip() else "&nbsp;") for line in lines)
     tag = '<span class="lang">%s</span>' % escape_html(language) if language else ""
-    return ('<div class="item blk b-code" data-split="1" data-minkeep="4" data-minmove="3"><div class="box">%s<div class="sb">%s</div></div></div>'
-            % (tag, body))
+    return (
+        '<div class="item blk b-code" data-split="1" data-minkeep="4" data-minmove="3"><div class="box">%s<div class="sb">%s</div></div></div>'
+        % (tag, body)
+    )
 
 
 def table_block(block) -> str:
@@ -144,8 +161,10 @@ def table_block(block) -> str:
     for row in rows:
         cells = ([clean_text(c) for c in row] + [""] * ncol)[:ncol]
         trs += "<tr>%s</tr>" % "".join("<td>%s</td>" % rich(c) for c in cells)
-    return ('<div class="item blk b-table" data-split="1" data-minkeep="3" data-minmove="2"><table>%s<tbody class="sb">%s</tbody></table></div>'
-            % (thead, trs))
+    return (
+        '<div class="item blk b-table" data-split="1" data-minkeep="3" data-minmove="2"><table>%s<tbody class="sb">%s</tbody></table></div>'
+        % (thead, trs)
+    )
 
 
 # ----------------------------------------------------------------------------------------------
@@ -155,7 +174,11 @@ def unknown_block(block) -> str:
     """Block types this renderer does not know yet: show any text / items instead of dropping them."""
     if as_list(block.get("items")):
         return bullets_block(block)
-    parts = [clean_text(block.get(k)) for k in ("title", "term", "text", "content", "body", "definition") if clean_text(block.get(k))]
+    parts = [
+        clean_text(block.get(k))
+        for k in ("title", "term", "text", "content", "body", "definition")
+        if clean_text(block.get(k))
+    ]
     if not parts:
         return ""
     if len(parts) > 1:

@@ -5,6 +5,7 @@ Proves: a full local job finishes; a job killed mid-way (server drops the connec
 compose stage) is resumed from its per-video checkpoints by a resubmit (no map call is repeated);
 /api/providers reports local online true/false. Offline and fast: ingest and pdf are fakes.
 """
+
 import json
 import re
 import socket
@@ -24,22 +25,30 @@ URL = f"https://www.youtube.com/watch?v={VID}"
 
 
 def _section(i):
-    return {"title": f"topic {i}", "subtitle": "sub", "timestamp": f"{i % 60:02d}:00",
-            "blocks": [{"type": "paragraph", "text": f"text {i}"}],
-            "key_takeaways": ["k1"], "recall": {"q": f"q{i}?", "a": f"a{i}"}}
+    return {
+        "title": f"topic {i}",
+        "subtitle": "sub",
+        "timestamp": f"{i % 60:02d}:00",
+        "blocks": [{"type": "paragraph", "text": f"text {i}"}],
+        "key_takeaways": ["k1"],
+        "recall": {"q": f"q{i}?", "a": f"a{i}"},
+    }
 
 
-FRONT = {"subtitle": "s", "cover": {"summary": "s", "big_idea": "b"},
-         "glossary": [{"term": "cache", "definition": "fast store"}],
-         "recap": {"title": "recap", "points": ["p1"], "diagram": None}}
+FRONT = {
+    "subtitle": "s",
+    "cover": {"summary": "s", "big_idea": "b"},
+    "glossary": [{"term": "cache", "definition": "fast store"}],
+    "recap": {"title": "recap", "points": ["p1"], "diagram": None},
+}
 
 
 class FakeLlama:
     """Canned llama-server: GET /v1/models, POST /v1/chat/completions."""
 
     def __init__(self):
-        self.calls = []          # kinds of chat calls received
-        self.crash_on = None     # kind whose request gets the connection dropped
+        self.calls = []  # kinds of chat calls received
+        self.crash_on = None  # kind whose request gets the connection dropped
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -69,8 +78,13 @@ class FakeLlama:
                     self.close_connection = True
                     self.connection.shutdown(socket.SHUT_RDWR)
                     return
-                self._send({"choices": [{"message": {"content": json.dumps(fake.answer(kind, user))},
-                                         "finish_reason": "stop"}]})
+                self._send(
+                    {
+                        "choices": [
+                            {"message": {"content": json.dumps(fake.answer(kind, user))}, "finish_reason": "stop"}
+                        ]
+                    }
+                )
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
         self.port = self.httpd.server_address[1]
@@ -96,9 +110,16 @@ class FakeLlama:
         n = len(self.calls)
         if kind in ("digest", "merge"):
             starts = re.findall(r"\[([0-9:]+)\]", user)
-            return {"topics": [{"heading": f"h{n}", "start": starts[0] if starts else "00:10",
-                                "facts": [f"fact {n} " * 40 for _ in range(4)],
-                                "terms": [{"term": f"t{n}", "definition": "d"}]}]}
+            return {
+                "topics": [
+                    {
+                        "heading": f"h{n}",
+                        "start": starts[0] if starts else "00:10",
+                        "facts": [f"fact {n} " * 40 for _ in range(4)],
+                        "terms": [{"term": f"t{n}", "definition": "d"}],
+                    }
+                ]
+            }
         if kind == "batch":
             return {"sections": [_section(n * 10 + j) for j in range(3)]}
         if kind == "single":
@@ -111,10 +132,19 @@ class FakeLlama:
 
 
 def _transcript(minutes=90):
-    segs = [{"start": i * 10.0, "text": (f"point {i} about caching and consistency " * 6)[:160]}
-            for i in range(minutes * 6)]
-    return {"video_id": VID, "url": URL, "title": "Caching 101", "channel": "C",
-            "duration_sec": minutes * 60, "language": "en", "source": "captions", "segments": segs}
+    segs = [
+        {"start": i * 10.0, "text": (f"point {i} about caching and consistency " * 6)[:160]} for i in range(minutes * 6)
+    ]
+    return {
+        "video_id": VID,
+        "url": URL,
+        "title": "Caching 101",
+        "channel": "C",
+        "duration_sec": minutes * 60,
+        "language": "en",
+        "source": "captions",
+        "segments": segs,
+    }
 
 
 def _modules():
@@ -177,7 +207,7 @@ def test_providers_online_flag_follows_server(stack, monkeypatch):
     client, fake, _ = stack
     row = _local_row(client)
     assert row["online"] is True and row["needs_key"] is False
-    with socket.socket() as s:   # a port nobody listens on
+    with socket.socket() as s:  # a port nobody listens on
         s.bind(("127.0.0.1", 0))
         dead = s.getsockname()[1]
     monkeypatch.setenv("LNAI_LOCAL_URL", f"http://127.0.0.1:{dead}/v1")

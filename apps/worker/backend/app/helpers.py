@@ -2,6 +2,7 @@
 
 Read next: ``state.py``.
 """
+
 from __future__ import annotations
 
 import re
@@ -23,8 +24,9 @@ def redact(text: str, secrets=()) -> str:
     for secret in secrets:
         if secret and len(secret) >= 4:
             text = text.replace(secret, "***")
-    text = re.sub(r"(?i)((?:api[_-]?key|key|token|access_token|authorization)[\"']?\s*[=:]\s*[\"']?)[^&\s\"',}]+",
-                  r"\1***", text)
+    text = re.sub(
+        r"(?i)((?:api[_-]?key|key|token|access_token|authorization)[\"']?\s*[=:]\s*[\"']?)[^&\s\"',}]+", r"\1***", text
+    )
     text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._\-]+", r"\1***", text)
     return text
 
@@ -63,7 +65,7 @@ def cleanup_old_jobs(output_dir: Path, max_age_sec: int = 24 * 3600) -> int:
             continue
     # unfinished per-video checkpoints (output/checkpoints/<video_id>/) are kept 7 days for a retry
     checkpoints = output_dir / "checkpoints"
-    for child in (checkpoints.iterdir() if checkpoints.is_dir() else []):
+    for child in checkpoints.iterdir() if checkpoints.is_dir() else []:
         try:
             if child.is_dir() and now - child.stat().st_mtime > CHECKPOINT_MAX_AGE_SEC:
                 shutil.rmtree(child, ignore_errors=True)

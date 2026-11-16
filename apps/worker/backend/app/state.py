@@ -8,6 +8,7 @@ How it fits
 Read next
     ``jobs.py``.
 """
+
 from __future__ import annotations
 
 import threading
@@ -22,19 +23,20 @@ class State:
     def __init__(self, output_dir: Path, max_active: int, rate_limit: tuple[int, int]):
         self.output_dir = output_dir
         self.max_active = max_active
-        self.rate_limit = rate_limit                    # (max requests, per seconds)
+        self.rate_limit = rate_limit  # (max requests, per seconds)
         self.jobs: dict[str, dict] = {}
-        self.smart_jobs: dict[str, dict] = {}          # smart-playlist runs (own store and rate bucket)
+        self.smart_jobs: dict[str, dict] = {}  # smart-playlist runs (own store and rate bucket)
         self.lock = threading.Lock()
-        self.recent: deque[float] = deque()             # times of recent note jobs (rate limit)
+        self.recent: deque[float] = deque()  # times of recent note jobs (rate limit)
         self.recent_smart: deque[float] = deque()
-        self.recent_playlist: deque[float] = deque()   # separate bucket so playlist lookups can't starve note jobs
+        self.recent_playlist: deque[float] = deque()  # separate bucket so playlist lookups can't starve note jobs
         self.playlist_slots = threading.BoundedSemaphore(2)  # at most 2 yt-dlp playlist fetches at once
 
     # --- 1. Loading the notes engine (lazy, so the server starts even if a module is broken) ---
     # modules are looked up here so tests can monkeypatch `load_modules`
     def load_modules(self):
         from notes_engine import ingest, llm, pdf  # lazy: server must start even if one is unfinished
+
         return ingest, llm, pdf
 
     def load_ingest(self):
@@ -43,10 +45,12 @@ class State:
             return self.load_modules()[0]
         except ImportError:
             from notes_engine import ingest
+
             return ingest
 
     def load_smart(self):
         from notes_engine import smart_playlist  # lazy, like load_modules (tests monkeypatch this)
+
         return smart_playlist
 
     # --- 2. Counting and limiting ---------------------------------------------------------------
@@ -75,8 +79,7 @@ class State:
         """Forget finished jobs older than ``max_age_sec`` (their files are cleaned separately)."""
         cutoff = time.time() - max_age_sec
         for store in (self.jobs, self.smart_jobs):
-            for jid in [k for k, j in store.items()
-                        if j["status"] in ("done", "error") and j["updated"] < cutoff]:
+            for jid in [k for k, j in store.items() if j["status"] in ("done", "error") and j["updated"] < cutoff]:
                 store.pop(jid, None)
 
     # --- 3. Updating jobs and showing them to the browser ------------------------------------

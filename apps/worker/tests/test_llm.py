@@ -1,10 +1,9 @@
 """Tests for notes_engine.llm / prompts / notes_schema.  All HTTP is mocked (no real keys)."""
+
 from __future__ import annotations
 
 import json
-import os
 import re
-import sys
 from pathlib import Path
 
 import pytest
@@ -14,8 +13,12 @@ from notes_engine import llm, notes_schema, prompts  # noqa: E402
 from notes_engine.llm import LLMError  # noqa: E402
 from notes_engine.notes_schema import validate_notes  # noqa: E402
 
-KEYS = {"gemini": "AIzaSyTESTKEY0123456789abcdefghijk", "groq": "gsk_TESTKEY0123456789abcdefghijkl",
-        "xai": "xai-TESTKEY0123456789abcdefghijkl", "huggingface": "hf_TESTKEY0123456789abcdefghijkl"}
+KEYS = {
+    "gemini": "AIzaSyTESTKEY0123456789abcdefghijk",
+    "groq": "gsk_TESTKEY0123456789abcdefghijkl",
+    "xai": "xai-TESTKEY0123456789abcdefghijkl",
+    "huggingface": "hf_TESTKEY0123456789abcdefghijkl",
+}
 
 
 # ----------------------------------------------------------------- helpers --
@@ -49,24 +52,45 @@ def make_transcript(minutes=10, chars_per_seg=150):
     for i in range(minutes * 6):
         txt = (f"point {i} about distributed caching and consistency " * 10)[:chars_per_seg]
         segs.append({"start": i * 10.0, "text": txt})
-    return {"video_id": "abc123DEF45", "url": "https://www.youtube.com/watch?v=abc123DEF45",
-            "title": "Caching 101", "channel": "Some Channel", "duration_sec": minutes * 60,
-            "language": "en", "source": "captions", "segments": segs}
+    return {
+        "video_id": "abc123DEF45",
+        "url": "https://www.youtube.com/watch?v=abc123DEF45",
+        "title": "Caching 101",
+        "channel": "Some Channel",
+        "duration_sec": minutes * 60,
+        "language": "en",
+        "source": "captions",
+        "segments": segs,
+    }
 
 
 def section(i):
-    return {"title": f"topic {i}", "subtitle": "sub", "timestamp": f"{i:02d}:00",
-            "blocks": [{"type": "paragraph", "text": f"text {i}"},
-                       {"type": "definition", "term": f"term{i}", "text": f"def {i}"}],
-            "diagram": {"type": "flow", "title": "t", "caption": "c",
-                        "nodes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
-                        "edges": [{"from": "a", "to": "b"}]},
-            "key_takeaways": ["k1", "k2"], "recall": {"q": f"q{i}?", "a": f"a{i}"}}
+    return {
+        "title": f"topic {i}",
+        "subtitle": "sub",
+        "timestamp": f"{i:02d}:00",
+        "blocks": [
+            {"type": "paragraph", "text": f"text {i}"},
+            {"type": "definition", "term": f"term{i}", "text": f"def {i}"},
+        ],
+        "diagram": {
+            "type": "flow",
+            "title": "t",
+            "caption": "c",
+            "nodes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+            "edges": [{"from": "a", "to": "b"}],
+        },
+        "key_takeaways": ["k1", "k2"],
+        "recall": {"q": f"q{i}?", "a": f"a{i}"},
+    }
 
 
-FRONT = {"subtitle": "all about caching", "cover": {"summary": "s", "big_idea": "cache it!"},
-         "glossary": [{"term": "cache", "definition": "fast store"}],
-         "recap": {"title": "the whole picture, recapped", "points": ["p1", "p2"], "diagram": None}}
+FRONT = {
+    "subtitle": "all about caching",
+    "cover": {"summary": "s", "big_idea": "cache it!"},
+    "glossary": [{"term": "cache", "definition": "fast store"}],
+    "recap": {"title": "the whole picture, recapped", "points": ["p1", "p2"], "diagram": None},
+}
 
 
 class FakeResp:
@@ -160,11 +184,14 @@ def test_gemini_model_prefix_and_older_model_output_cap(monkeypatch):
     assert rec.calls[0]["json"]["generationConfig"]["maxOutputTokens"] == 8192
 
 
-@pytest.mark.parametrize("provider,url,model", [
-    ("groq", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b"),
-    ("xai", "https://api.x.ai/v1/chat/completions", "grok-4"),
-    ("huggingface", "https://router.huggingface.co/v1/chat/completions", "meta-llama/Llama-3.3-70B-Instruct"),
-])
+@pytest.mark.parametrize(
+    "provider,url,model",
+    [
+        ("groq", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b"),
+        ("xai", "https://api.x.ai/v1/chat/completions", "grok-4"),
+        ("huggingface", "https://router.huggingface.co/v1/chat/completions", "meta-llama/Llama-3.3-70B-Instruct"),
+    ],
+)
 def test_openai_compatible_request_shape(monkeypatch, provider, url, model):
     rec = install(monkeypatch, pipeline_script(provider))
     notes = run(provider, transcript=make_transcript(5, 100))
@@ -191,8 +218,10 @@ def test_custom_model_is_used(monkeypatch):
 
 
 def test_json_mode_rejected_retries_without(monkeypatch):
-    script = [FakeResp(400, {"error": {"message": "response_format json_object is not supported by this model"}}),
-              FakeResp(200, ok_payload("huggingface", json.dumps(full_notes())))]
+    script = [
+        FakeResp(400, {"error": {"message": "response_format json_object is not supported by this model"}}),
+        FakeResp(200, ok_payload("huggingface", json.dumps(full_notes()))),
+    ]
     rec = install(monkeypatch, script)
     run("huggingface", transcript=make_transcript(5, 100))
     assert "response_format" in rec.calls[0]["json"]
@@ -200,8 +229,13 @@ def test_json_mode_rejected_retries_without(monkeypatch):
 
 
 def test_groq_json_validate_failed_uses_failed_generation(monkeypatch):
-    err = {"error": {"message": "Failed to generate JSON", "code": "json_validate_failed",
-                     "failed_generation": "```json\n" + json.dumps({"topics": [{"heading": "h", "facts": ["f"]}]}) + "\n```"}}
+    err = {
+        "error": {
+            "message": "Failed to generate JSON",
+            "code": "json_validate_failed",
+            "failed_generation": "```json\n" + json.dumps({"topics": [{"heading": "h", "facts": ["f"]}]}) + "\n```",
+        }
+    }
     inner = pipeline_script("groq")
     rec = install(monkeypatch, lambda c, i: FakeResp(400, err) if i == 0 else inner(c, i))
     notes = run("groq", transcript=make_transcript(5, 100))
@@ -293,8 +327,7 @@ def test_timeout_is_retried(monkeypatch, sleeps):
 
 
 def test_gemini_retry_delay_in_body(monkeypatch, sleeps):
-    body = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
-                      "details": [{"retryDelay": "12s"}]}}
+    body = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "details": [{"retryDelay": "12s"}]}}
     good = FakeResp(200, ok_payload("gemini", json.dumps(full_notes())))
     install(monkeypatch, [FakeResp(429, body), good])
     run("gemini")
@@ -310,7 +343,9 @@ def test_groq_try_again_in_parsed(monkeypatch, sleeps):
 
 
 def test_daily_quota_fails_fast(monkeypatch, sleeps):
-    body = {"error": {"message": "Rate limit reached for tokens per day (TPD): Limit 100000. Please try again in 17m3s."}}
+    body = {
+        "error": {"message": "Rate limit reached for tokens per day (TPD): Limit 100000. Please try again in 17m3s."}
+    }
     rec = install(monkeypatch, [FakeResp(429, body)])
     with pytest.raises(LLMError, match="(?i)daily"):
         run("groq", transcript=make_transcript(2, 60))
@@ -318,13 +353,16 @@ def test_daily_quota_fails_fast(monkeypatch, sleeps):
 
 
 # ------------------------------------------------------------ JSON repair ---
-@pytest.mark.parametrize("text", [
-    "```json\n{\"a\": 1}\n```",
-    "Sure! Here is the JSON:\n{\"a\": 1}\nHope it helps.",
-    "{\"a\": 1,}",
-    "{\"a\": [1, 2,],}",
-    "```\n{\"a\": \"line1\nline2\"}\n```",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        '```json\n{"a": 1}\n```',
+        'Sure! Here is the JSON:\n{"a": 1}\nHope it helps.',
+        '{"a": 1,}',
+        '{"a": [1, 2,],}',
+        '```\n{"a": "line1\nline2"}\n```',
+    ],
+)
 def test_parse_json_repairs(text):
     assert isinstance(llm.parse_json(text), dict)
 
@@ -348,8 +386,10 @@ def test_salvage_truncated():
 
 def test_fix_json_retry_roundtrip(monkeypatch):
     broken = '{"sections": [ {"title": "x" "blocks": [}'
-    rec = install(monkeypatch, [FakeResp(200, ok_payload("gemini", broken)),
-                                FakeResp(200, ok_payload("gemini", json.dumps(full_notes())))])
+    rec = install(
+        monkeypatch,
+        [FakeResp(200, ok_payload("gemini", broken)), FakeResp(200, ok_payload("gemini", json.dumps(full_notes())))],
+    )
     notes = run("gemini")
     assert len(rec.calls) == 2
     assert "failed to parse" in rec.calls[1]["json"]["contents"][0]["parts"][0]["text"]
@@ -416,22 +456,36 @@ def pipeline_script(provider, n_batch_sections=3):
     def script(call, i):
         k = kind_of(call)
         if k == "digest":
-            d = {"topics": [{"heading": f"h{i}", "start": "00:10", "facts": [("fact %d " % i) * 60 for _ in range(6)],
-                             "terms": [{"term": f"t{i}", "definition": "d"}]}]}
+            d = {
+                "topics": [
+                    {
+                        "heading": f"h{i}",
+                        "start": "00:10",
+                        "facts": [("fact %d " % i) * 60 for _ in range(6)],
+                        "terms": [{"term": f"t{i}", "definition": "d"}],
+                    }
+                ]
+            }
             return FakeResp(200, ok_payload(provider, json.dumps(d)))
         if k == "batch":
             n = i
-            return FakeResp(200, ok_payload(provider, json.dumps({"sections": [section(n * 10 + j) for j in range(n_batch_sections)]})))
+            return FakeResp(
+                200,
+                ok_payload(provider, json.dumps({"sections": [section(n * 10 + j) for j in range(n_batch_sections)]})),
+            )
         if k == "final":
             return FakeResp(200, ok_payload(provider, json.dumps(FRONT)))
         if k == "single":
             return FakeResp(200, ok_payload(provider, json.dumps(full_notes(6))))
         if k == "part":  # Gemini parallel single pass (upstream db9ac6b)
             n = int(re.search(r"NEVER fewer than (\d+)", user_text(call)).group(1))
-            return FakeResp(200, ok_payload(provider, json.dumps({"sections": [section(i * 10 + j) for j in range(n)]})))
+            return FakeResp(
+                200, ok_payload(provider, json.dumps({"sections": [section(i * 10 + j) for j in range(n)]}))
+            )
         if k == "front":
             return FakeResp(200, ok_payload(provider, json.dumps(FRONT)))
         raise AssertionError(k)
+
     return script
 
 
@@ -439,8 +493,9 @@ def test_map_reduce_long_transcript_groq(monkeypatch, sleeps):
     tr = make_transcript(minutes=120, chars_per_seg=160)  # ~115k chars
     rec = install(monkeypatch, pipeline_script("groq"))
     events = []
-    notes = llm.generate_notes(tr, provider="groq", api_key=KEYS["groq"],
-                               progress=lambda st, pct, msg: events.append((st, pct, msg)))
+    notes = llm.generate_notes(
+        tr, provider="groq", api_key=KEYS["groq"], progress=lambda st, pct, msg: events.append((st, pct, msg))
+    )
     kinds = [kind_of(c) for c in rec.calls]
     assert "single" not in kinds
     n_digest, n_batch = kinds.count("digest"), kinds.count("batch")
@@ -488,6 +543,7 @@ def test_single_pass_truncation_falls_back_to_map_reduce(monkeypatch):
         if k == "single":
             return FakeResp(200, ok_payload("gemini", '{"sections":[{"title":"x","blo', finish="MAX_TOKENS"))
         return pipeline_script("gemini")(call, i)
+
     rec = install(monkeypatch, script)
     notes = llm.generate_notes(make_transcript(10), provider="gemini", api_key=KEYS["gemini"])
     kinds = [kind_of(c) for c in rec.calls]
@@ -505,6 +561,7 @@ def test_batch_truncation_splits_input(monkeypatch):
             state["trunc"] = 1
             return FakeResp(200, ok_payload("groq", '{"sections":[{"title":"a"', finish="length"))
         return pipeline_script("groq", 2)(call, i)
+
     rec = install(monkeypatch, script)
     notes = llm.generate_notes(tr, provider="groq", api_key=KEYS["groq"])
     assert notes["sections"]
@@ -522,6 +579,7 @@ def test_digest_failure_degrades_instead_of_aborting(monkeypatch):
             seen["d"] += 1
             return FakeResp(200, ok_payload("xai", "garbage {{"))
         return pipeline_script("xai")(call, i)
+
     install(monkeypatch, script)
     # xai profile has chunk 40k -> force map-reduce via huge transcript
     tr = make_transcript(minutes=300, chars_per_seg=200)
@@ -537,6 +595,7 @@ def test_final_call_failure_still_returns_notes(monkeypatch):
         if k in ("final", "fix"):
             return FakeResp(200, ok_payload("gemini", "nope {{"))
         return pipeline_script("gemini")(call, i)
+
     install(monkeypatch, script)
     notes = llm.generate_notes(tr, provider="gemini", api_key=KEYS["gemini"])
     assert notes["glossary"]  # derived from definition blocks
@@ -550,6 +609,7 @@ def test_auth_error_mid_pipeline_propagates(monkeypatch):
         if i == 2:
             return FakeResp(401, {"error": {"message": "bad"}})
         return pipeline_script("gemini")(call, i)
+
     install(monkeypatch, script)
     with pytest.raises(LLMError, match="rejected the API key"):
         llm.generate_notes(tr, provider="gemini", api_key=KEYS["gemini"])
@@ -560,6 +620,7 @@ def test_progress_callback_errors_ignored(monkeypatch):
 
     def bad(*a):
         raise RuntimeError("ui died")
+
     llm.generate_notes(make_transcript(10), provider="gemini", api_key=KEYS["gemini"], progress=bad)
 
 
@@ -595,7 +656,7 @@ def test_target_section_count():
     assert prompts.target_section_count(840, 0) == 6
     assert prompts.target_section_count(60, 0) == 6
     assert prompts.target_section_count(7200, 0) == 18
-    assert prompts.target_section_count(None, 10 ** 7) == 18
+    assert prompts.target_section_count(None, 10**7) == 18
 
 
 # ----------------------------------------------------------- validate_notes --
@@ -604,30 +665,51 @@ def test_validate_messy_input():
         "meta": {"title": "llm title", "model": "x/y"},
         "cover": {"toc": ["99. wrong"], "summary": "  s  "},
         "sections": [
-            {"number": 9, "title": "5. First  topic", "timestamp": 75,
-             "blocks": [
-                 {"type": "text", "text": "hello\nworld"},
-                 {"type": "list", "items": "- a\n- b\n\n3) c"},
-                 {"type": "tip", "text": "careful"},
-                 {"type": "bogus", "text": "dropped"},
-                 {"type": "code", "language": "PY", "code": "print(1)\nprint(2)"},
-                 {"type": "table", "headers": ["a", "b"], "rows": [["1"], ["2", "3", "4"], []]},
-                 {"type": "definition", "term": "", "text": "no term"},
-                 {"type": "formula", "text": "E=mc^2"},
-                 "bare string paragraph",
-                 None, 7,
-             ],
-             "diagram": {"type": "flowchart", "title": "d",
-                         "nodes": [{"id": "A", "label": "x" * 80}, {"id": "A", "label": "Second"}, "Third",
-                                   {"label": "L" + "x" * 5}] + [{"id": f"z{i}", "label": "n"} for i in range(10)],
-                         "edges": [{"from": "A", "to": "Second"}, {"from": "ghost", "to": "A"},
-                                   {"source": "A", "target": "A"}, ["a_2", "A", "lab"]]},
-             "key_takeaways": ["one", "two", "three", "four", "five"],
-             "recall": {"question": "why?", "answer": "because"},
-             "next": "garbage"},
+            {
+                "number": 9,
+                "title": "5. First  topic",
+                "timestamp": 75,
+                "blocks": [
+                    {"type": "text", "text": "hello\nworld"},
+                    {"type": "list", "items": "- a\n- b\n\n3) c"},
+                    {"type": "tip", "text": "careful"},
+                    {"type": "bogus", "text": "dropped"},
+                    {"type": "code", "language": "PY", "code": "print(1)\nprint(2)"},
+                    {"type": "table", "headers": ["a", "b"], "rows": [["1"], ["2", "3", "4"], []]},
+                    {"type": "definition", "term": "", "text": "no term"},
+                    {"type": "formula", "text": "E=mc^2"},
+                    "bare string paragraph",
+                    None,
+                    7,
+                ],
+                "diagram": {
+                    "type": "flowchart",
+                    "title": "d",
+                    "nodes": [
+                        {"id": "A", "label": "x" * 80},
+                        {"id": "A", "label": "Second"},
+                        "Third",
+                        {"label": "L" + "x" * 5},
+                    ]
+                    + [{"id": f"z{i}", "label": "n"} for i in range(10)],
+                    "edges": [
+                        {"from": "A", "to": "Second"},
+                        {"from": "ghost", "to": "A"},
+                        {"source": "A", "target": "A"},
+                        ["a_2", "A", "lab"],
+                    ],
+                },
+                "key_takeaways": ["one", "two", "three", "four", "five"],
+                "recall": {"question": "why?", "answer": "because"},
+                "next": "garbage",
+            },
             {"title": "empty section"},  # dropped: nothing usable
-            {"title": "Second", "blocks": [{"type": "paragraph", "text": "p"}], "diagram": {"type": "flow", "nodes": [{"label": "only one"}]},
-             "key_takeaways": ["kt"]},
+            {
+                "title": "Second",
+                "blocks": [{"type": "paragraph", "text": "p"}],
+                "diagram": {"type": "flow", "nodes": [{"label": "only one"}]},
+                "key_takeaways": ["kt"],
+            },
         ],
         "glossary": {"cache": "fast", "": "x"},
         "recap": {"points": "a\nb"},
@@ -637,7 +719,15 @@ def test_validate_messy_input():
     s1, s2 = n["sections"]
     assert (s1["number"], s2["number"]) == (2, 3)
     assert s1["title"] == "First topic" and s1["timestamp"] == "01:15"
-    assert [b["type"] for b in s1["blocks"]] == ["paragraph", "bullets", "callout", "code", "table", "formula", "paragraph"]
+    assert [b["type"] for b in s1["blocks"]] == [
+        "paragraph",
+        "bullets",
+        "callout",
+        "code",
+        "table",
+        "formula",
+        "paragraph",
+    ]
     assert s1["blocks"][1]["items"] == ["a", "b", "c"]
     assert s1["blocks"][2]["style"] == "tip"
     assert s1["blocks"][3]["language"] == "py"
@@ -683,8 +773,18 @@ def test_validate_accepts_wrapped_and_str_and_caps():
 
 def test_validate_diagram_default_edges():
     def mk(t, k=4):
-        return validate_notes({"sections": [{"title": "t", "blocks": [{"type": "paragraph", "text": "x"}],
-                                             "diagram": {"type": t, "nodes": [{"label": f"n{i}"} for i in range(k)]}}]})["sections"][0]["diagram"]
+        return validate_notes(
+            {
+                "sections": [
+                    {
+                        "title": "t",
+                        "blocks": [{"type": "paragraph", "text": "x"}],
+                        "diagram": {"type": t, "nodes": [{"label": f"n{i}"} for i in range(k)]},
+                    }
+                ]
+            }
+        )["sections"][0]["diagram"]
+
     assert len(mk("flow")["edges"]) == 3
     assert len(mk("cycle")["edges"]) == 4
     assert all(e["from"] == mk("tree")["nodes"][0]["id"] for e in mk("tree")["edges"])
@@ -705,7 +805,16 @@ def test_sample_output_fixture_is_valid_and_idempotent():
     again = validate_notes(data, None)
     for k in ("cover", "sections", "glossary", "recap"):
         assert again[k] == data[k], k
-    assert {s["diagram"]["type"] for s in data["sections"] if s["diagram"]} >= {"flow", "tree", "stack", "compare", "cycle", "timeline", "mindmap", "sequence"}
+    assert {s["diagram"]["type"] for s in data["sections"] if s["diagram"]} >= {
+        "flow",
+        "tree",
+        "stack",
+        "compare",
+        "cycle",
+        "timeline",
+        "mindmap",
+        "sequence",
+    }
 
 
 # ------------------------------------------------- reasoning models / coverage --
@@ -735,6 +844,7 @@ def test_reasoning_effort_rejected_is_dropped(monkeypatch):
             return FakeResp(400, {"error": {"message": "reasoning_effort is not supported by this model"}})
         assert "reasoning_effort" not in call["json"]
         return inner(call, i)
+
     install(monkeypatch, script)
     assert run("groq", transcript=make_transcript(5, 100))["sections"]
 
@@ -742,8 +852,14 @@ def test_reasoning_effort_rejected_is_dropped(monkeypatch):
 def test_think_blocks_stripped(monkeypatch):
     d = {"topics": [{"heading": "h", "facts": ["f"]}]}
     inner = pipeline_script("groq")
-    install(monkeypatch, lambda c, i: FakeResp(200, ok_payload("groq", "<think>hmm {not json}</think>" + json.dumps(d)))
-            if kind_of(c) == "digest" else inner(c, i))
+    install(
+        monkeypatch,
+        lambda c, i: (
+            FakeResp(200, ok_payload("groq", "<think>hmm {not json}</think>" + json.dumps(d)))
+            if kind_of(c) == "digest"
+            else inner(c, i)
+        ),
+    )
     assert run("groq", model="qwen/qwen3.8-27b", transcript=make_transcript(5, 100))["sections"]
 
 
@@ -762,14 +878,18 @@ def test_short_gpt_oss_lecture_gets_one_page_per_slice(monkeypatch):
             strict = "previous answer contained only" in u
             stricts.append(strict)
             n = int(re.search(r"NEVER fewer than (\d+)", u).group(1))
-            return FakeResp(200, ok_payload("groq", json.dumps({"sections": [section(i * 10 + j) for j in range(n if strict else 1)]})))
+            return FakeResp(
+                200,
+                ok_payload("groq", json.dumps({"sections": [section(i * 10 + j) for j in range(n if strict else 1)]})),
+            )
         return pipeline_script("groq")(call, i)
+
     rec = install(monkeypatch, script)
     notes = run("groq", transcript=tr)
     kinds = [kind_of(c) for c in rec.calls]
-    assert kinds.count("digest") >= 3          # slices shrunk so each compose call has <= 2 sections to write
+    assert kinds.count("digest") >= 3  # slices shrunk so each compose call has <= 2 sections to write
     assert any(stricts) and not all(stricts)
-    assert len(notes["sections"]) >= 5         # >= 70 % of 6
+    assert len(notes["sections"]) >= 5  # >= 70 % of 6
     # all requests (prompt + max_tokens incl. reasoning room) stay inside 85 % of the 8k TPM limit
     for c in rec.calls:
         chars = sum(len(m["content"]) for m in c["json"]["messages"])
@@ -788,6 +908,7 @@ def test_batches_cover_whole_lecture_in_order(monkeypatch):
             n = int(re.search(r"NEVER fewer than (\d+)", u).group(1))
             return FakeResp(200, ok_payload("groq", json.dumps({"sections": [section(i * 10 + j) for j in range(n)]})))
         return pipeline_script("groq")(call, i)
+
     install(monkeypatch, script)
     notes = run("groq", transcript=tr)
     assert len(seen) >= 3 and seen[0][0] == "1" and seen[-1][0] == seen[-1][1]
@@ -802,12 +923,14 @@ def test_single_pass_undercoverage_falls_back_to_slices(monkeypatch):
             return FakeResp(200, ok_payload("gemini", json.dumps(full_notes(3))))  # 3 < 70 % of 6
         if kind_of(call) == "batch":
             n = int(re.search(r"NEVER fewer than (\d+)", user_text(call)).group(1))
-            return FakeResp(200, ok_payload("gemini", json.dumps({"sections": [section(i * 10 + j) for j in range(n)]})))
+            return FakeResp(
+                200, ok_payload("gemini", json.dumps({"sections": [section(i * 10 + j) for j in range(n)]}))
+            )
         return pipeline_script("gemini")(call, i)
+
     rec = install(monkeypatch, script)
     events = []
-    notes = llm.generate_notes(tr, provider="gemini", api_key=KEYS["gemini"],
-                               progress=lambda *a: events.append(a))
+    notes = llm.generate_notes(tr, provider="gemini", api_key=KEYS["gemini"], progress=lambda *a: events.append(a))
     kinds = [kind_of(c) for c in rec.calls]
     assert kinds[0] == "single" and "digest" in kinds and "batch" in kinds
     assert len(notes["sections"]) >= 5
@@ -821,8 +944,9 @@ def test_single_pass_prompt_demands_count():
 
 def test_final_prompt_fits_groq_budget(monkeypatch):
     client = llm._Client("groq", KEYS["groq"], "openai/gpt-oss-120b")
-    outline = [{"title": "t" * 60, "subtitle": "s" * 60, "key_takeaways": ["k" * 200, "k" * 200, "k" * 200]}
-               for _ in range(18)]
+    outline = [
+        {"title": "t" * 60, "subtitle": "s" * 60, "key_takeaways": ["k" * 200, "k" * 200, "k" * 200]} for _ in range(18)
+    ]
     terms = [f"term{i}: " + "d" * 140 for i in range(40)]
     sysm, user = llm._final_messages_fit(client, {"title": "T"}, outline, terms)
     est = (len(sysm) + len(user)) / llm.CHARS_PER_TOKEN + client.profile["final_out"]
@@ -832,8 +956,9 @@ def test_final_prompt_fits_groq_budget(monkeypatch):
 # ------------------------------------------------------ mindmap / sequence ----
 def dg(d):
     """Coerce one diagram through the public entry point (a section needs some content to survive)."""
-    return validate_notes({"sections": [{"title": "t", "blocks": [{"type": "paragraph", "text": "x"}],
-                                         "diagram": d}]})["sections"][0]["diagram"]
+    return validate_notes({"sections": [{"title": "t", "blocks": [{"type": "paragraph", "text": "x"}], "diagram": d}]})[
+        "sections"
+    ][0]["diagram"]
 
 
 def mm(nodes, **kw):
@@ -851,11 +976,20 @@ def depth_of(d, nid):
     return n
 
 
-@pytest.mark.parametrize("alias,canon", [
-    ("mind map", "mindmap"), ("mind-map", "mindmap"), ("Mind_Map", "mindmap"), ("mindmap", "mindmap"),
-    ("sequence diagram", "sequence"), ("Sequence-Diagram", "sequence"), ("sequence", "sequence"),
-    ("flowchart", "flow"), ("process", "flow"),
-])
+@pytest.mark.parametrize(
+    "alias,canon",
+    [
+        ("mind map", "mindmap"),
+        ("mind-map", "mindmap"),
+        ("Mind_Map", "mindmap"),
+        ("mindmap", "mindmap"),
+        ("sequence diagram", "sequence"),
+        ("Sequence-Diagram", "sequence"),
+        ("sequence", "sequence"),
+        ("flowchart", "flow"),
+        ("process", "flow"),
+    ],
+)
 def test_diagram_type_aliases(alias, canon):
     nodes = [{"id": "a", "label": "A"}, {"id": "b", "label": "B", "parent": "a"}]
     edges = [{"from": "a", "to": "b", "label": "x"}]
@@ -863,23 +997,40 @@ def test_diagram_type_aliases(alias, canon):
 
 
 def test_mindmap_parent_fields_and_edges_output_empty():
-    d = mm([{"id": "r", "label": "Root"}, {"id": "a", "label": "A", "parent": "r", "detail": "d"},
-            {"id": "b", "label": "B", "parent": "r"}, {"id": "a1", "label": "A1", "parent": "a"}],
-           edges=[{"from": "r", "to": "a"}])
+    d = mm(
+        [
+            {"id": "r", "label": "Root"},
+            {"id": "a", "label": "A", "parent": "r", "detail": "d"},
+            {"id": "b", "label": "B", "parent": "r"},
+            {"id": "a1", "label": "A1", "parent": "a"},
+        ],
+        edges=[{"from": "r", "to": "a"}],
+    )
     assert d["type"] == "mindmap" and d["edges"] == []
     assert parents(d) == {"r": None, "a": "r", "b": "r", "a1": "a"}
     assert "parent" not in d["nodes"][0] and d["nodes"][1]["detail"] == "d"
 
 
 def test_mindmap_parent_by_label():
-    d = mm([{"id": "r", "label": "Root"}, {"label": "Leaf one", "parent": "Root"}, {"label": "Leaf two", "parent": "r"}])
+    d = mm(
+        [{"id": "r", "label": "Root"}, {"label": "Leaf one", "parent": "Root"}, {"label": "Leaf two", "parent": "r"}]
+    )
     assert sorted(v for v in parents(d).values() if v) == ["r", "r"]
 
 
 def test_mindmap_nested_children():
-    d = mm([{"label": "Caching", "children": [
-        {"label": "Where", "children": ["browser", {"label": "CDN"}]},
-        "Eviction", {"label": "Policies", "children": [{"label": "LRU"}]}]}])
+    d = mm(
+        [
+            {
+                "label": "Caching",
+                "children": [
+                    {"label": "Where", "children": ["browser", {"label": "CDN"}]},
+                    "Eviction",
+                    {"label": "Policies", "children": [{"label": "LRU"}]},
+                ],
+            }
+        ]
+    )
     p = {n["label"]: n.get("parent") for n in d["nodes"]}
     ids = {n["label"]: n["id"] for n in d["nodes"]}
     assert d["nodes"][0]["label"] == "Caching" and p["Caching"] is None
@@ -896,14 +1047,23 @@ def test_mindmap_single_root_dict_and_root_key():
 
 
 def test_mindmap_from_edges_only():
-    d = mm([{"id": "r", "label": "R"}, {"id": "a", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "C"}],
-           edges=[["r", "a"], ["r", "b"], {"source": "a", "target": "c"}])
+    d = mm(
+        [{"id": "r", "label": "R"}, {"id": "a", "label": "A"}, {"id": "b", "label": "B"}, {"id": "c", "label": "C"}],
+        edges=[["r", "a"], ["r", "b"], {"source": "a", "target": "c"}],
+    )
     assert parents(d) == {"r": None, "a": "r", "b": "r", "c": "a"}
 
 
 def test_mindmap_depth_cap_reparents_to_depth1_ancestor():
-    d = mm([{"id": "r", "label": "R"}, {"id": "a", "label": "A", "parent": "r"}, {"id": "b", "label": "B", "parent": "a"},
-            {"id": "c", "label": "C", "parent": "b"}, {"id": "e", "label": "E", "parent": "c"}])
+    d = mm(
+        [
+            {"id": "r", "label": "R"},
+            {"id": "a", "label": "A", "parent": "r"},
+            {"id": "b", "label": "B", "parent": "a"},
+            {"id": "c", "label": "C", "parent": "b"},
+            {"id": "e", "label": "E", "parent": "c"},
+        ]
+    )
     assert parents(d)["b"] == "a" and parents(d)["c"] == "a" and parents(d)["e"] == "a"
     assert all(depth_of(d, n["id"]) <= 2 for n in d["nodes"])
 
@@ -926,8 +1086,13 @@ def test_mindmap_unknown_parent_orphans_attach_to_root():
 
 
 def test_mindmap_no_root_cycle_first_node_becomes_root():
-    d = mm([{"id": "x", "label": "X", "parent": "y"}, {"id": "y", "label": "Y", "parent": "x"},
-            {"id": "z", "label": "Z", "parent": "z"}])
+    d = mm(
+        [
+            {"id": "x", "label": "X", "parent": "y"},
+            {"id": "y", "label": "Y", "parent": "x"},
+            {"id": "z", "label": "Z", "parent": "z"},
+        ]
+    )
     assert d["nodes"][0]["id"] == "x" and parents(d)["x"] is None
     assert sum(1 for v in parents(d).values() if v is None) == 1
     assert all(depth_of(d, n["id"]) <= 2 for n in d["nodes"])
@@ -952,31 +1117,66 @@ def test_mindmap_duplicate_labels_get_unique_ids():
 
 
 def test_sequence_basic_order_and_self_message():
-    d = dg({"type": "sequence", "nodes": [{"id": "c", "label": "Client"}, {"id": "s", "label": "Server"}],
-            "edges": [{"from": "c", "to": "s", "label": "login"}, {"from": "s", "to": "s", "label": "hash pw"},
-                      {"from": "s", "to": "c", "label": "token"}, {"from": "c", "to": "s", "label": "login"}]})
+    d = dg(
+        {
+            "type": "sequence",
+            "nodes": [{"id": "c", "label": "Client"}, {"id": "s", "label": "Server"}],
+            "edges": [
+                {"from": "c", "to": "s", "label": "login"},
+                {"from": "s", "to": "s", "label": "hash pw"},
+                {"from": "s", "to": "c", "label": "token"},
+                {"from": "c", "to": "s", "label": "login"},
+            ],
+        }
+    )
     assert [(e["from"], e["to"], e["label"]) for e in d["edges"]] == [
-        ("c", "s", "login"), ("s", "s", "hash pw"), ("s", "c", "token"), ("c", "s", "login")]  # order + repeats kept
+        ("c", "s", "login"),
+        ("s", "s", "hash pw"),
+        ("s", "c", "token"),
+        ("c", "s", "login"),
+    ]  # order + repeats kept
 
 
 def test_self_edges_still_dropped_for_other_types():
     for t in ("flow", "cycle", "tree", "stack", "compare", "timeline"):
-        d = dg({"type": t, "nodes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
-                "edges": [{"from": "a", "to": "a"}, {"from": "a", "to": "b"}]})
+        d = dg(
+            {
+                "type": t,
+                "nodes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+                "edges": [{"from": "a", "to": "a"}, {"from": "a", "to": "b"}],
+            }
+        )
         assert all(e["from"] != e["to"] for e in d["edges"]), t
 
 
 def test_sequence_label_defaults_and_aliases():
-    d = dg({"type": "sequence", "nodes": ["A", "B"],
-            "edges": [{"from": "A", "to": "B"}, {"from": "B", "to": "A", "message": "ack"}, ["A", "B", "ping"],
-                      {"source": "A", "target": "B", "label": "  "}]})
+    d = dg(
+        {
+            "type": "sequence",
+            "nodes": ["A", "B"],
+            "edges": [
+                {"from": "A", "to": "B"},
+                {"from": "B", "to": "A", "message": "ack"},
+                ["A", "B", "ping"],
+                {"source": "A", "target": "B", "label": "  "},
+            ],
+        }
+    )
     assert [e["label"] for e in d["edges"]] == ["calls", "ack", "ping", "calls"]
 
 
 def test_sequence_unknown_actor_autoadded_when_room():
-    d = dg({"type": "sequence", "nodes": ["Client", "Server"],
-            "edges": [{"from": "Client", "to": "Server", "label": "q"}, {"from": "Server", "to": "Database", "label": "sql"},
-                      {"from": "Database", "to": "Server", "label": "rows"}]})
+    d = dg(
+        {
+            "type": "sequence",
+            "nodes": ["Client", "Server"],
+            "edges": [
+                {"from": "Client", "to": "Server", "label": "q"},
+                {"from": "Server", "to": "Database", "label": "sql"},
+                {"from": "Database", "to": "Server", "label": "rows"},
+            ],
+        }
+    )
     assert [n["label"] for n in d["nodes"]] == ["Client", "Server", "Database"]
     ids = [n["id"] for n in d["nodes"]]
     assert all(e["from"] in ids and e["to"] in ids for e in d["edges"]) and len(d["edges"]) == 3
@@ -984,8 +1184,13 @@ def test_sequence_unknown_actor_autoadded_when_room():
 
 
 def test_sequence_unknown_actor_dropped_when_full_and_no_partial_actor():
-    d = dg({"type": "sequence", "nodes": ["a", "b", "c", "d"],
-            "edges": [["a", "e", "x"], ["a", "f", "y"], ["a", "b", "z"]]})
+    d = dg(
+        {
+            "type": "sequence",
+            "nodes": ["a", "b", "c", "d"],
+            "edges": [["a", "e", "x"], ["a", "f", "y"], ["a", "b", "z"]],
+        }
+    )
     assert [n["label"] for n in d["nodes"]] == ["a", "b", "c", "d", "e"]  # 5th actor added, 6th refused
     assert [e["label"] for e in d["edges"]] == ["x", "z"]
     d = dg({"type": "sequence", "nodes": ["a", "b", "c", "d", "e"], "edges": [["a", "zz", "x"], ["a", "b", "ok"]]})
@@ -993,15 +1198,25 @@ def test_sequence_unknown_actor_dropped_when_full_and_no_partial_actor():
 
 
 def test_sequence_caps_actors_and_messages():
-    d = dg({"type": "sequence", "nodes": [f"actor{i}" for i in range(9)],
-            "edges": [{"from": f"actor{i % 5}", "to": f"actor{(i + 1) % 5}", "label": f"m{i}"} for i in range(15)]})
+    d = dg(
+        {
+            "type": "sequence",
+            "nodes": [f"actor{i}" for i in range(9)],
+            "edges": [{"from": f"actor{i % 5}", "to": f"actor{(i + 1) % 5}", "label": f"m{i}"} for i in range(15)],
+        }
+    )
     assert len(d["nodes"]) == notes_schema.MAX_SEQ_ACTORS == 5
     assert [e["label"] for e in d["edges"]] == [f"m{i}" for i in range(8)]
 
 
 def test_sequence_empty_endpoints_dropped_and_fallback_edges():
-    d = dg({"type": "sequence", "nodes": ["a", "b"],
-            "edges": [{"from": "", "to": "b", "label": "x"}, {"from": "a", "label": "y"}, "junk", None]})
+    d = dg(
+        {
+            "type": "sequence",
+            "nodes": ["a", "b"],
+            "edges": [{"from": "", "to": "b", "label": "x"}, {"from": "a", "label": "y"}, "junk", None],
+        }
+    )
     assert d["edges"] == [{"from": "a", "to": "b", "label": "calls"}]  # nothing valid -> default wiring
     assert dg({"type": "sequence", "nodes": ["only"], "edges": []}) is None
 
@@ -1011,13 +1226,24 @@ def test_sequence_actors_from_edges_when_nodes_missing():
     assert [n["label"] for n in d["nodes"]] == ["Browser", "API"] and len(d["edges"]) == 2
 
 
-@pytest.mark.parametrize("diagram", [
-    {"type": "mind map", "title": "t", "nodes": [{"label": "R", "children": [{"label": "a", "children": [
-        {"label": "b", "children": ["c"]}]}, "d"]}]},
-    {"type": "mindmap", "nodes": [{"id": "x", "label": "X", "parent": "y"}, {"id": "y", "label": "Y", "parent": "x"}]},
-    {"type": "mindmap", "nodes": [{"id": "r", "label": "R"}, {"id": "a", "label": "A"}], "edges": [["r", "a"]]},
-    {"type": "sequence diagram", "nodes": ["a", "b"], "edges": [["a", "a", "s"], ["a", "c", "t"], ["c", "b"]]},
-])
+@pytest.mark.parametrize(
+    "diagram",
+    [
+        {
+            "type": "mind map",
+            "title": "t",
+            "nodes": [
+                {"label": "R", "children": [{"label": "a", "children": [{"label": "b", "children": ["c"]}]}, "d"]}
+            ],
+        },
+        {
+            "type": "mindmap",
+            "nodes": [{"id": "x", "label": "X", "parent": "y"}, {"id": "y", "label": "Y", "parent": "x"}],
+        },
+        {"type": "mindmap", "nodes": [{"id": "r", "label": "R"}, {"id": "a", "label": "A"}], "edges": [["r", "a"]]},
+        {"type": "sequence diagram", "nodes": ["a", "b"], "edges": [["a", "a", "s"], ["a", "c", "t"], ["c", "b"]]},
+    ],
+)
 def test_new_diagram_types_roundtrip_idempotent(diagram):
     once = dg(diagram)
     assert once and dg(once) == once
@@ -1030,7 +1256,16 @@ def test_prompts_describe_all_eight_diagram_types():
         assert t in low
     assert "topic overview" in low and "request/response" in low
     assert "mindmap" in prompts.DIGEST_SHAPE and "sequence" in prompts.DIGEST_SHAPE
-    assert set(notes_schema.DIAGRAM_TYPES) == {"flow", "stack", "compare", "cycle", "tree", "timeline", "mindmap", "sequence"}
+    assert set(notes_schema.DIAGRAM_TYPES) == {
+        "flow",
+        "stack",
+        "compare",
+        "cycle",
+        "tree",
+        "timeline",
+        "mindmap",
+        "sequence",
+    }
 
 
 # ------------------------------------------------- provider fallback (#8) ---
@@ -1053,11 +1288,13 @@ def _by_host(primary_resp):
         if "googleapis" in call["url"]:
             return primary_resp
         return groq(call, i)
+
     return script
 
 
-@pytest.mark.parametrize("bad", [FakeResp(429, {"error": {"message": "rate"}}), FakeResp(503, {}),
-                                 requests.Timeout("t")])
+@pytest.mark.parametrize(
+    "bad", [FakeResp(429, {"error": {"message": "rate"}}), FakeResp(503, {}), requests.Timeout("t")]
+)
 def test_fallback_on_transient_uses_server_key(fb_env, bad, caplog):
     fb_env.setenv("GROQ_API_KEY", SERVER_GROQ)
     rec = install(fb_env, _by_host(bad))
@@ -1146,8 +1383,8 @@ def test_local_profile_fits_16k_context():
     p = llm._profile("local", "qwen3-8b")
     assert p["tpm"] is None and p["max_sections_per_call"] >= 4 and p["max_total_sections"] >= 100
     rules = len(prompts.compose_batch_messages({"title": "x"}, "", 4, 5, [], 1, 1)[0]) + 2500
-    assert (p["batch_chars"] + rules) / 4.0 + p["out_batch"] <= 14500   # compose (Qwen ~4 chars/token)
-    assert (p["chunk_chars"] + 3000) / 4.0 + p["digest_out"] <= 14500   # digest
+    assert (p["batch_chars"] + rules) / 4.0 + p["out_batch"] <= 14500  # compose (Qwen ~4 chars/token)
+    assert (p["chunk_chars"] + 3000) / 4.0 + p["digest_out"] <= 14500  # digest
 
 
 def test_local_unclosed_think_is_dropped(local_env):
@@ -1172,6 +1409,7 @@ def test_local_falls_back_to_groq_only_for_short_videos(local_env):
         if "127.0.0.1" in call["url"]:
             raise requests.ConnectionError("refused")
         return groq(call, i)
+
     rec = install(local_env, script)
     notes = run_local(make_transcript(20))
     assert notes["meta"]["provider"] == "groq" and notes["meta"]["fallback_from"] == "local"
@@ -1191,6 +1429,7 @@ def test_cloud_falls_back_to_local_when_online(local_env):
         if "googleapis" in call["url"]:
             return FakeResp(503, {})
         return loc(call, i)
+
     install(local_env, script)
     notes = run("gemini")
     assert notes["meta"]["provider"] == "local"
@@ -1205,12 +1444,14 @@ def merge_script(counter):
             counter["merge"] = counter.get("merge", 0) + 1
             user = call["json"]["messages"][1]["content"]
             starts = re.findall(r"## \[([0-9:?]+)\]", user)
-            d = {"topics": [{"heading": "merged", "start": starts[0] if starts else "?",
-                             "facts": ["merged fact " * 30]}]}
+            d = {
+                "topics": [{"heading": "merged", "start": starts[0] if starts else "?", "facts": ["merged fact " * 30]}]
+            }
             return FakeResp(200, ok_payload("local", json.dumps(d)))
         k = kind_of(call)
         counter[k] = counter.get(k, 0) + 1
         return base(call, i)
+
     return script
 
 
@@ -1234,7 +1475,7 @@ def test_24h_transcript_hierarchical_merge_keeps_order(local_env):
     first = [c for c in rec.calls if c["json"]["messages"][0]["content"].startswith("You merge")][0]
     assert "[00:10]" in first["json"]["messages"][1]["content"]
     assert any(f"chunk {n_chunks}/{n_chunks}" in m for m in events)
-    assert len(notes["sections"]) > 18   # the 18-page cloud cap does not apply locally
+    assert len(notes["sections"]) > 18  # the 18-page cloud cap does not apply locally
     assert prof["merge_budget_chars"]
 
 
@@ -1245,9 +1486,10 @@ def test_checkpoint_resume_skips_finished_chunks(local_env, tmp_path):
 
     def crashing(call, i):
         calls["n"] += 1
-        if kind_of(call) == "batch":   # die after all map digests were written
+        if kind_of(call) == "batch":  # die after all map digests were written
             raise requests.ConnectionError("server killed")
         return base(call, i)
+
     install(local_env, crashing)
     with pytest.raises(LLMError):
         run_local(tr, checkpoint_dir=tmp_path)
@@ -1259,9 +1501,9 @@ def test_checkpoint_resume_skips_finished_chunks(local_env, tmp_path):
     rec = install(local_env, pipeline_script("local"))
     notes = run_local(tr, checkpoint_dir=tmp_path)
     kinds = [kind_of(c) for c in rec.calls]
-    assert "digest" not in kinds and "batch" in kinds   # resumed: no map call repeated
+    assert "digest" not in kinds and "batch" in kinds  # resumed: no map call repeated
     assert notes["sections"]
-    assert not vdir.exists()                             # cleaned up after success
+    assert not vdir.exists()  # cleaned up after success
 
 
 def test_checkpoint_discarded_when_prompt_or_transcript_changes(local_env, tmp_path, monkeypatch):
@@ -1269,8 +1511,9 @@ def test_checkpoint_discarded_when_prompt_or_transcript_changes(local_env, tmp_p
     install(local_env, pipeline_script("local"))
     vdir = tmp_path / tr["video_id"]
     vdir.mkdir(parents=True)
-    (vdir / "manifest.json").write_text(json.dumps({"video_id": tr["video_id"], "transcript_hash": "x",
-                                                    "profile_hash": "y"}))
+    (vdir / "manifest.json").write_text(
+        json.dumps({"video_id": tr["video_id"], "transcript_hash": "x", "profile_hash": "y"})
+    )
     (vdir / "map-0000.json").write_text(json.dumps({"value": "STALE DIGEST"}))
     rec = install(local_env, pipeline_script("local"))
     run_local(tr, checkpoint_dir=tmp_path)
@@ -1302,8 +1545,9 @@ def test_local_https_url_sends_bearer_from_env_only(f3_env):
     f3_env.setenv("LNAI_LOCAL_KEY", LOCAL_KEY)
     rec = install(f3_env, pipeline_script("local"))
     run_local(api_key="typed-in-the-app-must-not-be-sent")
-    assert rec.calls and all(c["url"].startswith("https://abc.trycloudflare.com/v1/chat/completions")
-                             for c in rec.calls)
+    assert rec.calls and all(
+        c["url"].startswith("https://abc.trycloudflare.com/v1/chat/completions") for c in rec.calls
+    )
     assert all(c["headers"]["Authorization"] == f"Bearer {LOCAL_KEY}" for c in rec.calls)
 
 
@@ -1337,6 +1581,7 @@ def test_local_ctx_probe_reads_props(f3_env):
 
         def json(self):
             return {"default_generation_settings": {"n_ctx": 8192}}
+
     seen = []
     f3_env.setattr(llm.requests, "get", lambda url, **kw: seen.append((url, kw)) or R())
     assert llm.local_server_ctx("https://x.example/v1", LOCAL_KEY) == 8192
@@ -1367,6 +1612,7 @@ def test_colab_alias_uses_local_small(f3_env, monkeypatch):
         c = real(*a, **kw)
         made.append(c)
         return c
+
     monkeypatch.setattr(llm, "_Client", spy)
     install(f3_env, pipeline_script("local"))
     llm.generate_notes(make_transcript(5), provider="colab")
@@ -1401,6 +1647,7 @@ def test_nvidia_fallback_runs_whole_video_on_one_provider(f3_env):
         if "127.0.0.1" in call["url"]:
             raise requests.ConnectionError("refused")
         return nv(call, i)
+
     rec = install(f3_env, script)
     notes = run_local(make_transcript(120))
     assert notes["meta"]["provider"] == "nvidia" and notes["meta"]["fallback_from"] == "local"
@@ -1426,6 +1673,7 @@ class _Clock:
         def sleep(s):
             sleeps.append(s)
             self.t += max(0.0, s)
+
         mp.setattr(llm, "_sleep", sleep)
 
 
@@ -1468,8 +1716,9 @@ def test_gemini_long_video_is_paced_with_progress(monkeypatch, sleeps):
     inner = pipeline_script("gemini", 5)
     rec = install(monkeypatch, lambda c, i: stamps.append(clock.t) or inner(c, i))
     msgs = []
-    notes = llm.generate_notes(make_transcript(400, 60), provider="gemini", api_key=KEYS["gemini"],
-                               progress=lambda st, pct, m: msgs.append(m))
+    notes = llm.generate_notes(
+        make_transcript(400, 60), provider="gemini", api_key=KEYS["gemini"], progress=lambda st, pct, m: msgs.append(m)
+    )
     assert notes["sections"] and len(rec.calls) > 2
     waits = [m for m in msgs if m.startswith("Waiting for Google Gemini rate limit")]
     assert waits and re.search(r", \d+s\.\.\.$", waits[0])
@@ -1485,9 +1734,14 @@ def test_gemini_429_retry_reports_wait(monkeypatch, sleeps):
     assert "Waiting for Google Gemini rate limit, 20s..." in msgs, msgs
 
 
-GEMINI_DAILY = {"error": {"code": 429, "message": "You exceeded your current quota. Quota exceeded for metric: "
-                          "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
-                          "limit: 0, model: gemini-3.5-flash-lite (GenerateRequestsPerDayPerProjectPerModel-FreeTier)"}}
+GEMINI_DAILY = {
+    "error": {
+        "code": 429,
+        "message": "You exceeded your current quota. Quota exceeded for metric: "
+        "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+        "limit: 0, model: gemini-3.5-flash-lite (GenerateRequestsPerDayPerProjectPerModel-FreeTier)",
+    }
+}
 
 
 def test_gemini_daily_quota_message_without_fallback(fb_env, sleeps):
@@ -1511,6 +1765,7 @@ def test_gemini_daily_quota_falls_back_whole_video_to_groq(fb_env):
             n["gem"] += 1
             return gem(call, i) if n["gem"] < 3 else FakeResp(429, GEMINI_DAILY)
         return groq(call, i)
+
     rec = install(fb_env, script)
     msgs = []
     notes = run("gemini", transcript=make_transcript(60, 60), progress=lambda st, pct, m: msgs.append(m))
@@ -1569,11 +1824,14 @@ def part_script(calls_per_kind=None):
         if "transcript slice" in u and "Write the notebook sections" in u:
             n = int(re.search(r"NEVER fewer than (\d+)", u).group(1))
             no = int(re.search(r"slice (\d+) of", u).group(1))
-            return FakeResp(200, ok_payload("gemini", json.dumps({"sections": [section(no * 10 + j) for j in range(n)]})))
+            return FakeResp(
+                200, ok_payload("gemini", json.dumps({"sections": [section(no * 10 + j) for j in range(n)]}))
+            )
         if "front and back matter" in u:
             front = {**FRONT, "cover": {**FRONT["cover"], "takeaways": ["top 1", "top 2"]}}
             return FakeResp(200, ok_payload("gemini", json.dumps(front)))
         raise AssertionError(u[:200])
+
     return script
 
 
@@ -1608,6 +1866,7 @@ def test_parallel_part_runaway_output_is_salvaged(monkeypatch):
             body = json.dumps({"sections": [section(20 + j) for j in range(6)]})
             return FakeResp(200, ok_payload("gemini", body[: int(len(body) * 0.9)], finish="MAX_TOKENS"))
         return base(call, i)
+
     install(monkeypatch, script)
     notes = llm.generate_notes(tr, provider="gemini", api_key=KEYS["gemini"])
     assert any(s["title"] == "topic 20" for s in notes["sections"])
@@ -1626,8 +1885,11 @@ def test_gemini_schema_rejected_falls_back_to_plain_json(monkeypatch):
     def script(call, i):
         seen.append("responseJsonSchema" in call["json"]["generationConfig"])
         if seen[-1]:
-            return FakeResp(400, {"error": {"message": 'Invalid JSON payload received. Unknown name "responseJsonSchema"'}})
+            return FakeResp(
+                400, {"error": {"message": 'Invalid JSON payload received. Unknown name "responseJsonSchema"'}}
+            )
         return FakeResp(200, ok_payload("gemini", json.dumps(full_notes())))
+
     install(monkeypatch, script)
     notes = run("gemini")
     assert seen == [True, False] and notes["sections"]
@@ -1662,11 +1924,11 @@ def test_pacer_counts_in_flight_requests(monkeypatch):
     slept = []
     monkeypatch.setattr(llm, "_sleep", lambda s: slept.append(s))
     p = llm._Pacer(None, rpm=3)
-    p.after(0)                  # one finished request in the window
+    p.after(0)  # one finished request in the window
     p.before(0)
-    p.before(0)                 # two in flight -> window full (1 + 2 = 3)
+    p.before(0)  # two in flight -> window full (1 + 2 = 3)
     assert p.inflight == 2 and not slept
-    p.before(0)                 # a 4th waits for the oldest finished one to age out
+    p.before(0)  # a 4th waits for the oldest finished one to age out
     assert slept
 
 

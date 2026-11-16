@@ -12,11 +12,13 @@ What this file does
 Read next
     ``notes_engine/render/__init__.py`` - it lists the renderer's files in reading order.
 """
+
 from __future__ import annotations
 
 from .render import PdfError, build_diagram_svg  # noqa: F401
 from .render import page_layout as _page_layout
 from .render import pdf_export as _pdf_export
+from .render.cover import COVER_TOC_MAX  # noqa: F401
 
 # Older private names that tests and scripts still use (kept as aliases)
 from .render.diagrams import clean_diagram as _clean_diagram  # noqa: F401
@@ -24,8 +26,6 @@ from .render.diagrams import mindmap_tree as _mindmap_tree  # noqa: F401
 from .render.page_layout import rough_js_source as _rough_js
 from .render.pdf_export import find_browser as _find_browser  # noqa: F401
 from .render.pdf_export import render_budgets as _render_budgets  # noqa: F401
-from .render.cover import COVER_TOC_MAX  # noqa: F401
-
 
 __all__ = ["render_html", "render_pdf", "PdfError"]
 

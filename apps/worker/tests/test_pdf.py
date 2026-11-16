@@ -1,8 +1,8 @@
 """Tests for app/pdf.py (HTML + PDF rendering of the notes document)."""
+
 import copy
 import json
 import re
-import sys
 from pathlib import Path
 
 import pytest
@@ -38,7 +38,9 @@ def test_html_escapes_everything(notes):
     n = copy.deepcopy(notes)
     n["meta"]["title"] = "A & B <img src=x onerror=alert(1)> “q”"
     n["sections"][0]["subtitle"] = "<b>sub</b>"
-    n["sections"][0]["blocks"].append({"type": "code", "language": "<x>", "code": "if a < b && c > d: print('</script>')"})
+    n["sections"][0]["blocks"].append(
+        {"type": "code", "language": "<x>", "code": "if a < b && c > d: print('</script>')"}
+    )
     n["sections"][0]["blocks"].append({"type": "table", "headers": ["<h>"], "rows": [["<td onclick=1>"]]})
     n["glossary"].append({"term": "<i>t</i>", "definition": "<script>bad()</script>"})
     html = pdf.render_html(n)
@@ -56,8 +58,16 @@ def test_html_escapes_everything(notes):
 
 
 def test_markup_whitelist_only_bold_and_code():
-    n = {"meta": {"title": "t"}, "sections": [{"number": 2, "title": "s", "blocks": [
-        {"type": "paragraph", "text": "**bold** and `<code>` and <b>raw</b>"}]}]}
+    n = {
+        "meta": {"title": "t"},
+        "sections": [
+            {
+                "number": 2,
+                "title": "s",
+                "blocks": [{"type": "paragraph", "text": "**bold** and `<code>` and <b>raw</b>"}],
+            }
+        ],
+    }
     html = pdf.render_html(n)
     assert "<b>bold</b>" in html
     assert "<code>&lt;code&gt;</code>" in html
@@ -84,10 +94,15 @@ TYPES = ["flow", "stack", "compare", "cycle", "tree", "timeline", "mindmap", "se
 
 @pytest.mark.parametrize("typ", TYPES)
 def test_every_diagram_type_renders_deterministically(typ):
-    nodes = [{"id": "n%d" % i, "label": "Node number %d with a rather long label" % i, "detail": "some detail text %d" % i} for i in range(8)]
+    nodes = [
+        {"id": "n%d" % i, "label": "Node number %d with a rather long label" % i, "detail": "some detail text %d" % i}
+        for i in range(8)
+    ]
     edges = [{"from": "n%d" % i, "to": "n%d" % (i + 1), "label": "lbl"} for i in range(7)]
     if typ == "mindmap":
-        nodes = [{**n, "parent": "n0" if 0 < i < 4 else ("n%d" % (1 + i % 3) if i else "")} for i, n in enumerate(nodes)]
+        nodes = [
+            {**n, "parent": "n0" if 0 < i < 4 else ("n%d" % (1 + i % 3) if i else "")} for i, n in enumerate(nodes)
+        ]
         edges = []
     d = {"type": typ, "title": "T", "caption": "C", "nodes": nodes, "edges": edges}
     r1 = pdf.build_diagram_svg(d)
@@ -114,9 +129,17 @@ def test_mindmap_tree_is_always_valid():
 
 
 def test_sequence_keeps_repeated_and_self_messages():
-    d = {"type": "sequence", "title": "t", "nodes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
-         "edges": [{"from": "a", "to": "b", "label": "1"}, {"from": "a", "to": "b", "label": "2"}, {"from": "b", "to": "b", "label": "self"},
-                   {"from": "b", "to": "a", "label": "back"}]}
+    d = {
+        "type": "sequence",
+        "title": "t",
+        "nodes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+        "edges": [
+            {"from": "a", "to": "b", "label": "1"},
+            {"from": "a", "to": "b", "label": "2"},
+            {"from": "b", "to": "b", "label": "self"},
+            {"from": "b", "to": "a", "label": "back"},
+        ],
+    }
     dg = pdf._clean_diagram(d)
     assert [e["label"] for e in dg["edges"]] == ["1", "2", "self", "back"]
     assert pdf._clean_diagram({**d, "nodes": d["nodes"][:1]})["type"] == "flow"
@@ -126,7 +149,7 @@ def test_rough_is_inlined_and_runs_before_pagination(notes):
     html = pdf.render_html(notes)
     assert "var rough=" in html and html.index("var rough=") < html.index("Lecture Notes AI - measured pagination")
     assert "roughify(srcEl)" in html
-    assert html.count("class=\"rj\"") > 100
+    assert html.count('class="rj"') > 100
 
 
 def test_without_rough_file_the_plain_svg_strokes_remain(notes, monkeypatch):
@@ -138,13 +161,29 @@ def test_without_rough_file_the_plain_svg_strokes_remain(notes, monkeypatch):
 
 @needs_browser
 def test_pdf_diagrams_are_drawn_by_rough(tmp_path, notes):
-    n = {"meta": {"title": "t"}, "sections": [{"number": 2, "title": "s", "blocks": [], "diagram": notes["sections"][1]["diagram"]}]}
+    n = {
+        "meta": {"title": "t"},
+        "sections": [{"number": 2, "title": "s", "blocks": [], "diagram": notes["sections"][1]["diagram"]}],
+    }
     hp = tmp_path / "d.html"
     hp.write_text(pdf.render_html(n, for_print=True), encoding="utf-8")
     exe = pdf._find_browser()
     import subprocess
-    out = subprocess.run([exe, "--headless=new", "--disable-gpu", "--no-first-run", "--user-data-dir=" + str(tmp_path / "prof"),
-                          "--virtual-time-budget=8000", "--dump-dom", hp.as_uri()], capture_output=True, timeout=120).stdout.decode("utf-8", "replace")
+
+    out = subprocess.run(
+        [
+            exe,
+            "--headless=new",
+            "--disable-gpu",
+            "--no-first-run",
+            "--user-data-dir=" + str(tmp_path / "prof"),
+            "--virtual-time-budget=8000",
+            "--dump-dom",
+            hp.as_uri(),
+        ],
+        capture_output=True,
+        timeout=120,
+    ).stdout.decode("utf-8", "replace")
     m = re.search(r'data-rough="(\d+)"', out)
     assert m and int(m.group(1)) >= 1 and 'data-paginated="1"' in out
     assert "rough-on" in out and 'class="rough"' in out
@@ -153,24 +192,53 @@ def test_pdf_diagrams_are_drawn_by_rough(tmp_path, notes):
 def test_diagram_handles_garbage():
     assert pdf.build_diagram_svg(None) is None
     assert pdf.build_diagram_svg({"nodes": []}) is None
-    d = {"type": "weird", "nodes": [{"id": "a", "label": "x"}, {"id": "a", "label": "y"}, "z", 5],
-         "edges": [{"from": "a", "to": "zzz"}, {"from": "a", "to": "a"}, "bad"]}
+    d = {
+        "type": "weird",
+        "nodes": [{"id": "a", "label": "x"}, {"id": "a", "label": "y"}, "z", 5],
+        "edges": [{"from": "a", "to": "zzz"}, {"from": "a", "to": "a"}, "bad"],
+    }
     assert pdf.build_diagram_svg(d) is not None
     # cyclic tree / flow with back-edges must not recurse forever
-    cyc = {"type": "tree", "nodes": [{"id": "a", "label": "a"}, {"id": "b", "label": "b"}],
-           "edges": [{"from": "a", "to": "b"}, {"from": "b", "to": "a"}]}
+    cyc = {
+        "type": "tree",
+        "nodes": [{"id": "a", "label": "a"}, {"id": "b", "label": "b"}],
+        "edges": [{"from": "a", "to": "b"}, {"from": "b", "to": "a"}],
+    }
     assert pdf.build_diagram_svg(cyc) is not None
     cyc["type"] = "flow"
     assert pdf.build_diagram_svg(cyc) is not None
 
 
-@pytest.mark.parametrize("notes_in", [
-    {},
-    {"meta": {"title": "Only a title"}},
-    {"meta": None, "cover": 5, "sections": None, "glossary": "x", "recap": []},
-    {"sections": [None, 5, "x", {}, {"blocks": [1, None, {"type": "zzz"}, {"type": "table"}, {"type": "code"}, {"type": "bullets", "items": "abc"}]}]},
-    {"meta": {"title": "x" * 400}, "sections": [{"title": "y" * 300, "number": "3a", "blocks": [{"type": "paragraph", "text": "w" * 5000}]}]},
-])
+@pytest.mark.parametrize(
+    "notes_in",
+    [
+        {},
+        {"meta": {"title": "Only a title"}},
+        {"meta": None, "cover": 5, "sections": None, "glossary": "x", "recap": []},
+        {
+            "sections": [
+                None,
+                5,
+                "x",
+                {},
+                {
+                    "blocks": [
+                        1,
+                        None,
+                        {"type": "zzz"},
+                        {"type": "table"},
+                        {"type": "code"},
+                        {"type": "bullets", "items": "abc"},
+                    ]
+                },
+            ]
+        },
+        {
+            "meta": {"title": "x" * 400},
+            "sections": [{"title": "y" * 300, "number": "3a", "blocks": [{"type": "paragraph", "text": "w" * 5000}]}],
+        },
+    ],
+)
 def test_minimal_and_garbage_notes_do_not_crash_html(notes_in):
     html = pdf.render_html(notes_in)
     assert html.startswith("<!DOCTYPE html>")
@@ -260,10 +328,16 @@ def test_pdf_deterministic_text(sample_pdf, notes, tmp_path):
 
 
 @needs_browser
-@pytest.mark.parametrize("notes_in", [
-    {},
-    {"meta": {"title": "Tiny & <small>"}, "sections": [{"number": 2, "title": "one", "blocks": [{"type": "paragraph", "text": "hi"}]}]},
-])
+@pytest.mark.parametrize(
+    "notes_in",
+    [
+        {},
+        {
+            "meta": {"title": "Tiny & <small>"},
+            "sections": [{"number": 2, "title": "one", "blocks": [{"type": "paragraph", "text": "hi"}]}],
+        },
+    ],
+)
 def test_pdf_minimal_notes(tmp_path, notes_in):
     out = tmp_path / "min.pdf"
     pdf.render_pdf(notes_in, str(out))
@@ -274,16 +348,29 @@ def test_pdf_minimal_notes(tmp_path, notes_in):
 
 
 def test_unknown_block_type_is_rendered_not_dropped():
-    h = pdf.render_html({"sections": [{"number": 2, "title": "x", "blocks": [
-        {"type": "mystery_box", "title": "Odd thing", "text": "still shown"},
-        {"type": "checklist", "items": ["alpha item", "beta item"]}]}]})
+    h = pdf.render_html(
+        {
+            "sections": [
+                {
+                    "number": 2,
+                    "title": "x",
+                    "blocks": [
+                        {"type": "mystery_box", "title": "Odd thing", "text": "still shown"},
+                        {"type": "checklist", "items": ["alpha item", "beta item"]},
+                    ],
+                }
+            ]
+        }
+    )
     assert "Odd thing" in h and "still shown" in h and "alpha item" in h
 
 
 @needs_browser
 def test_pdf_sections_flow_without_forced_page_breaks(tmp_path):
-    secs = [{"number": i + 2, "title": "short %d" % i, "blocks": [{"type": "paragraph", "text": "tiny section %d." % i}]}
-            for i in range(6)]
+    secs = [
+        {"number": i + 2, "title": "short %d" % i, "blocks": [{"type": "paragraph", "text": "tiny section %d." % i}]}
+        for i in range(6)
+    ]
     out = tmp_path / "flow.pdf"
     pdf.render_pdf({"meta": {"title": "flow"}, "sections": secs}, str(out))
     doc = pymupdf.open(str(out))

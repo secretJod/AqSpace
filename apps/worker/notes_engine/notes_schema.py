@@ -1,4 +1,4 @@
-﻿"""Notes JSON validation / coercion (schema: docs/notes-schema.md).
+"""Notes JSON validation / coercion (schema: docs/notes-schema.md).
 
 ``validate_notes`` is deliberately forgiving: LLM output is messy, so we coerce
 instead of rejecting.  It only raises ``ValueError`` when nothing usable is left
@@ -16,6 +16,7 @@ How it fits: the last step of ``llm.generate_notes``; ``pdf.py`` renders its out
 
 Read next: ``docs/notes-schema.md`` (the schema) and ``pdf.py`` (rendering).
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -30,8 +31,8 @@ MAX_SECTIONS = 24
 MAX_BLOCKS = 14
 MAX_ITEMS = 12
 MAX_NODES = 8
-MAX_MINDMAP_NODES = 10   # root + up to 9 others
-MINDMAP_MAX_DEPTH = 2    # root = depth 0
+MAX_MINDMAP_NODES = 10  # root + up to 9 others
+MINDMAP_MAX_DEPTH = 2  # root = depth 0
 MAX_SEQ_ACTORS = 5
 MAX_SEQ_MESSAGES = 8
 MAX_LABEL = 40
@@ -40,33 +41,70 @@ MAX_RECAP_POINTS = 8
 MAX_TAKEAWAYS = 4
 MAX_COVER_TAKEAWAYS = 6
 
-BLOCK_TYPES = ("paragraph", "bullets", "steps", "definition", "example",
-               "callout", "code", "table", "formula")
+BLOCK_TYPES = ("paragraph", "bullets", "steps", "definition", "example", "callout", "code", "table", "formula")
 DIAGRAM_TYPES = ("flow", "stack", "compare", "cycle", "tree", "timeline", "mindmap", "sequence")
 
 DEFAULT_TAGLINE = "a student's own field notebook —"
 DEFAULT_RECAP_TITLE = "the whole picture, recapped"
 
 _BLOCK_ALIASES = {
-    "text": "paragraph", "p": "paragraph", "para": "paragraph", "prose": "paragraph",
-    "list": "bullets", "bullet": "bullets", "bullet_list": "bullets", "ul": "bullets",
-    "points": "bullets", "numbered": "steps", "ol": "steps", "step": "steps",
-    "process": "steps", "numbered_list": "steps", "def": "definition",
-    "term": "definition", "snippet": "code", "codeblock": "code",
-    "code_block": "code", "eq": "formula", "equation": "formula",
-    "math": "formula", "tbl": "table", "sticky": "callout",
+    "text": "paragraph",
+    "p": "paragraph",
+    "para": "paragraph",
+    "prose": "paragraph",
+    "list": "bullets",
+    "bullet": "bullets",
+    "bullet_list": "bullets",
+    "ul": "bullets",
+    "points": "bullets",
+    "numbered": "steps",
+    "ol": "steps",
+    "step": "steps",
+    "process": "steps",
+    "numbered_list": "steps",
+    "def": "definition",
+    "term": "definition",
+    "snippet": "code",
+    "codeblock": "code",
+    "code_block": "code",
+    "eq": "formula",
+    "equation": "formula",
+    "math": "formula",
+    "tbl": "table",
+    "sticky": "callout",
 }
-_CALLOUT_TYPES = {"note": "note", "info": "note", "warning": "warning",
-                  "warn": "warning", "caution": "warning", "tip": "tip",
-                  "hint": "tip", "important": "warning"}
+_CALLOUT_TYPES = {
+    "note": "note",
+    "info": "note",
+    "warning": "warning",
+    "warn": "warning",
+    "caution": "warning",
+    "tip": "tip",
+    "hint": "tip",
+    "important": "warning",
+}
 _DIAGRAM_ALIASES = {
-    "flowchart": "flow", "process": "flow", "pipeline": "flow",
-    "mind_map": "mindmap", "mind": "mindmap", "concept_map": "mindmap",
-    "sequence_diagram": "sequence", "sequencediagram": "sequence",
-    "layers": "stack", "layer": "stack", "architecture": "stack",
-    "comparison": "compare", "versus": "compare", "vs": "compare", "table": "compare",
-    "loop": "cycle", "circular": "cycle", "hierarchy": "tree", "graph": "tree",
-    "time": "timeline", "history": "timeline",
+    "flowchart": "flow",
+    "process": "flow",
+    "pipeline": "flow",
+    "mind_map": "mindmap",
+    "mind": "mindmap",
+    "concept_map": "mindmap",
+    "sequence_diagram": "sequence",
+    "sequencediagram": "sequence",
+    "layers": "stack",
+    "layer": "stack",
+    "architecture": "stack",
+    "comparison": "compare",
+    "versus": "compare",
+    "vs": "compare",
+    "table": "compare",
+    "loop": "cycle",
+    "circular": "cycle",
+    "hierarchy": "tree",
+    "graph": "tree",
+    "time": "timeline",
+    "history": "timeline",
 }
 
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -304,6 +342,7 @@ def _resolver(alias: dict, used: set):
     def resolve(x: Any) -> str | None:
         key = _line(x, 40)
         return alias.get(key) or alias.get(key.lower()) or (key if key in used else None)
+
     return resolve
 
 
@@ -353,8 +392,9 @@ def _coerce_mindmap(d: dict) -> dict | None:
                 if isinstance(n.get(k), list):
                     queue.extend((c, len(entries)) for c in n[k])
                     break
-        entries.append({"label": label, "detail": detail, "orig": orig,
-                        "parent_raw": parent_raw, "nested": nested_parent})
+        entries.append(
+            {"label": label, "detail": detail, "orig": orig, "parent_raw": parent_raw, "nested": nested_parent}
+        )
 
     # 2. register nodes (entry index -> final id)
     nodes: list[dict] = []
@@ -420,14 +460,22 @@ def _coerce_mindmap(d: dict) -> dict | None:
         if parent[n["id"]] is not None:
             n["parent"] = parent[n["id"]]
     out.sort(key=lambda n: n["id"] != root)  # stable: root first, rest keep their order
-    return {"type": "mindmap", "title": _line(d.get("title"), 60),
-            "caption": _line(d.get("caption"), 160), "nodes": out, "edges": []}
+    return {
+        "type": "mindmap",
+        "title": _line(d.get("title"), 60),
+        "caption": _line(d.get("caption"), 160),
+        "nodes": out,
+        "edges": [],
+    }
 
 
 def _coerce_sequence(d: dict) -> dict | None:
     """Actors (2-5) + ordered messages (<= 8). Self-messages allowed; label required (default "calls")."""
-    raw_nodes = d.get("nodes") if isinstance(d.get("nodes"), list) else (
-        d.get("actors") if isinstance(d.get("actors"), list) else [])
+    raw_nodes = (
+        d.get("nodes")
+        if isinstance(d.get("nodes"), list)
+        else (d.get("actors") if isinstance(d.get("actors"), list) else [])
+    )
     nodes: list[dict] = []
     used: set[str] = set()
     alias: dict[str, str] = {}
@@ -455,15 +503,23 @@ def _coerce_sequence(d: dict) -> dict | None:
             node = _add_node(nodes, used, alias, name, "", "", len(nodes))
             made[name.lower()] = node["id"]  # type: ignore[index]
         a, b = (rid or made[name.lower()] for rid, name in ends)
-        edges.append({"from": a, "to": b,
-                      "label": _line(e.get("label") or e.get("message") or e.get("text"), 40) or "calls"})
+        edges.append(
+            {"from": a, "to": b, "label": _line(e.get("label") or e.get("message") or e.get("text"), 40) or "calls"}
+        )
     if len(nodes) < 2:
         return None
     if not edges:  # keep the diagram drawable: one message between neighbouring actors
-        edges = [{"from": nodes[i]["id"], "to": nodes[i + 1]["id"], "label": "calls"}
-                 for i in range(min(len(nodes) - 1, MAX_SEQ_MESSAGES))]
-    return {"type": "sequence", "title": _line(d.get("title"), 60),
-            "caption": _line(d.get("caption"), 160), "nodes": nodes, "edges": edges}
+        edges = [
+            {"from": nodes[i]["id"], "to": nodes[i + 1]["id"], "label": "calls"}
+            for i in range(min(len(nodes) - 1, MAX_SEQ_MESSAGES))
+        ]
+    return {
+        "type": "sequence",
+        "title": _line(d.get("title"), 60),
+        "caption": _line(d.get("caption"), 160),
+        "nodes": nodes,
+        "edges": edges,
+    }
 
 
 def _coerce_diagram(d: Any) -> dict | None:
@@ -514,8 +570,13 @@ def _coerce_diagram(d: Any) -> dict | None:
         elif dtype == "tree":
             edges = [{"from": ids[0], "to": x} for x in ids[1:]]
 
-    return {"type": dtype, "title": _line(d.get("title"), 60),
-            "caption": _line(d.get("caption"), 160), "nodes": nodes, "edges": edges}
+    return {
+        "type": dtype,
+        "title": _line(d.get("title"), 60),
+        "caption": _line(d.get("caption"), 160),
+        "nodes": nodes,
+        "edges": edges,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -556,8 +617,7 @@ def _coerce_section(s: Any) -> dict | None:
     if q and a:
         recall: dict | None = {"q": q, "a": a}
     elif takeaways:  # derive a minimal explain-it-back prompt from the notes themselves
-        recall = {"q": f"In your own words: what is the key idea of “{_clip(title, 60)}”?",
-                  "a": takeaways[0]}
+        recall = {"q": f"In your own words: what is the key idea of “{_clip(title, 60)}”?", "a": takeaways[0]}
     else:
         recall = None
 
@@ -592,8 +652,9 @@ def _unwrap(raw: Any) -> dict:
 # ---------------------------------------------------------------------------
 # 6. Main
 # ---------------------------------------------------------------------------
-def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | None = None,
-                   max_sections: int = MAX_SECTIONS) -> dict:
+def validate_notes(
+    raw: dict, transcript: dict | None = None, *, model: str | None = None, max_sections: int = MAX_SECTIONS
+) -> dict:
     """Coerce ``raw`` into the contract schema. Raises ValueError if unusable.
 
     ``max_sections`` (keyword) raises the section cap for very long lectures (the local provider

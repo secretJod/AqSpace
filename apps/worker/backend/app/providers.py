@@ -7,6 +7,7 @@ to the browser; the API only reports *whether* a server key exists.
 
 Read next: ``routes.py``.
 """
+
 from __future__ import annotations
 
 import os
@@ -19,6 +20,7 @@ def provider_table() -> dict:
     table = {}
     try:
         from notes_engine import llm  # lazy: the server must start even if llm is broken
+
         for pid, meta in (getattr(llm, "PROVIDERS", None) or {}).items():
             if pid in FALLBACK_PROVIDERS and isinstance(meta, dict):
                 fallback = FALLBACK_PROVIDERS[pid]
@@ -43,6 +45,7 @@ def local_online() -> bool:
     """True when the local llama-server answers (1 s probe; False on any error)."""
     try:
         from notes_engine import llm
+
         return bool(llm.local_online(timeout=1.0))
     except Exception:
         return False
