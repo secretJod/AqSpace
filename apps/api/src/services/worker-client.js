@@ -14,6 +14,14 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 // 1. Checking the worker address (runs once at start-up)
 // ---------------------------------------------------------------------------
 
+/**
+ * Refuses a worker address that is not on this machine, unless allowRemote. The worker trusts its callers,
+ * so pointing the API at someone else's server by mistake must fail at start-up.
+ *
+ * @param {string} url  PY_NOTES_URL
+ * @param {boolean} [allowRemote]  ALLOW_REMOTE_PY=1
+ * @throws {Error} for an invalid URL, a non-http(s) scheme or a remote host
+ */
 export function assertPyUrl(url, allowRemote = false) {
   let parsed;
   try {
@@ -30,7 +38,15 @@ export function assertPyUrl(url, allowRemote = false) {
 // 2. The client
 // ---------------------------------------------------------------------------
 
-/** fetchImpl can be swapped (tests, or the dev tracker which records each call). */
+/**
+ * Builds the worker client.
+ *
+ * @param {object} options
+ * @param {string} options.baseUrl  e.g. "http://127.0.0.1:5055" (no trailing slash)
+ * @param {number} [options.timeoutMs]  default timeout of json()
+ * @param {typeof fetch} [options.fetchImpl]  swapped by the tests and by the dev tracker, which records each call
+ * @returns {{ json: Function, raw: Function }}
+ */
 export function createPyClient({ baseUrl, timeoutMs = 10_000, fetchImpl = fetch }) {
   /** -> {status, headers, json} (json = null when the body is not JSON). Throws HttpError 503 when the service is unreachable. */
   async function json(path, { method = "GET", body, timeout = timeoutMs } = {}) {

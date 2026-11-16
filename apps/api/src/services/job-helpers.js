@@ -1,20 +1,19 @@
 /* job-helpers.js - small tools shared by the notes and smart services.
 
    What:  a per-key lock (so two clicks never start two jobs), safe short text,
-          the current time as ISO text, and turning a worker "start job" error into an HttpError.
+          worker progress -> row fields, and turning a worker "start job" error into an HttpError.
    How it fits: imported by services/notes-service.js and services/smart-service.js.
    Read next: services/notes-service.js */
 import { HttpError } from "../utils/http-errors.js";
 
 // ---------------------------------------------------------------------------
-// 1. Text and time
+// 1. Text
 // ---------------------------------------------------------------------------
-
-export const nowIso = () => new Date().toISOString();
 
 /** Any value -> a single-line string of at most n characters (worker messages go into the UI). */
 export const short = (s, n = 300) =>
   String(s ?? "")
+    // eslint-disable-next-line no-control-regex -- worker text must not break the UI's one-line status
     .replace(/[\u0000-\u001f]/g, " ")
     .slice(0, n);
 
@@ -22,8 +21,13 @@ export const short = (s, n = 300) =>
 // 2. Per-key lock
 // ---------------------------------------------------------------------------
 
-/** Returns withLock(key, fn): calls with the same key run one after another, never at the same time.
-    Each key keeps a promise chain; it is removed again when the chain is empty. */
+/**
+ * Returns withLock(key, fn): calls with the same key run one after another, never at the same time.
+ * Each key keeps a promise chain; it is removed again when the chain is empty. In-process only:
+ * the database's unique indexes are the second line of defence.
+ *
+ * @returns {<T>(key: unknown, fn: () => Promise<T> | T) => Promise<T>}
+ */
 export function createKeyedLock() {
   const chains = new Map();
   return function withLock(key, fn) {

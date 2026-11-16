@@ -19,12 +19,25 @@
    Read next: services/smart-service.js */
 import { HttpError } from "../utils/http-errors.js";
 import { JOB_ID_RE } from "../utils/validate.js";
-import { nowIso, short, createKeyedLock, inProgressFields, startFailedError } from "./job-helpers.js";
+import { nowIso } from "../utils/time.js";
+import { short, createKeyedLock, inProgressFields, startFailedError } from "./job-helpers.js";
 
 const PUBLIC_STATE = { queued: "queued", running: "running", done: "ready", error: "error", expired: "none" };
 const EXPIRED_MESSAGE = "Notes expired - generate again";
 
-/** onChange(kind, ids, before, after) is called after every change (used by the dev tracker). */
+/**
+ * Builds the notes service.
+ *
+ * @param {object} deps
+ * @param {import("node:sqlite").DatabaseSync} deps.db
+ * @param {object} deps.repo     the repository
+ * @param {object} deps.py       the worker client (services/worker-client.js)
+ * @param {object} deps.config   uses config.notes timings, config.pyProvider and config.requireMembership
+ * @param {() => number} [deps.clock]  current time in ms
+ * @param {Function | null} [deps.onChange]  onChange(kind, ids, before, after) after every row change
+ *        (the dev tracker records these as job events)
+ * @returns {{ status: Function, list: Function, start: Function, file: Function }}
+ */
 export function createNotesService({ db, repo, py, config, clock = Date.now, onChange = null }) {
   const timings = config.notes;
   const withLock = createKeyedLock(); // key: videoId
@@ -182,8 +195,8 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
   }
 
   /** A ready record: make sure the worker still has the files (definitive 404 -> expired). Checked at most every verifyMs. */
-  async function verify(row, force = false) {
-    if (!force && clock() - row.checked_at < timings.verifyMs) return row;
+  async function verify(row) {
+    if (clock() - row.checked_at < timings.verifyMs) return row;
     try {
       const res = await py.raw(`/api/jobs/${row.job_id}/notes.html`, { method: "HEAD", timeout: timings.pyTimeoutMs });
       await res.body?.cancel();

@@ -15,7 +15,8 @@
 import { createHash } from "node:crypto";
 import { HttpError } from "../utils/http-errors.js";
 import { JOB_ID_RE, isObj } from "../utils/validate.js";
-import { nowIso, short, createKeyedLock, inProgressFields, startFailedError } from "./job-helpers.js";
+import { nowIso } from "../utils/time.js";
+import { short, createKeyedLock, inProgressFields, startFailedError } from "./job-helpers.js";
 
 const PUBLIC_STATE = { queued: "queued", running: "running", done: "ready", error: "error" };
 const MIN_VIDEOS = 2,
@@ -25,12 +26,24 @@ const MAX_RESULT_CHARS = 512 * 1024,
 const INTERRUPTED = "The analysis was interrupted - run it again";
 
 /** Identifies "this goal with exactly these videos" (order does not matter). */
-export const fingerprintOf = (goal, ids) =>
+const fingerprintOf = (goal, ids) =>
   createHash("sha256")
     .update(JSON.stringify([goal, [...ids].sort()]))
     .digest("hex");
 
-/** onChange(kind, ids, before, after) is called after every change (used by the dev tracker). */
+/**
+ * Builds the smart playlist service.
+ *
+ * @param {object} deps
+ * @param {import("node:sqlite").DatabaseSync} deps.db
+ * @param {object} deps.repo     the repository
+ * @param {object} deps.py       the worker client (services/worker-client.js)
+ * @param {object} deps.config   uses config.notes timings, config.pySmartProvider and config.pySmartModel
+ * @param {() => number} [deps.clock]  current time in ms
+ * @param {Function | null} [deps.onChange]  onChange(kind, ids, before, after) after every row change
+ *        (the dev tracker records these as job events)
+ * @returns {{ status: Function, start: Function }}
+ */
 export function createSmartService({ db, repo, py, config, clock = Date.now, onChange = null }) {
   const timings = config.notes;
   const withLock = createKeyedLock(); // key: playlist pk
