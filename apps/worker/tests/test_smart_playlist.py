@@ -357,6 +357,40 @@ def test_analyze_end_to_end(fake_engine):
     assert "(transcript unavailable" in FakeClient.instances[0].prompts[0]
 
 
+def test_analyze_through_the_real_client_http_layer(fake_engine, monkeypatch):
+    """Runs analyze() on the real _Client with only requests.post faked, so the usage meter wraps the real _post.
+
+    The FakeClient tests replace the whole client, so they cannot see a mismatch between the meter's wrapper
+    and the arguments _Client.complete passes to _post (for example the read timeout).
+    """
+    from notes_engine import llm
+
+    monkeypatch.setattr(sp, "_Client", llm._Client)
+    monkeypatch.setattr(llm, "_sleep", lambda s: None)
+    answers = FakeClient("gemini", SECRET, "m")
+    timeouts = []
+
+    def fake_post(url, **kw):
+        timeouts.append(kw["timeout"])
+        body = kw["json"]
+        system = body["systemInstruction"]["parts"][0]["text"]
+        user = body["contents"][0]["parts"][0]["text"]
+        text = json.dumps(answers.ask_json((system, user), 0))
+        payload = {
+            "candidates": [{"content": {"parts": [{"text": text}]}, "finishReason": "STOP"}],
+            "usageMetadata": {"totalTokenCount": 50},
+        }
+        return types.SimpleNamespace(status_code=200, json=lambda: payload, text="", headers={})
+
+    monkeypatch.setattr(llm.requests, "post", fake_post)
+    videos = [{"id": i, "title": f"T {i}", "channel": "C", "duration_sec": 300} for i in IDS]
+    out = sp.analyze("System Design", videos, "gemini", SECRET)
+
+    assert len(timeouts) == 3 and all(t is not None for t in timeouts)
+    assert out["usage"]["calls"] == 3 and out["usage"]["total_tokens"] == 150
+    validate_result(out["result"], IDS)
+
+
 def test_analyze_groq_uses_small_batches(fake_engine):
     videos = [{"id": i, "title": "T", "channel": "C", "duration_sec": 300} for i in IDS]
     out = sp.analyze("Goal", videos, "groq", SECRET, model="models/x")

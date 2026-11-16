@@ -463,9 +463,10 @@ class _Meter:
         self.api_seconds = 0.0
         real_post = client._post
 
-        def metered_post(url, headers, body):
+        # Forward every argument untouched, so the meter keeps working when the client's request signature changes.
+        def metered_post(*args, **kwargs):
             t = time.time()
-            data = real_post(url, headers, body)
+            data = real_post(*args, **kwargs)
             self.api_seconds += time.time() - t
             self.calls += 1
             u, g = data.get("usage") or {}, data.get("usageMetadata") or {}
