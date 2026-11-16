@@ -97,7 +97,7 @@ window.AQ = window.AQ || {};
   function load() {
     var raw = null;
     try {
-      raw = localStorage.getItem(KEY);
+      raw = AQ.storage.get(KEY);
     } catch {
       /* storage blocked: start empty and keep the log in memory */
     }
@@ -123,7 +123,7 @@ window.AQ = window.AQ || {};
   function save() {
     if (sessions.length > MAX_SESSIONS) sessions.splice(0, sessions.length - MAX_SESSIONS);
     try {
-      localStorage.setItem(KEY, JSON.stringify(sessions));
+      AQ.storage.set(KEY, JSON.stringify(sessions));
     } catch {
       /* storage blocked or full: the in-memory log stays correct for this tab */
     }
@@ -334,7 +334,7 @@ window.AQ = window.AQ || {};
   // Another tab may write the log too: reload when it does so both tabs show the same numbers.
   try {
     window.addEventListener("storage", function (e) {
-      if (e.key === KEY) {
+      if (e.key === AQ.storage.key(KEY)) {
         load();
         emit({ type: "sync" });
       }

@@ -68,7 +68,7 @@ window.AQ = window.AQ || {};
   // ===== 3. "seen" storage (try/catch, in-memory fallback) =====
   function readSeen() {
     try {
-      var raw = window.localStorage.getItem(SEEN_KEY);
+      var raw = AQ.storage.get(SEEN_KEY);
       if (raw == null) return null; // null = first run ever
       var list = JSON.parse(raw);
       return Array.isArray(list) ? list : [];
@@ -81,7 +81,7 @@ window.AQ = window.AQ || {};
       memorySeen[id] = true;
     });
     try {
-      window.localStorage.setItem(SEEN_KEY, JSON.stringify(list));
+      AQ.storage.set(SEEN_KEY, JSON.stringify(list));
     } catch {
       /* memory only */
     }

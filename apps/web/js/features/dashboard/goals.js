@@ -103,7 +103,7 @@ window.AQ = window.AQ || {};
   function load() {
     var raw = null;
     try {
-      raw = localStorage.getItem(KEY);
+      raw = AQ.storage.get(KEY);
     } catch {
       storageOk = false;
     }
@@ -121,7 +121,7 @@ window.AQ = window.AQ || {};
   }
   function save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify(goals));
+      AQ.storage.set(KEY, JSON.stringify(goals));
       storageOk = true;
     } catch {
       storageOk = false;
@@ -424,7 +424,7 @@ window.AQ = window.AQ || {};
   // another tab changed the goals: reload them so every open tab agrees
   try {
     window.addEventListener("storage", function (e) {
-      if (e.key === KEY) {
+      if (e.key === AQ.storage.key(KEY)) {
         load();
         emit({ type: "sync" });
       }

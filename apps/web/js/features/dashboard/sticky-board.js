@@ -48,7 +48,7 @@ window.AQ = window.AQ || {};
     if (memory) return memory;
     var raw;
     try {
-      raw = JSON.parse(localStorage.getItem(KEY) || "[]");
+      raw = JSON.parse(AQ.storage.get(KEY) || "[]");
     } catch {
       raw = [];
     }
@@ -57,7 +57,7 @@ window.AQ = window.AQ || {};
   }
   function save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify(memory));
+      AQ.storage.set(KEY, JSON.stringify(memory));
     } catch {
       /* private mode: keep it in memory */
     }
@@ -192,7 +192,7 @@ window.AQ = window.AQ || {};
   }
   // another tab changed the notes: drop the cache and tell the views
   window.addEventListener("storage", function (e) {
-    if (e.key !== KEY) return;
+    if (e.key !== AQ.storage.key(KEY)) return;
     memory = null;
     load();
     listeners.slice().forEach(function (fn) {

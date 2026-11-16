@@ -7,15 +7,17 @@
      "Your session has ended" screen when a call is refused later.
 
    How it fits:
-     Loaded right after core/api.js (needs AQ.api; uses AQ.dialog when present). Styles: css/profile.css.
+     Loaded by core/boot.js right after core/api.js (needs AQ.api; uses AQ.dialog when present), and reuses
+     the /auth/status reply boot.js already fetched (AQ.boot.status). Styles: css/profile.css.
      Server contract (apps/api):
        GET  /api/v1/auth/status -> {authMode:"local"|"google", signedIn, user:{id,name,email,picture}|null, loginUrl}
        POST /api/v1/auth/logout -> {ok:true}
        any call may return 401 {code:"auth_required"}; api.js catches it once and calls AQ.profile.authRequired().
 
    Security:
-     While the status is unknown, <html> has .auth-pending (profile.css hides the app), so a signed-out user
-     never sees the app flash. User data (name, email, picture URL) is untrusted: it is set with textContent
+     While the status is unknown, <html> has .auth-pending (set by boot.js; profile.css hides the app), so a
+     signed-out user never sees the app flash. Each account's saved data lives in its own storage namespace
+     (core/storage.js), so on a shared browser the next person starts with their own data, never this one's. User data (name, email, picture URL) is untrusted: it is set with textContent
      and setAttribute only, never innerHTML; the picture must be https and the sign-in link must be a
      same-site path.
 
@@ -230,8 +232,13 @@
     if (wrap && !wrap.contains(e.target)) closeMenu(false);
   }
 
+  /* Sign-out on a shared browser: hide the app straight away, so the next person never sees this account's
+     playlists, streak or notes while the logout request runs. The account's saved data stays in its own
+     storage namespace (see core/storage.js) for its next sign-in; the reload starts the page with no account
+     (memory-only storage) and shows the sign-in screen. */
   function signOut() {
     closeMenu(false);
+    root.classList.add("auth-pending");
     AQ.api
       .flush()
       .catch(function () {
@@ -326,6 +333,7 @@
 
   /* ---------- start ---------- */
   function fetchStatus() {
+    if (AQ.boot && AQ.boot.status) return Promise.resolve(AQ.boot.status); // boot.js already asked
     if (!window.AQ || !AQ.api || !AQ.api.request) return Promise.resolve(null);
     return AQ.api.request("GET", "/api/v1/auth/status", undefined, { authFree: true, timeout: 5000 }).then(
       function (r) {
