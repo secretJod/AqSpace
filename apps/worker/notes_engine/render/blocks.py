@@ -15,6 +15,7 @@ How it fits
 Read next
     ``sections.py``.
 """
+
 from __future__ import annotations
 
 import re
@@ -42,48 +43,65 @@ def split_sentences(text: str) -> list[str]:
     return sentences
 
 
-def paragraph_block(block) -> str:
+def paragraph_block(block: dict) -> str:
+    """Return the HTML item for a paragraph of rich text ("" when it is empty)."""
     text = clean_text(block.get("text"))
     if not text:
         return ""
     sentences = split_sentences(text) if len(text) > 180 else [text]
     spans = "".join('<span class="s">%s </span>' % rich(s) for s in sentences)
-    return ('<div class="item blk b-para" data-split="1" data-minkeep="2" data-minmove="2"><p class="sb para">%s</p></div>' % spans)
+    return (
+        '<div class="item blk b-para" data-split="1" data-minkeep="2" data-minmove="2"><p class="sb para">%s</p></div>'
+        % spans
+    )
 
 
 # ----------------------------------------------------------------------------------------------
 # 2. Lists
 # ----------------------------------------------------------------------------------------------
-def bullets_block(block) -> str:
+def bullets_block(block: dict) -> str:
+    """Return the HTML item for a bullet list ("" when it is empty)."""
     items = [clean_text(i) for i in as_list(block.get("items")) if clean_text(i)]
     if not items:
         return ""
     lis = "".join("<li>%s</li>" % rich(i) for i in items)
     # many short bullets -> two columns
     cols = " cols2" if len(items) >= 4 and max(len(plain(i)) for i in items) <= 48 else ""
-    return '<div class="item blk b-bullets' + cols + '" data-split="1" data-minkeep="2" data-minmove="2"><ul class="sb">%s</ul></div>' % lis
+    return (
+        '<div class="item blk b-bullets'
+        + cols
+        + '" data-split="1" data-minkeep="2" data-minmove="2"><ul class="sb">%s</ul></div>' % lis
+    )
 
 
-def steps_block(block) -> str:
+def steps_block(block: dict) -> str:
+    """Return the HTML item for a numbered list of steps ("" when it is empty)."""
     items = [clean_text(i) for i in as_list(block.get("items")) if clean_text(i)]
     if not items:
         return ""
     lis = "".join('<li><span class="num">%d</span>%s</li>' % (n, rich(i)) for n, i in enumerate(items, 1))
-    return '<div class="item blk b-steps" data-split="1" data-minkeep="2" data-minmove="2"><ol class="sb">%s</ol></div>' % lis
+    return (
+        '<div class="item blk b-steps" data-split="1" data-minkeep="2" data-minmove="2"><ol class="sb">%s</ol></div>'
+        % lis
+    )
 
 
 # ----------------------------------------------------------------------------------------------
 # 3. Boxes: definition, example, callout, formula
 # ----------------------------------------------------------------------------------------------
-def definition_block(block) -> str:
+def definition_block(block: dict) -> str:
+    """Return the HTML item for a "def." line: term and meaning ("" when it is empty)."""
     term, text = clean_text(block.get("term")), clean_text(block.get("text"))
     if not (term or text):
         return ""
-    return ('<div class="item blk b-def"><div class="box"><span class="tag">def.</span><span class="term">%s</span> — %s</div></div>'
-            % (escape_html(term), rich(text)))
+    return (
+        '<div class="item blk b-def"><div class="box"><span '
+        'class="tag">def.</span><span class="term">%s</span> — %s</div></div>' % (escape_html(term), rich(text))
+    )
 
 
-def example_block(block) -> str:
+def example_block(block: dict) -> str:
+    """Return the HTML item for a worked example with an optional title ("" when it is empty)."""
     title, text = clean_text(block.get("title")), clean_text(block.get("text"))
     if not (title or text):
         return ""
@@ -94,7 +112,7 @@ def example_block(block) -> str:
 CALLOUT_LABELS = {"note": "note to self", "warning": "watch out!", "tip": "pro tip"}
 
 
-def callout_block(block, callout_number: int) -> str:
+def callout_block(block: dict, callout_number: int) -> str:
     """A sticky-note callout. ``callout_number`` alternates the tilt (classes t1 / t2)."""
     text = clean_text(block.get("text"))
     if not text:
@@ -102,11 +120,15 @@ def callout_block(block, callout_number: int) -> str:
     style = clean_text(block.get("style")).lower()
     if style not in CALLOUT_LABELS:
         style = "note"
-    return ('<div class="item blk b-call %s t%d"><div class="box"><span class="lbl">%s</span><span class="tx">%s</span></div></div>'
-            % (style, 1 + callout_number % 2, escape_html(CALLOUT_LABELS[style]), rich(text)))
+    return (
+        '<div class="item blk b-call %s t%d"><div class="box"><span '
+        'class="lbl">%s</span><span class="tx">%s</span></div></div>'
+        % (style, 1 + callout_number % 2, escape_html(CALLOUT_LABELS[style]), rich(text))
+    )
 
 
-def formula_block(block) -> str:
+def formula_block(block: dict) -> str:
+    """Return the HTML item for a formula on its own line ("" when it is empty)."""
     text = clean_text(block.get("text"))
     if not text:
         return ""
@@ -116,7 +138,7 @@ def formula_block(block) -> str:
 # ----------------------------------------------------------------------------------------------
 # 4. Code and tables
 # ----------------------------------------------------------------------------------------------
-def code_block(block) -> str:
+def code_block(block: dict) -> str:
     """Code listing, one ``<div class="ln">`` per line (max 160 lines of max 400 characters)."""
     raw = block.get("code") if block.get("code") is not None else ""
     code = str(raw).replace("\r\n", "\n").replace("\r", "\n").expandtabs(4).strip("\n")
@@ -127,11 +149,13 @@ def code_block(block) -> str:
     language = clean_text(block.get("language"))[:24]
     body = "".join('<div class="ln">%s</div>' % (escape_html(line) if line.strip() else "&nbsp;") for line in lines)
     tag = '<span class="lang">%s</span>' % escape_html(language) if language else ""
-    return ('<div class="item blk b-code" data-split="1" data-minkeep="4" data-minmove="3"><div class="box">%s<div class="sb">%s</div></div></div>'
-            % (tag, body))
+    return (
+        '<div class="item blk b-code" data-split="1" data-minkeep="4" '
+        'data-minmove="3"><div class="box">%s<div class="sb">%s</div></div></div>' % (tag, body)
+    )
 
 
-def table_block(block) -> str:
+def table_block(block: dict) -> str:
     """Table (max 60 rows); short rows are padded so every row has the same number of cells."""
     headers = [clean_text(h) for h in as_list(block.get("headers"))]
     rows = [r for r in as_list(block.get("rows")) if isinstance(r, list)][:60]
@@ -144,18 +168,24 @@ def table_block(block) -> str:
     for row in rows:
         cells = ([clean_text(c) for c in row] + [""] * ncol)[:ncol]
         trs += "<tr>%s</tr>" % "".join("<td>%s</td>" % rich(c) for c in cells)
-    return ('<div class="item blk b-table" data-split="1" data-minkeep="3" data-minmove="2"><table>%s<tbody class="sb">%s</tbody></table></div>'
-            % (thead, trs))
+    return (
+        '<div class="item blk b-table" data-split="1" data-minkeep="3" '
+        'data-minmove="2"><table>%s<tbody class="sb">%s</tbody></table></div>' % (thead, trs)
+    )
 
 
 # ----------------------------------------------------------------------------------------------
 # 5. Unknown blocks and the dispatcher
 # ----------------------------------------------------------------------------------------------
-def unknown_block(block) -> str:
+def unknown_block(block: dict) -> str:
     """Block types this renderer does not know yet: show any text / items instead of dropping them."""
     if as_list(block.get("items")):
         return bullets_block(block)
-    parts = [clean_text(block.get(k)) for k in ("title", "term", "text", "content", "body", "definition") if clean_text(block.get(k))]
+    parts = [
+        clean_text(block.get(k))
+        for k in ("title", "term", "text", "content", "body", "definition")
+        if clean_text(block.get(k))
+    ]
     if not parts:
         return ""
     if len(parts) > 1:

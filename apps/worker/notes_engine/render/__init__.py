@@ -1,6 +1,6 @@
 """The notebook renderer: notes dict -> hand-drawn "field notebook" HTML -> A4 PDF.
 
-Public API (also available as ``notes_engine.pdf``, the older import path):
+Public API (callers usually import it through ``notes_engine.pdf``):
     render_html(notes: dict, *, for_print=False) -> str
     render_pdf(notes: dict, out_path: str) -> str
     class PdfError(Exception)
@@ -20,6 +20,7 @@ Files, in reading order:
 
 Safety: all text from the notes is escaped; only **bold** and `code` are re-introduced after escaping.
 """
+
 from .diagrams import build_diagram_svg
 from .page_layout import render_html
 from .pdf_export import PdfError, render_pdf

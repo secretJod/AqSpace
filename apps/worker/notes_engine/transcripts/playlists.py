@@ -5,13 +5,19 @@ is made for the whole playlist.  Private / deleted entries are skipped and count
 
 Read next: ``../ingest.py``.
 """
+
 from __future__ import annotations
 
 import re
 
 from .cleaning import WS_RE
-from .errors import (MSG_PLAYLIST_BLOCKED, MSG_PLAYLIST_NOT_FOUND, MSG_PLAYLIST_OTHER, MSG_PLAYLIST_PRIVATE,
-                     PlaylistError)
+from .errors import (
+    MSG_PLAYLIST_BLOCKED,
+    MSG_PLAYLIST_NOT_FOUND,
+    MSG_PLAYLIST_OTHER,
+    MSG_PLAYLIST_PRIVATE,
+    PlaylistError,
+)
 from .youtube_urls import VIDEO_ID_RE, parse_playlist_id
 
 PLAYLIST_LIMIT = 200
@@ -26,7 +32,7 @@ _DEAD_TITLES = {"[private video]", "[deleted video]", "private video", "deleted 
 # --------------------------------------------------------------------------- #
 
 
-def plain_text(text, limit: int) -> str:
+def plain_text(text: object, limit: int) -> str:
     """Single-line, control-character-free text capped at `limit` characters."""
     s = _CTRL_RE.sub(" ", str(text or ""))
     return WS_RE.sub(" ", s).strip()[:limit]
@@ -38,16 +44,24 @@ def playlist_error(msg: str) -> PlaylistError:
     # note: "and" binds tighter than "or" here: ("sign in" in m and "not a bot" not in m)
     if "private" in m or "sign in" in m and "not a bot" not in m or "log in" in m or "members-only" in m:
         return PlaylistError(MSG_PLAYLIST_PRIVATE, 403)
-    if ("does not exist" in m or "not found" in m or "404" in m or "unavailable" in m
-            or "been removed" in m or "terminated" in m or "no longer available" in m
-            or "not a valid" in m or "invalid" in m):
+    if (
+        "does not exist" in m
+        or "not found" in m
+        or "404" in m
+        or "unavailable" in m
+        or "been removed" in m
+        or "terminated" in m
+        or "no longer available" in m
+        or "not a valid" in m
+        or "invalid" in m
+    ):
         return PlaylistError(MSG_PLAYLIST_NOT_FOUND, 404)
     if "not a bot" in m or "429" in m or "too many requests" in m or ("rate" in m and "limit" in m):
         return PlaylistError(MSG_PLAYLIST_BLOCKED, 503)
     return PlaylistError(MSG_PLAYLIST_OTHER, 502)
 
 
-def playlist_entry(e) -> dict | None:
+def playlist_entry(e: object) -> dict | None:
     """Normalise one flat yt-dlp entry; None for private/deleted/invalid ones."""
     if not isinstance(e, dict):
         return None

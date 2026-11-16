@@ -1,6 +1,7 @@
-"""YouTube -> transcript ingestion for Lecture Notes AI.
+"""YouTube -> transcript ingestion.
 
-Start here: ``get_transcript()`` (section 6).
+Called by ``backend/app/jobs.py`` (notes jobs), ``smart_playlist.py`` and ``routes.py`` (URL and
+playlist checks). Start here: ``get_transcript()`` (section 6).
 
 Public surface:
     IngestError, parse_video_id, get_transcript, get_playlist, parse_playlist_id, chunk_transcript
@@ -22,8 +23,8 @@ timeouts and retries; timestamps are h:mm:ss with any number of hours.
 
 How the file is organised
 -------------------------
-1. Re-exports - URL parsing, text cleaning, chunking and playlists now live in
-   ``notes_engine/transcripts/``; every old name is still importable from here.
+1. Imports - URL parsing, text cleaning, chunking and playlists live in
+   ``notes_engine/transcripts/``; the public ones are re-exported from here.
 2. Small helpers (progress callback, HTTP session with a timeout).
 3. Video metadata (title, channel, duration).
 4. Stage 1: youtube-transcript-api.
@@ -39,37 +40,37 @@ request; it is never logged and never included in an error message.
 
 Read next: ``transcripts/cleaning.py`` and ``transcripts/chunking.py``.
 """
+
 from __future__ import annotations
 
 import glob
 import json
 import os
-import re  # noqa: F401 - kept for backward compatibility of ``ingest.re``
 import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
 
 from . import cache as disk_cache
-from .transcripts.chunking import (MARKER_EVERY_SEC, chunk_transcript, format_timestamp, render_chunk, segment_cost,
-                                   split_long_text)
-from .transcripts.cleaning import (WS_RE, build_segments, clean_text, dedupe_cues, drop_word_overlap, merge_cues,
-                                   parse_json3, parse_vtt)
-from .transcripts.cleaning import _norm_line, _words, _SENT_END, _VTT_TIME_RE  # noqa: F401 - old names
-from .transcripts.errors import MSG_CHANNEL, MSG_NOT_VIDEO, MSG_PLAYLIST  # noqa: F401
-from .transcripts.errors import (FAILURE_MESSAGES, FAILURE_PRIORITY, MSG_AGE, MSG_BLOCKED, MSG_INVALID, MSG_LIVE,
-                                 MSG_NO_CAPTIONS, MSG_NO_CAPTIONS_WHISPER_FAILED, MSG_NOT_PLAYLIST,
-                                 MSG_PLAYLIST_BLOCKED, MSG_PLAYLIST_MIX, MSG_PLAYLIST_NOT_FOUND, MSG_PLAYLIST_OTHER,
-                                 MSG_PLAYLIST_PRIVATE, MSG_UNAVAILABLE, IngestError, PlaylistError, StageFailure,
-                                 ytdlp_error_kind)
-from .transcripts.playlists import (PLAYLIST_LIMIT, PLAYLIST_SLACK, get_playlist, plain_text, playlist_entry,
-                                    playlist_error, ytdlp_playlist)
-from .transcripts.playlists import _CTRL_RE, _DEAD_TITLES  # noqa: F401 - old names
-from .transcripts.youtube_urls import (CHANNEL_PREFIXES, PATH_PREFIXES, PLAYLIST_ID_RE, SHORT_HOSTS, VIDEO_ID_RE, YOUTUBE_HOSTS,
-                                       canonical_url, parse_playlist_id, parse_video_id)
+from .transcripts.chunking import chunk_transcript, format_timestamp
+from .transcripts.cleaning import build_segments, clean_text, dedupe_cues, merge_cues, parse_json3, parse_vtt
+from .transcripts.errors import (
+    FAILURE_MESSAGES,
+    FAILURE_PRIORITY,
+    MSG_CHANNEL,
+    MSG_NO_CAPTIONS,
+    MSG_NO_CAPTIONS_WHISPER_FAILED,
+    IngestError,
+    StageFailure,
+    ytdlp_error_kind,
+)
+from .transcripts.playlists import PLAYLIST_SLACK, get_playlist, plain_text
+from .transcripts.youtube_urls import VIDEO_ID_RE, canonical_url, parse_playlist_id, parse_video_id
 
 TRANSCRIPT_CACHE_DAYS = 30  # a video's captions rarely change; auto-captions may improve, so not forever
 
@@ -81,40 +82,21 @@ __all__ = [
     "parse_playlist_id",
     "chunk_transcript",
     "format_timestamp",
+    "VIDEO_ID_RE",
+    "MSG_CHANNEL",
+    "MSG_NO_CAPTIONS",
 ]
 
-# --------------------------------------------------------------------------- #
-# 1. Re-exports: old private names -> new homes in notes_engine/transcripts/
-# --------------------------------------------------------------------------- #
-
-_YOUTUBE_HOSTS = YOUTUBE_HOSTS
-_SHORT_HOSTS = SHORT_HOSTS
-_PATH_PREFIXES = PATH_PREFIXES
-_CHANNEL_PREFIXES = CHANNEL_PREFIXES
-_canonical_url = canonical_url
-
-_PRIORITY = FAILURE_PRIORITY
-_MESSAGES = FAILURE_MESSAGES
+# Short names the tests use for helpers that live in ``notes_engine/transcripts/``.
 _Fail = StageFailure
 _ytdlp_error_kind = ytdlp_error_kind
-
-_WS_RE = WS_RE
-_drop_word_overlap = drop_word_overlap
 _dedupe_cues = dedupe_cues
 _merge_cues = merge_cues
 _build_segments = build_segments
 _parse_json3 = parse_json3
 _parse_vtt = parse_vtt
-
-_split_long_text = split_long_text
-_render_chunk = render_chunk
-_seg_cost = segment_cost
-
 _PLAYLIST_SLACK = PLAYLIST_SLACK
 _plain = plain_text
-_playlist_error = playlist_error
-_playlist_entry = playlist_entry
-_ytdlp_playlist = ytdlp_playlist
 
 # --------------------------------------------------------------------------- #
 # Constants for the fetch stages
@@ -127,7 +109,7 @@ DOWNLOAD_RETRIES = 4
 MAX_SUBTITLE_BYTES = 200 * 1024 * 1024
 GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 GROQ_MODEL = "whisper-large-v3-turbo"
-WHISPER_CHUNK_SECONDS = 600          # 10 min of 32 kbps mono mp3 ~ 2.4 MB
+WHISPER_CHUNK_SECONDS = 600  # 10 min of 32 kbps mono mp3 ~ 2.4 MB
 WHISPER_MAX_UPLOAD_BYTES = 24 * 1024 * 1024
 # 24 h of ~50 kbps opus is ~540 MB; refuse anything absurdly larger
 MAX_AUDIO_BYTES = 2 * 1024 * 1024 * 1024
@@ -135,7 +117,7 @@ MAX_VIDEO_SECONDS = 25 * 3600
 
 # local speech-to-text (faster-whisper, CPU int8); see LocalWhisperTranscriber
 LOCAL_WHISPER_MODEL = "small"
-_APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))   # apps/worker
+_APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # apps/worker
 _REPO_ROOT = os.path.abspath(os.path.join(_APP_ROOT, "..", ".."))
 WHISPER_MODEL_DIR = os.path.join(_REPO_ROOT, ".tools", "whisper-models")  # gitignored, nuked
 DEFAULT_WORK_DIR = os.path.join(_APP_ROOT, "backend", "output", "_cache")
@@ -174,18 +156,20 @@ class _TimeoutSession(requests.Session):
 
     The read timeout is long because a 24 h transcript is a big response."""
 
-    def request(self, method, url, **kwargs):  # type: ignore[override]
+    def request(self, method: str, url: str, **kwargs: Any) -> requests.Response:  # type: ignore[override]
+        """Send the request with the long download timeout unless the caller set one."""
         kwargs.setdefault("timeout", _DOWNLOAD_TIMEOUT)
         return super().request(method, url, **kwargs)
 
 
 def _backoff(attempt: int) -> float:
     """Seconds to wait before retry number attempt+1 (1.5, 3, 6, 12 ... capped at 30)."""
-    return min(30.0, 1.5 * (2 ** attempt))
+    return min(30.0, 1.5 * (2**attempt))
 
 
-def _download_to_file(url: str, dest: str, *, max_bytes: int = MAX_SUBTITLE_BYTES,
-                      retries: int = DOWNLOAD_RETRIES, sleep=time.sleep) -> str:
+def _download_to_file(
+    url: str, dest: str, *, max_bytes: int = MAX_SUBTITLE_BYTES, retries: int = DOWNLOAD_RETRIES, sleep=time.sleep
+) -> str:
     """Stream ``url`` to ``dest`` in 64 KB pieces (no whole-body buffering in memory).
 
     Retries timeouts, connection errors, 429 and 5xx with exponential backoff.
@@ -242,7 +226,7 @@ def _ytdlp_info(video_id: str, cache: dict | None = None) -> dict:
     opts = dict(_YTDLP_COMMON, skip_download=True)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(_canonical_url(video_id), download=False)
+            info = ydl.extract_info(canonical_url(video_id), download=False)
     except Exception as e:  # yt_dlp.utils.DownloadError & friends
         raise _Fail(_ytdlp_error_kind(str(e)), str(e)[:300]) from None
     if not isinstance(info, dict):
@@ -257,7 +241,7 @@ def _oembed(video_id: str) -> tuple[str, str]:
     try:
         r = requests.get(
             "https://www.youtube.com/oembed",
-            params={"url": _canonical_url(video_id), "format": "json"},
+            params={"url": canonical_url(video_id), "format": "json"},
             timeout=_HTTP_TIMEOUT,
         )
     except requests.RequestException as e:
@@ -457,7 +441,7 @@ def _fetch_via_ytdlp(video_id: str, cache: dict) -> tuple[list[dict], str, str, 
     try:
         path = _download_to_file(url, os.path.join(tmp, "subs." + str(chosen.get("ext"))))
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            with open(path, encoding="utf-8", errors="replace") as fh:
                 if chosen.get("ext") == "json3":
                     cues = _parse_json3(json.load(fh))
                 else:
@@ -516,7 +500,7 @@ def _atomic_write_json(path: str, data) -> None:
 
 def _read_json(path: str):
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, ValueError):
         return None
@@ -537,13 +521,13 @@ def _download_audio(video_id: str, out_dir: str, cache: dict) -> str:
         format="bestaudio[abr<=64]/worstaudio[acodec!=none]/bestaudio/best",
         outtmpl=os.path.join(out_dir, "audio.%(ext)s"),
         max_filesize=MAX_AUDIO_BYTES,
-        continuedl=True,          # resume a .part file after a restart
+        continuedl=True,  # resume a .part file after a restart
         http_chunk_size=10 * 1024 * 1024,
         skip_download=False,
     )
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(_canonical_url(video_id), download=True)
+            info = ydl.extract_info(canonical_url(video_id), download=True)
         if isinstance(info, dict) and "info" not in cache:
             cache["info"] = info
     except Exception as e:
@@ -559,7 +543,7 @@ def _read_segment_list(chunk_dir: str) -> list[tuple[str, float]]:
     chunks = sorted(glob.glob(os.path.join(chunk_dir, "chunk_*.mp3")))
     starts: dict[str, float] = {}
     try:
-        with open(os.path.join(chunk_dir, "segments.csv"), "r", encoding="utf-8") as fh:
+        with open(os.path.join(chunk_dir, "segments.csv"), encoding="utf-8") as fh:
             for line in fh:
                 parts = line.strip().split(",")
                 if len(parts) >= 2:
@@ -569,8 +553,7 @@ def _read_segment_list(chunk_dir: str) -> list[tuple[str, float]]:
                         pass
     except OSError:
         pass
-    return [(c, starts.get(os.path.basename(c), i * float(WHISPER_CHUNK_SECONDS)))
-            for i, c in enumerate(chunks)]
+    return [(c, starts.get(os.path.basename(c), i * float(WHISPER_CHUNK_SECONDS))) for i, c in enumerate(chunks)]
 
 
 def _split_audio(ffmpeg: str, src: str, out_dir: str) -> list[tuple[str, float]]:
@@ -580,11 +563,33 @@ def _split_audio(ffmpeg: str, src: str, out_dir: str) -> list[tuple[str, float]]
         os.remove(old)
     pattern = os.path.join(out_dir, "chunk_%04d.mp3")
     cmd = [
-        ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", src,
-        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k",
-        "-f", "segment", "-segment_time", str(WHISPER_CHUNK_SECONDS),
-        "-segment_list", os.path.join(out_dir, "segments.csv"), "-segment_list_type", "csv",
-        "-reset_timestamps", "1", pattern,
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        src,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "32k",
+        "-f",
+        "segment",
+        "-segment_time",
+        str(WHISPER_CHUNK_SECONDS),
+        "-segment_list",
+        os.path.join(out_dir, "segments.csv"),
+        "-segment_list_type",
+        "csv",
+        "-reset_timestamps",
+        "1",
+        pattern,
     ]
     try:
         # 24 h of audio re-encodes in a few minutes; allow plenty
@@ -603,11 +608,31 @@ def _split_audio(ffmpeg: str, src: str, out_dir: str) -> list[tuple[str, float]]
 
 
 _WHISPER_LANGS = {
-    "english": "en", "hindi": "hi", "spanish": "es", "french": "fr", "german": "de",
-    "portuguese": "pt", "italian": "it", "russian": "ru", "japanese": "ja", "korean": "ko",
-    "chinese": "zh", "arabic": "ar", "turkish": "tr", "dutch": "nl", "polish": "pl",
-    "indonesian": "id", "tamil": "ta", "telugu": "te", "marathi": "mr", "bengali": "bn",
-    "urdu": "ur", "gujarati": "gu", "ukrainian": "uk", "vietnamese": "vi", "thai": "th",
+    "english": "en",
+    "hindi": "hi",
+    "spanish": "es",
+    "french": "fr",
+    "german": "de",
+    "portuguese": "pt",
+    "italian": "it",
+    "russian": "ru",
+    "japanese": "ja",
+    "korean": "ko",
+    "chinese": "zh",
+    "arabic": "ar",
+    "turkish": "tr",
+    "dutch": "nl",
+    "polish": "pl",
+    "indonesian": "id",
+    "tamil": "ta",
+    "telugu": "te",
+    "marathi": "mr",
+    "bengali": "bn",
+    "urdu": "ur",
+    "gujarati": "gu",
+    "ukrainian": "uk",
+    "vietnamese": "vi",
+    "thai": "th",
 }
 
 
@@ -661,6 +686,7 @@ class GroqTranscriber:
         self._key = key
 
     def transcribe(self, path: str) -> tuple[list[dict], str]:
+        """Transcribe one audio file with Groq Whisper; returns ``(segments, language)``."""
         return _groq_transcribe_chunk(path, self._key)
 
 
@@ -684,17 +710,25 @@ class LocalWhisperTranscriber:
 
             os.makedirs(self.model_dir, exist_ok=True)
             threads = max(1, (os.cpu_count() or 4) - 1)
-            self._model = WhisperModel(self.model_name, device="cpu", compute_type="int8",
-                                       cpu_threads=threads, download_root=self.model_dir)
+            self._model = WhisperModel(
+                self.model_name, device="cpu", compute_type="int8", cpu_threads=threads, download_root=self.model_dir
+            )
         return self._model
 
     def transcribe(self, path: str) -> tuple[list[dict], str]:
+        """Transcribe one audio file with the local model; returns ``(segments, language)``."""
         try:
             model = self._load()
-            segs, info = model.transcribe(path, beam_size=1, vad_filter=True,
-                                          condition_on_previous_text=False)
-            out = [{"start": float(s.start), "end": float(s.end), "text": str(s.text),
-                    "no_speech_prob": float(getattr(s, "no_speech_prob", 0.0) or 0.0)} for s in segs]
+            segs, info = model.transcribe(path, beam_size=1, vad_filter=True, condition_on_previous_text=False)
+            out = [
+                {
+                    "start": float(s.start),
+                    "end": float(s.end),
+                    "text": str(s.text),
+                    "no_speech_prob": float(getattr(s, "no_speech_prob", 0.0) or 0.0),
+                }
+                for s in segs
+            ]
         except _Fail:
             raise
         except Exception as e:  # model download / decode problems
@@ -725,8 +759,9 @@ def _pick_transcriber(groq_key: str | None):
     return None
 
 
-def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
-                       work_dir: str | None = None) -> tuple[list[dict], str, str, float]:
+def _fetch_via_whisper(
+    video_id: str, transcriber, cache: dict, progress, work_dir: str | None = None
+) -> tuple[list[dict], str, str, float]:
     base = os.path.join(work_dir or DEFAULT_WORK_DIR, video_id, "stt")
     final = os.path.join(base, "transcript.json")
     cached = _read_json(final)
@@ -769,8 +804,12 @@ def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
         ck = os.path.join(done_dir, os.path.splitext(os.path.basename(path))[0] + ".json")
         rec = _read_json(ck)
         if not (isinstance(rec, dict) and isinstance(rec.get("segments"), list)):
-            _progress(progress, "transcript", 55 + int(40 * i / n),
-                      f"Transcribing audio {i + 1}/{n} ({format_timestamp(offset)})...")
+            _progress(
+                progress,
+                "transcript",
+                55 + int(40 * i / n),
+                f"Transcribing audio {i + 1}/{n} ({format_timestamp(offset)})...",
+            )
             segs, lang = transcriber.transcribe(path)
             kept = []
             for seg in segs:
@@ -793,8 +832,9 @@ def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
         raise _Fail("other", "no speech was detected in the audio")
     est = max((c[0] + c[1] for c in cues), default=0.0)
     language = _WHISPER_LANGS.get(language.lower(), language.lower()) or "en"
-    _atomic_write_json(final, {"segments": segments, "language": language, "est": est,
-                               "engine": getattr(transcriber, "name", "")})
+    _atomic_write_json(
+        final, {"segments": segments, "language": language, "est": est, "engine": getattr(transcriber, "name", "")}
+    )
     shutil.rmtree(chunk_dir, ignore_errors=True)  # transcript.json is the resume point now
     return segments, language, "whisper", est
 
@@ -804,8 +844,13 @@ def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
 # --------------------------------------------------------------------------- #
 
 
-def get_transcript(url: str, *, groq_key: str | None = None, progress=None,
-                   work_dir: str | None = None) -> dict:
+def get_transcript(
+    url: str,
+    *,
+    groq_key: str | None = None,
+    progress: Callable[[str, int, str], None] | None = None,
+    work_dir: str | None = None,
+) -> dict:
     """Fetch and clean the transcript for a YouTube video. Raises IngestError.
 
     ``work_dir`` holds the speech-to-text checkpoints (``<work_dir>/<video_id>/stt``);
@@ -872,7 +917,7 @@ def get_transcript(url: str, *, groq_key: str | None = None, progress=None,
     _progress(progress, "transcript", 100, f"Transcript ready ({len(segments)} segments).")
     out = {
         "video_id": video_id,
-        "url": _canonical_url(video_id),
+        "url": canonical_url(video_id),
         "title": title,
         "channel": channel,
         "duration_sec": duration,
@@ -887,11 +932,11 @@ def get_transcript(url: str, *, groq_key: str | None = None, progress=None,
 def _final_message(failures: list[_Fail], whisper_fail: _Fail | None, had_key: bool) -> str:
     """Pick the single most helpful message when every stage failed."""
     kinds = [f.kind for f in failures]
-    best = max(kinds, key=lambda k: _PRIORITY.get(k, 0)) if kinds else "other"
+    best = max(kinds, key=lambda k: FAILURE_PRIORITY.get(k, 0)) if kinds else "other"
     if whisper_fail is not None and best in ("nocaps", "other", "blocked"):
         why = whisper_fail.detail or "unknown error"
         # whisper details are produced by this module (no secrets); trim for safety
         return MSG_NO_CAPTIONS_WHISPER_FAILED.format(why=why[:200])
     if best == "nocaps" and had_key:
         return MSG_NO_CAPTIONS_WHISPER_FAILED.format(why="could not transcribe the audio.")
-    return _MESSAGES.get(best, _MESSAGES["other"])
+    return FAILURE_MESSAGES.get(best, FAILURE_MESSAGES["other"])

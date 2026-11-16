@@ -1,10 +1,11 @@
 """out/evaluation.json -> apps/api/dev-ui/eval-data.json (no transcripts, no notes bodies, no keys)."""
+
 from __future__ import annotations
 
 import json
 import re
 
-try:  # python -m demo.notes_eval.<module> (package) or python demo/notes_eval/<module>.py
+try:  # python -m tools.notes_eval.<module> (package) or python tools/notes_eval/<module>.py
     from . import common as C
 except ImportError:  # pragma: no cover
     import common as C  # type: ignore[no-redef]
@@ -15,6 +16,7 @@ except ImportError:  # pragma: no cover
 
 
 def main() -> None:
+    """Write the dev page's ``eval-data.json`` from ``out/evaluation.json``."""
     ev = C.read_json(C.OUT / "evaluation.json") or evaluate.aggregate()
     data = json.loads(json.dumps(ev))  # deep copy
     data["schema"] = "aq-notes-eval/1"

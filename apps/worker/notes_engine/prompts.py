@@ -1,4 +1,4 @@
-﻿"""Prompt templates for Lecture Notes AI.
+"""Prompt templates for Lecture Notes AI.
 
 Pipeline shapes (llm.py decides which one runs):
   single-pass : compose_single_messages        -> full Notes JSON
@@ -13,6 +13,7 @@ How it fits: ``llm.py`` calls these builders and sends the result to the provide
 
 Read next: ``notes_schema.py`` (what we accept back) or ``llm.py`` (who calls these).
 """
+
 from __future__ import annotations
 
 import json
@@ -44,35 +45,69 @@ SECTION_EXAMPLE: dict[str, Any] = {
     "subtitle": "one process, one db",
     "timestamp": "04:12",
     "blocks": [
-        {"type": "paragraph", "text": "Every client talks to one Express API, which is the only thing that touches MySQL."},
+        {
+            "type": "paragraph",
+            "text": "Every client talks to one Express API, which is the only thing that touches MySQL.",
+        },
         {"type": "bullets", "items": ["3 roles share one API: parent, teacher, admin", "JWT checked on every route"]},
-        {"type": "definition", "term": "idempotent", "text": "Repeating the request gives the same result as sending it once."},
+        {
+            "type": "definition",
+            "term": "idempotent",
+            "text": "Repeating the request gives the same result as sending it once.",
+        },
         {"type": "steps", "items": ["client sends JWT", "API verifies token", "route queries MySQL"]},
-        {"type": "callout", "style": "tip", "text": "Screens never call fetch() directly; they go through a repository."},
-        {"type": "table", "headers": ["layer", "job"], "rows": [["repository", "typed data access"], ["client.ts", "adds the JWT"]]},
+        {
+            "type": "callout",
+            "style": "tip",
+            "text": "Screens never call fetch() directly; they go through a repository.",
+        },
+        {
+            "type": "table",
+            "headers": ["layer", "job"],
+            "rows": [["repository", "typed data access"], ["client.ts", "adds the JWT"]],
+        },
         {"type": "code", "language": "js", "code": "app.use(requireAuth);"},
     ],
     "diagram": {
-        "type": "flow", "title": "request path", "caption": "one backend serves every screen",
-        "nodes": [{"id": "app", "label": "mobile app"}, {"id": "api", "label": "Express API", "detail": "JWT on every request"},
-                  {"id": "db", "label": "MySQL"}],
+        "type": "flow",
+        "title": "request path",
+        "caption": "one backend serves every screen",
+        "nodes": [
+            {"id": "app", "label": "mobile app"},
+            {"id": "api", "label": "Express API", "detail": "JWT on every request"},
+            {"id": "db", "label": "MySQL"},
+        ],
         "edges": [{"from": "app", "to": "api", "label": "REST"}, {"from": "api", "to": "db"}],
     },
     "key_takeaways": ["one backend, three roles", "auth is checked on every request"],
-    "recall": {"q": "Walk me through the architecture in one breath.",
-               "a": "App -> repository -> client adds the JWT -> Express route -> MySQL."},
+    "recall": {
+        "q": "Walk me through the architecture in one breath.",
+        "a": "App -> repository -> client adds the JWT -> Express route -> MySQL.",
+    },
 }
 FRONT_EXAMPLE: dict[str, Any] = {
     "subtitle": "parent / teacher / admin app for a school",
-    "cover": {"summary": "Two or three sentences on what the lecture teaches.",
-              "big_idea": "same backend serves every screen!",
-              "takeaways": ["one Express API is the only path to MySQL", "every request carries a JWT"]},
+    "cover": {
+        "summary": "Two or three sentences on what the lecture teaches.",
+        "big_idea": "same backend serves every screen!",
+        "takeaways": ["one Express API is the only path to MySQL", "every request carries a JWT"],
+    },
     "glossary": [{"term": "JWT", "definition": "Signed token that proves who the caller is."}],
-    "recap": {"title": "the whole picture, recapped",
-              "points": ["one-line recap point", "another"],
-              "diagram": {"type": "stack", "title": "the stack", "caption": "",
-                          "nodes": [{"id": "ui", "label": "screens"}, {"id": "api", "label": "API"}, {"id": "db", "label": "database"}],
-                          "edges": []}},
+    "recap": {
+        "title": "the whole picture, recapped",
+        "points": ["one-line recap point", "another"],
+        "diagram": {
+            "type": "stack",
+            "title": "the stack",
+            "caption": "",
+            "nodes": [
+                {"id": "ui", "label": "screens"},
+                {"id": "api", "label": "API"},
+                {"id": "db", "label": "database"},
+            ],
+            "edges": [],
+        },
+    },
 }
 
 
@@ -115,18 +150,21 @@ You are the first stage of a lecture-note pipeline. You read ONE slice of a tran
 Drop intros, sponsors, subscribe asks, filler, jokes, tangents and anecdotes with no teaching value. Do not invent or add outside facts; fix only obvious auto-caption spelling of technical terms. Write facts in your own short words (no long verbatim quotes), in English. Keep numbers, names, commands, versions and code exactly as stated. Use the [mm:ss] markers for `start`.
 Output ONE JSON object only."""
 
-DIGEST_SHAPE = ('{"topics":[{"heading":"short topic name","start":"mm:ss",'
-                '"facts":["one self-contained fact per string"],'
-                '"terms":[{"term":"x","definition":"y"}],'
-                '"steps":["ordered step, only if a process was explained"],'
-                '"example":"one illustrative example or null",'
-                '"code":[{"language":"py","code":"only code actually shown"}],'
-                '"table":{"headers":["a","b"],"rows":[["x","y"]]} or null,'
-                '"formula":"only if stated or null",'
-                '"diagram_hint":"if a process/architecture/comparison exists: type (flow|stack|compare|cycle|tree|timeline|mindmap|sequence) + its parts, else null"}]}')
+DIGEST_SHAPE = (
+    '{"topics":[{"heading":"short topic name","start":"mm:ss",'
+    '"facts":["one self-contained fact per string"],'
+    '"terms":[{"term":"x","definition":"y"}],'
+    '"steps":["ordered step, only if a process was explained"],'
+    '"example":"one illustrative example or null",'
+    '"code":[{"language":"py","code":"only code actually shown"}],'
+    '"table":{"headers":["a","b"],"rows":[["x","y"]]} or null,'
+    '"formula":"only if stated or null",'
+    '"diagram_hint":"if a process/architecture/comparison exists: type (flow|stack|compare|cycle|tree|timeline|mindmap|sequence) + its parts, else null"}]}'
+)
 
 
 def digest_messages(chunk_text: str, index: int, total: int, meta: dict, max_words: int) -> tuple[str, str]:
+    """Map stage: ask for the teachable facts of slice ``index`` (0-based) of ``total`` as ``{"topics": [...]}``."""
     user = f"""\
 Lecture: {_meta_line(meta)}
 This is slice {index + 1} of {total}. (Slices overlap slightly at the edges: do not worry about a cut-off first/last sentence.)
@@ -192,6 +230,7 @@ Check before answering: valid JSON, one object with a "sections" list, no fact t
 
 
 def compose_single_messages(meta: dict, transcript_text: str, n_sections: int) -> tuple[str, str]:
+    """Single pass: ask for the whole Notes JSON with about ``n_sections`` sections."""
     lo, hi = n_sections, n_sections + 3
     user = f"""\
 Lecture: {_meta_line(meta)}
@@ -213,13 +252,28 @@ TRANSCRIPT:
     return COMPOSE_SYSTEM, user
 
 
-def compose_batch_messages(meta: dict, digest_text: str, n_min: int, n_max: int,
-                           prior_titles: list[str], batch_no: int, batch_total: int,
-                           strict: str = "") -> tuple[str, str]:
+def compose_batch_messages(
+    meta: dict,
+    digest_text: str,
+    n_min: int,
+    n_max: int,
+    prior_titles: list[str],
+    batch_no: int,
+    batch_total: int,
+    strict: str = "",
+) -> tuple[str, str]:
+    """Compose stage: turn one batch of digests into ``n_min``-``n_max`` sections.
+
+    ``prior_titles`` lists sections already written (so topics are not repeated), ``batch_no`` /
+    ``batch_total`` say where this batch sits, and ``strict`` is an extra instruction for a retry.
+    """
     prior = ""
     if prior_titles:
-        prior = ("Sections already written earlier in the notebook (continue after them, do NOT repeat their topics):\n"
-                 + "\n".join(f"- {t}" for t in prior_titles[-25:]) + "\n")
+        prior = (
+            "Sections already written earlier in the notebook (continue after them, do NOT repeat their topics):\n"
+            + "\n".join(f"- {t}" for t in prior_titles[-25:])
+            + "\n"
+        )
     user = f"""\
 Lecture: {_meta_line(meta)}
 This is part {batch_no} of {batch_total} of the lecture. Below are condensed, already-filtered fact digests (with [mm:ss] start markers) for THIS part only. Turn them into notebook sections.
@@ -248,8 +302,9 @@ def outline_lines(outline: list[dict]) -> list[str]:
     return lines
 
 
-def compose_final_messages(meta: dict, outline: list[dict], terms: list[str],
-                           lines: list[str] | None = None) -> tuple[str, str]:
+def compose_final_messages(
+    meta: dict, outline: list[dict], terms: list[str], lines: list[str] | None = None
+) -> tuple[str, str]:
     """``lines`` (optional) replaces the outline with pre-condensed lines (very long lectures)."""
     if lines is None:
         lines = outline_lines(outline)
@@ -280,6 +335,7 @@ You merge consecutive fact digests of a very long lecture into ONE shorter part 
 
 
 def merge_messages(meta: dict, digest_text: str, level: int, part: int, total: int, max_words: int) -> tuple[str, str]:
+    """Hierarchical merge: fold several digests into one part digest of at most ``max_words`` words."""
     user = f"""\
 Lecture: {_meta_line(meta)}
 Merge level {level}, part {part} of {total}. Fold the digests below into one part digest of 4-12 topics, in order, under about {max_words} words in total. Merge topics that repeat; keep the earliest start marker of each merged topic.
@@ -294,12 +350,15 @@ DIGESTS TO MERGE:
     return MERGE_SYSTEM, user
 
 
-def compose_part_messages(meta: dict, part_text: str, n_min: int, n_max: int,
-                          part_no: int, part_total: int, strict: str = "") -> tuple[str, str]:
+def compose_part_messages(
+    meta: dict, part_text: str, n_min: int, n_max: int, part_no: int, part_total: int, strict: str = ""
+) -> tuple[str, str]:
     """Parallel single pass: sections for ONE consecutive time slice of the raw transcript."""
     edge = []
     if part_no > 1:
-        edge.append("the slice may start mid-topic (an earlier part covers what came before): do not re-introduce the lecture; if it opens mid-topic, keep that first section short and name it after that topic")
+        edge.append(
+            "the slice may start mid-topic (an earlier part covers what came before): do not re-introduce the lecture; if it opens mid-topic, keep that first section short and name it after that topic"
+        )
     if part_no < part_total:
         edge.append("a later part continues after the end of this slice: do not write a conclusion or summary section")
     user = f"""\
@@ -351,31 +410,56 @@ _STRS = {"type": "array", "items": _STR}
 _DIAGRAM_SCHEMA = {
     "type": ["object", "null"],
     "properties": {
-        "type": {"type": "string", "enum": ["flow", "stack", "compare", "cycle", "tree", "timeline", "mindmap", "sequence"]},
-        "title": _STR, "caption": _STR,
-        "nodes": {"type": "array", "items": {"type": "object", "properties": {
-            "id": _STR, "label": _STR, "detail": _STR, "parent": _STR}, "required": ["id", "label"]}},
-        "edges": {"type": "array", "items": {"type": "object", "properties": {
-            "from": _STR, "to": _STR, "label": _STR}, "required": ["from", "to"]}},
+        "type": {
+            "type": "string",
+            "enum": ["flow", "stack", "compare", "cycle", "tree", "timeline", "mindmap", "sequence"],
+        },
+        "title": _STR,
+        "caption": _STR,
+        "nodes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"id": _STR, "label": _STR, "detail": _STR, "parent": _STR},
+                "required": ["id", "label"],
+            },
+        },
+        "edges": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"from": _STR, "to": _STR, "label": _STR},
+                "required": ["from", "to"],
+            },
+        },
     },
     "required": ["type", "nodes", "edges"],
 }
 _BLOCK_SCHEMA = {
     "type": "object",
     "properties": {
-        "type": {"type": "string", "enum": ["paragraph", "bullets", "steps", "definition", "example",
-                                            "callout", "code", "table", "formula"]},
-        "text": _STR, "items": _STRS, "term": _STR, "title": _STR,
+        "type": {
+            "type": "string",
+            "enum": ["paragraph", "bullets", "steps", "definition", "example", "callout", "code", "table", "formula"],
+        },
+        "text": _STR,
+        "items": _STRS,
+        "term": _STR,
+        "title": _STR,
         "style": {"type": "string", "enum": ["note", "warning", "tip"]},
-        "language": _STR, "code": _STR,
-        "headers": _STRS, "rows": {"type": "array", "items": _STRS},
+        "language": _STR,
+        "code": _STR,
+        "headers": _STRS,
+        "rows": {"type": "array", "items": _STRS},
     },
     "required": ["type"],
 }
 _SECTION_SCHEMA = {
     "type": "object",
     "properties": {
-        "title": _STR, "subtitle": _STR, "timestamp": _STR,
+        "title": _STR,
+        "subtitle": _STR,
+        "timestamp": _STR,
         "blocks": {"type": "array", "items": _BLOCK_SCHEMA},
         "diagram": _DIAGRAM_SCHEMA,
         "key_takeaways": _STRS,
@@ -385,25 +469,43 @@ _SECTION_SCHEMA = {
 }
 _FRONT_PROPS = {
     "subtitle": _STR,
-    "cover": {"type": "object", "properties": {"summary": _STR, "big_idea": _STR, "takeaways": _STRS},
-              "required": ["summary", "big_idea", "takeaways"]},
-    "glossary": {"type": "array", "items": {"type": "object", "properties": {"term": _STR, "definition": _STR},
-                                            "required": ["term", "definition"]}},
-    "recap": {"type": "object", "properties": {"title": _STR, "points": _STRS, "diagram": _DIAGRAM_SCHEMA},
-              "required": ["title", "points"]},
+    "cover": {
+        "type": "object",
+        "properties": {"summary": _STR, "big_idea": _STR, "takeaways": _STRS},
+        "required": ["summary", "big_idea", "takeaways"],
+    },
+    "glossary": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {"term": _STR, "definition": _STR},
+            "required": ["term", "definition"],
+        },
+    },
+    "recap": {
+        "type": "object",
+        "properties": {"title": _STR, "points": _STRS, "diagram": _DIAGRAM_SCHEMA},
+        "required": ["title", "points"],
+    },
 }
-SECTIONS_SCHEMA = {"type": "object", "properties": {"sections": {"type": "array", "items": _SECTION_SCHEMA}},
-                   "required": ["sections"]}
+SECTIONS_SCHEMA = {
+    "type": "object",
+    "properties": {"sections": {"type": "array", "items": _SECTION_SCHEMA}},
+    "required": ["sections"],
+}
 FRONT_SCHEMA = {"type": "object", "properties": _FRONT_PROPS, "required": ["subtitle", "cover", "glossary", "recap"]}
-NOTES_SCHEMA = {"type": "object",
-                "properties": {**_FRONT_PROPS, "sections": SECTIONS_SCHEMA["properties"]["sections"]},
-                "required": ["subtitle", "cover", "glossary", "recap", "sections"]}
+NOTES_SCHEMA = {
+    "type": "object",
+    "properties": {**_FRONT_PROPS, "sections": SECTIONS_SCHEMA["properties"]["sections"]},
+    "required": ["subtitle", "cover", "glossary", "recap", "sections"],
+}
 
 
 FIX_JSON_SYSTEM = "You repair malformed JSON. Output ONLY the corrected JSON object: same content, valid syntax, no commentary, no code fences."
 
 
 def fix_json_messages(bad_text: str, error: str) -> tuple[str, str]:
+    """Repair call: ask the model to fix its own unparseable JSON (input capped at 24k characters)."""
     bad = bad_text if len(bad_text) <= 24000 else bad_text[:24000]
     user = f"The following JSON failed to parse ({error}). Fix it (close unterminated strings/brackets, remove trailing commas, escape quotes/newlines in strings) and return the complete JSON object only.\n\n{bad}"
     return FIX_JSON_SYSTEM, user

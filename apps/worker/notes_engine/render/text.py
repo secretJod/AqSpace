@@ -11,6 +11,7 @@ How it fits
 Read next
     ``fonts.py`` (measuring text), then ``sketch.py`` (the hand-drawn SVG toolkit).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -21,12 +22,12 @@ import re
 # ----------------------------------------------------------------------------------------------
 # 1. Escaping and coercing values
 # ----------------------------------------------------------------------------------------------
-def escape_html(value) -> str:
+def escape_html(value: object) -> str:
     """HTML-escape any value (``None`` becomes an empty string). Quotes are escaped too."""
     return _html.escape("" if value is None else str(value), quote=True)
 
 
-def clean_text(value, default: str = "") -> str:
+def clean_text(value: object, default: str = "") -> str:
     """Coerce anything to one clean, stripped string.
 
     Lists are joined with spaces, Windows/Mac line endings become ``\\n`` and invisible
@@ -41,12 +42,12 @@ def clean_text(value, default: str = "") -> str:
     return text.strip()
 
 
-def as_list(value) -> list:
+def as_list(value: object) -> list:
     """Return ``value`` if it is a list, otherwise an empty list."""
     return value if isinstance(value, list) else []
 
 
-def as_dict(value) -> dict:
+def as_dict(value: object) -> dict:
     """Return ``value`` if it is a dict, otherwise an empty dict."""
     return value if isinstance(value, dict) else {}
 
@@ -58,7 +59,7 @@ BOLD_PATTERN = re.compile(r"\*\*(.+?)\*\*", re.S)
 CODE_PATTERN = re.compile(r"`([^`\n]+)`")
 
 
-def rich(text) -> str:
+def rich(text: object) -> str:
     """Escape the text FIRST, then turn **bold** and `code` back into tags.
 
     Because escaping happens before the tags are added, nothing from the notes can inject HTML.
@@ -69,7 +70,7 @@ def rich(text) -> str:
     return safe.replace("\n", "<br>")
 
 
-def plain(text) -> str:
+def plain(text: object) -> str:
     """Remove our tiny markup, for places where only plain text is wanted (SVG labels)."""
     result = clean_text(text)
     result = BOLD_PATTERN.sub(lambda m: m.group(1), result)
@@ -114,6 +115,6 @@ def fmt_num(value: float) -> str:
     return ("%.1f" % value).rstrip("0").rstrip(".")
 
 
-def round1(value) -> float:
+def round1(value: object) -> float:
     """Round to one decimal (used for the Rough.js shape specs)."""
     return round(float(value), 1)

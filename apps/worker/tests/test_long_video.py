@@ -1,5 +1,6 @@
-"""Long videos (R5, cards #36 and #33): 24 h transcripts, chunked speech-to-text with
+"""Long videos: 24 h transcripts, chunked speech-to-text with
 checkpoints, and rendering of very long notes. No network, no model downloads."""
+
 import copy
 import json
 import os
@@ -24,11 +25,21 @@ DAY = 24 * 3600
 # timestamps over 24 h
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("sec,want", [
-    (0, "00:00"), (59.9, "00:59"), (3599, "59:59"), (3600, "1:00:00"),
-    (9 * 3600 + 59 * 60 + 59, "9:59:59"), (10 * 3600, "10:00:00"),
-    (DAY - 1, "23:59:59"), (DAY, "24:00:00"), (25 * 3600 + 61, "25:01:01"),
-])
+
+@pytest.mark.parametrize(
+    "sec,want",
+    [
+        (0, "00:00"),
+        (59.9, "00:59"),
+        (3599, "59:59"),
+        (3600, "1:00:00"),
+        (9 * 3600 + 59 * 60 + 59, "9:59:59"),
+        (10 * 3600, "10:00:00"),
+        (DAY - 1, "23:59:59"),
+        (DAY, "24:00:00"),
+        (25 * 3600 + 61, "25:01:01"),
+    ],
+)
 def test_format_timestamp_any_hours(sec, want):
     assert format_timestamp(sec) == want
 
@@ -73,13 +84,14 @@ def test_chunk_transcript_24h_markers_and_bounds():
 # streamed caption download with retries
 # --------------------------------------------------------------------------- #
 
+
 class _Resp:
     def __init__(self, status=200, body=b""):
         self.status_code = status
         self._body = body
 
     def iter_content(self, chunk_size=1):
-        return [self._body[i:i + 5] for i in range(0, len(self._body), 5)]
+        return [self._body[i : i + 5] for i in range(0, len(self._body), 5)]
 
     def __enter__(self):
         return self
@@ -125,12 +137,13 @@ def test_download_size_cap(tmp_path):
 def test_ytdlp_options_suit_long_videos():
     c = ingest._YTDLP_COMMON
     assert c["socket_timeout"] >= 60 and c["retries"] >= 5 and c["fragment_retries"] >= 5
-    assert ingest.MAX_AUDIO_BYTES >= 1024 ** 3
+    assert ingest.MAX_AUDIO_BYTES >= 1024**3
 
 
 # --------------------------------------------------------------------------- #
 # ffmpeg split (faked) uses the exact segment list offsets
 # --------------------------------------------------------------------------- #
+
 
 def test_split_audio_reads_segment_list(tmp_path):
     seen = {}
@@ -155,6 +168,7 @@ def test_split_audio_reads_segment_list(tmp_path):
 # chunked speech-to-text with a checkpoint per chunk
 # --------------------------------------------------------------------------- #
 
+
 class FakeTranscriber:
     name = "fake"
 
@@ -168,9 +182,11 @@ class FakeTranscriber:
         if name == self.fail_on:
             raise ingest._Fail("other", "killed")
         i = int(name[6:10])
-        return [{"start": 1.0, "end": 4.0, "text": f"chunk {i} starts here."},
-                {"start": 30.0, "end": 33.0, "text": f"chunk {i} ends here."},
-                {"start": 40.0, "end": 41.0, "text": "noise", "no_speech_prob": 0.99}], "english"
+        return [
+            {"start": 1.0, "end": 4.0, "text": f"chunk {i} starts here."},
+            {"start": 30.0, "end": 33.0, "text": f"chunk {i} ends here."},
+            {"start": 40.0, "end": 41.0, "text": "noise", "no_speech_prob": 0.99},
+        ], "english"
 
 
 @pytest.fixture
@@ -319,8 +335,9 @@ def test_default_work_dir_is_repo_local_and_ignored():
 
 
 # --------------------------------------------------------------------------- #
-# rendering very long notes (#33)
+# rendering very long notes
 # --------------------------------------------------------------------------- #
+
 
 @pytest.fixture(scope="module")
 def base_notes():
@@ -381,6 +398,7 @@ def _have_browser():
     try:
         pdf._find_browser()
         import pymupdf  # noqa: F401
+
         return True
     except Exception:
         return False
@@ -396,7 +414,7 @@ def test_pdf_of_40_section_notes(tmp_path, base_notes):
     n = len(doc)
     texts = [p.get_text() for p in doc]
     doc.close()
-    assert n > 20  # compact layout (upstream db9ac6b): sections flow, so fewer than one page each
+    assert n > 20  # compact layout: sections flow, so fewer than one page each
     for i, t in enumerate(texts, 1):
         assert re.search(r"pg\.\s*%d\s*/\s*%d" % (i, n), t)
     full = "\n".join(texts)

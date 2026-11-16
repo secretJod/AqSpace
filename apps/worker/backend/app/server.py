@@ -1,4 +1,4 @@
-"""Flask worker for Lecture Notes AI (http://127.0.0.1:5055) - the entry point.
+"""Flask app factory of the notes worker (http://127.0.0.1:5055).
 
 What this file does
     ``create_app(config)`` builds the Flask app: loads backend/.env, prepares the output
@@ -13,10 +13,12 @@ How the worker is organised (read in this order)
     security.py   local-only guard, security headers, JSON error pages
     providers.py  provider list + server-side keys
     routes.py     every HTTP route (the full list is at the top of that file)
+    keycheck.py   startup check of the provider keys (called by backend/run.py)
 
 The heavy modules (ingest / llm / pdf) are imported lazily inside the worker so
 the server starts even when one of them is missing or broken.
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,16 +27,10 @@ from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 
-# Re-exported so older imports (``from app.server import GENERIC_ERROR`` etc.) keep working.
-from .helpers import cleanup_old_jobs, format_duration as _fmt_duration, redact as _redact, slugify as _slug  # noqa: F401
-from .jobs import run_note_job as _run_job, run_smart_job as _run_smart, scaled_progress as _safe_progress  # noqa: F401
+from .helpers import cleanup_old_jobs
 from .routes import register_routes
 from .security import register_security
-from .settings import (  # noqa: F401
-    BACKEND_DIR, CSP_APP, CSP_FILE, CSP_NOTES, DEFAULT_OUTPUT_DIR, ENGINE_DIR, ENV_KEYS, FALLBACK_PROVIDERS,
-    FRONTEND_DIR, GENERIC_ERROR, JOB_ID_RE, KEY_RE, LOCAL_HOST_RE, LOCAL_ORIGIN_RE, MODEL_RE, PROJECT_DIR,
-    PROVIDER_ORDER, VIDEO_ID_RE, KEYLESS, CHUNK_RE,
-)
+from .settings import BACKEND_DIR, DEFAULT_OUTPUT_DIR, ENGINE_DIR, LOCAL_ORIGIN_RE
 from .state import State
 
 try:  # python-dotenv is in requirements, but never let a missing .env library kill the server
@@ -48,7 +44,7 @@ log = logging.getLogger("lna")
 DEFAULT_CONFIG = {
     "OUTPUT_DIR": DEFAULT_OUTPUT_DIR,
     "MAX_ACTIVE_JOBS": 2,
-    "RATE_LIMIT": (10, 60),      # at most 10 new jobs / 60 s
+    "RATE_LIMIT": (10, 60),  # at most 10 new jobs / 60 s
     "MAX_CONTENT_LENGTH": 64 * 1024,
     "CLEANUP_ON_START": True,
     "LOAD_DOTENV": True,
@@ -56,6 +52,15 @@ DEFAULT_CONFIG = {
 
 
 def create_app(config: dict | None = None) -> Flask:
+    """Build the Flask app.
+
+    Args:
+        config: overrides for ``DEFAULT_CONFIG`` (tests use it for a temporary output folder,
+            lower limits and no ``.env`` loading).
+
+    Returns:
+        The configured app; its ``State`` is stored on ``app.extensions["lna"]``.
+    """
     # 1. Settings
     cfg = dict(DEFAULT_CONFIG)
     cfg.update(config or {})
@@ -84,13 +89,13 @@ def create_app(config: dict | None = None) -> Flask:
     app.extensions["lna"] = state
 
     # 5. CORS (only local pages may call the API), security, routes
-    CORS(app, resources={r"/api/*": {"origins": [LOCAL_ORIGIN_RE]}}, methods=["GET", "POST", "OPTIONS"],
-         allow_headers=["Content-Type"], max_age=600)
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": [LOCAL_ORIGIN_RE]}},
+        methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+        max_age=600,
+    )
     register_security(app)
     register_routes(app, state)
     return app
-
-
-# convenience for `flask --app app.server run` style usage
-def _default_app() -> Flask:  # pragma: no cover
-    return create_app()

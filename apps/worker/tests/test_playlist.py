@@ -1,4 +1,5 @@
 """Playlist import: notes_engine.ingest.get_playlist + GET /api/playlist. yt-dlp is mocked (no network)."""
+
 import json
 import sys
 import types
@@ -14,21 +15,32 @@ PL_URL = f"https://www.youtube.com/playlist?list={LIST_ID}"
 
 
 def entry(i, **kw):
-    e = {"_type": "url", "id": f"vid{i:08d}"[-11:].replace(" ", "x"), "title": f"Lesson {i}",
-         "channel": "3Blue1Brown", "duration": 600 + i}
+    e = {
+        "_type": "url",
+        "id": f"vid{i:08d}"[-11:].replace(" ", "x"),
+        "title": f"Lesson {i}",
+        "channel": "3Blue1Brown",
+        "duration": 600 + i,
+    }
     e.update(kw)
     return e
 
 
 def make_info(entries, **kw):
-    info = {"_type": "playlist", "id": LIST_ID, "title": "Essence of calculus", "channel": "3Blue1Brown",
-            "entries": entries}
+    info = {
+        "_type": "playlist",
+        "id": LIST_ID,
+        "title": "Essence of calculus",
+        "channel": "3Blue1Brown",
+        "entries": entries,
+    }
     info.update(kw)
     return info
 
 
 class FakeYDL:
     """Stands in for yt_dlp.YoutubeDL; records the options and URL it was given."""
+
     info = None
     exc = None
     seen = {}
@@ -60,40 +72,50 @@ def ydl(monkeypatch):
 
 
 # ---- URL parsing / validation ---------------------------------------------------
-@pytest.mark.parametrize("url", [
-    PL_URL,
-    f"youtube.com/playlist?list={LIST_ID}",
-    f"https://m.youtube.com/playlist?list={LIST_ID}&si=abc",
-    f"https://www.youtube.com/watch?v=dQw4w9WgXcQ&list={LIST_ID}&index=3",
-    f"https://youtu.be/dQw4w9WgXcQ?list={LIST_ID}",
-    f"https://music.youtube.com/playlist?list={LIST_ID}",
-    f"https://www.youtube.com/embed/videoseries?list={LIST_ID}",
-    f"  {PL_URL}  ",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        PL_URL,
+        f"youtube.com/playlist?list={LIST_ID}",
+        f"https://m.youtube.com/playlist?list={LIST_ID}&si=abc",
+        f"https://www.youtube.com/watch?v=dQw4w9WgXcQ&list={LIST_ID}&index=3",
+        f"https://youtu.be/dQw4w9WgXcQ?list={LIST_ID}",
+        f"https://music.youtube.com/playlist?list={LIST_ID}",
+        f"https://www.youtube.com/embed/videoseries?list={LIST_ID}",
+        f"  {PL_URL}  ",
+    ],
+)
 def test_parse_playlist_id_accepts(url):
     assert parse_playlist_id(url) == LIST_ID
 
 
-@pytest.mark.parametrize("url", [
-    "", "   ", None, 123, "not a url",
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",                 # video only
-    "https://www.youtube.com/playlist",                              # no list
-    "https://www.youtube.com/playlist?list=",
-    "https://www.youtube.com/playlist?list=short",                   # < 10 chars
-    "https://www.youtube.com/playlist?list=" + "A" * 65,             # > 64 chars
-    "https://www.youtube.com/playlist?list=PL12345678901;rm -rf",    # bad chars
-    "https://www.youtube.com/playlist?list=PL1234567890%0A",
-    f"https://www.youtube.com/playlist?list={LIST_ID}&list=PL0123456789",  # ambiguous
-    f"https://www.youtube.com/channel/UCabc?list={LIST_ID}",         # wrong path
-    f"https://evil.example.com/playlist?list={LIST_ID}",
-    f"https://youtube.com.evil.example.com/playlist?list={LIST_ID}",
-    f"https://evil.example.com/?u=https://www.youtube.com/playlist?list={LIST_ID}",
-    f"ftp://www.youtube.com/playlist?list={LIST_ID}",
-    f"https://user:pw@www.youtube.com/playlist?list={LIST_ID}",
-    f"https://www.youtube.com:8080/playlist?list={LIST_ID}",
-    f"https://youtu.be/short?list={LIST_ID}",
-    "x" * 3000,
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        "   ",
+        None,
+        123,
+        "not a url",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",  # video only
+        "https://www.youtube.com/playlist",  # no list
+        "https://www.youtube.com/playlist?list=",
+        "https://www.youtube.com/playlist?list=short",  # < 10 chars
+        "https://www.youtube.com/playlist?list=" + "A" * 65,  # > 64 chars
+        "https://www.youtube.com/playlist?list=PL12345678901;rm -rf",  # bad chars
+        "https://www.youtube.com/playlist?list=PL1234567890%0A",
+        f"https://www.youtube.com/playlist?list={LIST_ID}&list=PL0123456789",  # ambiguous
+        f"https://www.youtube.com/channel/UCabc?list={LIST_ID}",  # wrong path
+        f"https://evil.example.com/playlist?list={LIST_ID}",
+        f"https://youtube.com.evil.example.com/playlist?list={LIST_ID}",
+        f"https://evil.example.com/?u=https://www.youtube.com/playlist?list={LIST_ID}",
+        f"ftp://www.youtube.com/playlist?list={LIST_ID}",
+        f"https://user:pw@www.youtube.com/playlist?list={LIST_ID}",
+        f"https://www.youtube.com:8080/playlist?list={LIST_ID}",
+        f"https://youtu.be/short?list={LIST_ID}",
+        "x" * 3000,
+    ],
+)
 def test_parse_playlist_id_rejects(url):
     with pytest.raises(IngestError):
         parse_playlist_id(url)
@@ -103,7 +125,7 @@ def test_other_host_message_and_special_lists():
     with pytest.raises(IngestError, match="Only YouTube links"):
         parse_playlist_id(f"https://evil.example.com/playlist?list={LIST_ID}")
     with pytest.raises(IngestError, match="private"):
-        parse_playlist_id("https://www.youtube.com/playlist?list=WL")      # Watch later
+        parse_playlist_id("https://www.youtube.com/playlist?list=WL")  # Watch later
     with pytest.raises(IngestError, match="Mix"):
         parse_playlist_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ")
 
@@ -133,17 +155,19 @@ def test_get_playlist_shape_and_options(ydl):
 
 
 def test_skips_private_deleted_invalid_and_duplicates(ydl):
-    ydl.info = make_info([
-        entry(1),
-        entry(2, title="[Private video]"),
-        entry(3, title="[Deleted video]"),
-        entry(4, id="bad id"),
-        {"id": None, "title": "x"},
-        "garbage",
-        entry(5, availability="private"),
-        entry(1),                                  # duplicate id
-        entry(6, title="  Two\n lines\x00 "),
-    ])
+    ydl.info = make_info(
+        [
+            entry(1),
+            entry(2, title="[Private video]"),
+            entry(3, title="[Deleted video]"),
+            entry(4, id="bad id"),
+            {"id": None, "title": "x"},
+            "garbage",
+            entry(5, availability="private"),
+            entry(1),  # duplicate id
+            entry(6, title="  Two\n lines\x00 "),
+        ]
+    )
     r = get_playlist(PL_URL)
     assert [v["title"] for v in r["videos"]] == ["Lesson 1", "Two lines"]
     assert r["count"] == 2 and r["skipped"] == 6
@@ -179,7 +203,7 @@ def test_empty_playlist_and_fallbacks(ydl):
     r = get_playlist(PL_URL)
     assert r["count"] == 0 and r["videos"] == [] and r["title"] == "YouTube playlist" and r["truncated"] is False
     ydl.info = make_info([entry(1)], channel=None)
-    assert get_playlist(PL_URL)["channel"] == "3Blue1Brown"          # from the first video
+    assert get_playlist(PL_URL)["channel"] == "3Blue1Brown"  # from the first video
 
 
 def test_missing_video_channel_falls_back_to_playlist_owner(ydl):
@@ -195,21 +219,24 @@ def test_long_text_is_capped(ydl):
 
 
 # ---- get_playlist: errors ---------------------------------------------------------
-@pytest.mark.parametrize("raw, needle, status", [
-    ("ERROR: [youtube:tab] PL...: The playlist does not exist.", "couldn't find", 404),
-    ("ERROR: This playlist is private", "private", 403),
-    ("Sign in to confirm your age. This playlist is private.", "private", 403),
-    ("ERROR: unable to download: HTTP Error 429: Too Many Requests", "rate-limiting", 503),
-    ("Sign in to confirm you're not a bot", "rate-limiting", 503),
-    ("something weird with a key=SECRET123 token", "try again", 502),
-])
+@pytest.mark.parametrize(
+    "raw, needle, status",
+    [
+        ("ERROR: [youtube:tab] PL...: The playlist does not exist.", "couldn't find", 404),
+        ("ERROR: This playlist is private", "private", 403),
+        ("Sign in to confirm your age. This playlist is private.", "private", 403),
+        ("ERROR: unable to download: HTTP Error 429: Too Many Requests", "rate-limiting", 503),
+        ("Sign in to confirm you're not a bot", "rate-limiting", 503),
+        ("something weird with a key=SECRET123 token", "try again", 502),
+    ],
+)
 def test_error_mapping(ydl, raw, needle, status):
     ydl.exc = RuntimeError(raw)
     with pytest.raises(IngestError) as ei:
         get_playlist(PL_URL)
     assert needle in str(ei.value).lower()
     assert ei.value.status == status
-    assert "SECRET123" not in str(ei.value) and "ERROR:" not in str(ei.value)   # never echo raw library text
+    assert "SECRET123" not in str(ei.value) and "ERROR:" not in str(ei.value)  # never echo raw library text
 
 
 def test_non_dict_or_missing_entries_is_not_found(ydl):
@@ -228,6 +255,7 @@ def client(tmp_path):
         config = {"OUTPUT_DIR": tmp_path / "out", "LOAD_DOTENV": False, "RATE_LIMIT": (100, 60)}
         config.update(cfg)
         return srv.create_app(config).test_client()
+
     return factory
 
 
@@ -250,17 +278,23 @@ def test_endpoint_size_is_sane_at_cap(client, ydl):
     assert r.status_code == 200 and r.get_json()["count"] == 200 and len(r.data) < 100_000
 
 
-@pytest.mark.parametrize("params", [
-    {}, {"url": ""}, {"url": "   "}, {"url": "nope"},
-    {"url": "https://evil.example.com/playlist?list=" + LIST_ID},
-    {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
-    {"url": "https://www.youtube.com/playlist?list=short"},
-    {"url": "x" * 3000},
-])
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"url": ""},
+        {"url": "   "},
+        {"url": "nope"},
+        {"url": "https://evil.example.com/playlist?list=" + LIST_ID},
+        {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+        {"url": "https://www.youtube.com/playlist?list=short"},
+        {"url": "x" * 3000},
+    ],
+)
 def test_endpoint_bad_input(client, ydl, params):
     r = client().get("/api/playlist", query_string=params)
     assert r.status_code == 400 and r.get_json()["error"]
-    assert ydl.seen == {}                      # never reached yt-dlp
+    assert ydl.seen == {}  # never reached yt-dlp
 
 
 def test_endpoint_error_statuses_and_messages(client, ydl):

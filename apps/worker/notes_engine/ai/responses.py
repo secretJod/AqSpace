@@ -8,6 +8,7 @@ None of these functions sleep or send requests; ``llm._Client`` decides what to 
 
 Read next: ``json_repair.py``.
 """
+
 from __future__ import annotations
 
 import re
@@ -55,8 +56,21 @@ def parse_retry_delay(resp: Any) -> float | None:
 def is_daily_quota_error(body: str) -> bool:
     """True when a 429 body says a per-DAY limit is used up (retrying today is pointless)."""
     b = body.lower()
-    return any(t in b for t in ("perday", "per day", "tokens per day", "(tpd)", "requests per day",
-                                "(rpd)", "daily limit", "daily quota", '"limit": 0', "limit: 0"))
+    return any(
+        t in b
+        for t in (
+            "perday",
+            "per day",
+            "tokens per day",
+            "(tpd)",
+            "requests per day",
+            "(rpd)",
+            "daily limit",
+            "daily quota",
+            '"limit": 0',
+            "limit: 0",
+        )
+    )
 
 
 # --------------------------------------------------------------------------- #

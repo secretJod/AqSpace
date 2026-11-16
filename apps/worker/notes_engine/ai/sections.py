@@ -13,6 +13,7 @@ Nothing here calls the network.
 
 Read next: ``../llm.py`` (the client and the pipeline that use these helpers).
 """
+
 from __future__ import annotations
 
 import math
@@ -69,9 +70,43 @@ def find_sections(obj: Any, _depth: int = 0) -> list:
 # --------------------------------------------------------------------------- #
 
 # Words that say nothing about a topic, ignored when comparing two titles.
-STOP_WORDS = {"the", "a", "an", "and", "of", "in", "on", "to", "for", "vs", "with", "from", "how", "what", "is",
-              "llm", "llms", "model", "models", "stage", "into", "via", "its", "under", "over", "between", "by",
-              "as", "at", "or", "part", "intro", "introduction", "basics", "overview"}
+STOP_WORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "of",
+    "in",
+    "on",
+    "to",
+    "for",
+    "vs",
+    "with",
+    "from",
+    "how",
+    "what",
+    "is",
+    "llm",
+    "llms",
+    "model",
+    "models",
+    "stage",
+    "into",
+    "via",
+    "its",
+    "under",
+    "over",
+    "between",
+    "by",
+    "as",
+    "at",
+    "or",
+    "part",
+    "intro",
+    "introduction",
+    "basics",
+    "overview",
+}
 
 
 def title_words(section: Any) -> set[str]:
@@ -138,7 +173,7 @@ def pack_batches(digests: list[str], max_chars: int, min_batches: int = 1) -> li
 # --------------------------------------------------------------------------- #
 
 
-def usable_section_count(sections: list, max_sections: int = 10 ** 4) -> int:
+def usable_section_count(sections: list, max_sections: int = 10**4) -> int:
     """How many of ``sections`` survive ``validate_notes`` (0 if none do).
 
     ``max_sections`` lifts validate_notes' section cap (very long local-model lectures)."""

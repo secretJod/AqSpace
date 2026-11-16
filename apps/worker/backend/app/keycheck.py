@@ -1,22 +1,25 @@
-"""Startup key-format check (#81).
+"""Startup key-format check, called once by ``backend/run.py`` before the server starts.
 
-At server start, look at the provider keys in the environment and log ONE warning line per key that is
-set but looks malformed. Never logs the value, its length or any part of it: only the variable name and
-the kind of problem.
+It looks at the provider keys in the environment and logs ONE warning line per key that is set but
+looks malformed. It never logs the value, its length or any part of it: only the variable name and the
+kind of problem.
 
-Only copy-paste damage is reported (whitespace, quotes). The key's prefix is NOT checked (#127):
-providers change key formats (a working Gemini key need not start with AIza), and the provider
-itself is the only reliable judge of whether a key is valid.
+Only copy-paste damage is reported (whitespace, quotes). The key's prefix is deliberately not checked:
+providers change key formats (a working Gemini key need not start with AIza), and the provider itself
+is the only reliable judge of whether a key is valid.
 
 Surrounding whitespace and quotes (a common .env copy-paste mistake) are stripped from os.environ in
 place, so every later reader (server.py, notes_engine) sees the clean key.
+
+Read next: ``providers.py``.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import re
-from typing import MutableMapping
+from collections.abc import MutableMapping
 
 log = logging.getLogger("lna")
 
@@ -34,7 +37,12 @@ def _clean(raw: str) -> str:
 
 
 def problems(raw: str) -> list[str]:
-    """Describe what is wrong with a raw key value. Descriptions never contain the value."""
+    """Describe what is wrong with a raw key value.
+
+    Returns:
+        Problem names such as "quotes" or "inner whitespace" (empty when the key looks fine). They
+        never contain the value.
+    """
     out = []
     if raw != raw.strip():
         out.append("surrounding whitespace")
@@ -46,9 +54,18 @@ def problems(raw: str) -> list[str]:
     return out
 
 
-def check_keys(env: MutableMapping[str, str] | None = None,
-               logger: logging.Logger | None = None) -> dict[str, list[str]]:
-    """Warn about malformed keys and strip surrounding whitespace/quotes in place. Returns {var: problems}."""
+def check_keys(
+    env: MutableMapping[str, str] | None = None, logger: logging.Logger | None = None
+) -> dict[str, list[str]]:
+    """Warn about malformed keys and strip surrounding whitespace/quotes in place.
+
+    Args:
+        env: the mapping to check and clean (default: ``os.environ``).
+        logger: where warnings go (default: the "lna" logger).
+
+    Returns:
+        ``{variable name: problems}`` for every key that looked malformed.
+    """
     env = os.environ if env is None else env
     logger = logger or log
     found: dict[str, list[str]] = {}

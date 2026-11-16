@@ -1,4 +1,5 @@
 """Smart playlist: verification logic, engine run with a fake LLM client, and the /api/smart routes (no network)."""
+
 import json
 import threading
 import time
@@ -7,12 +8,15 @@ import types
 import pytest
 
 from app import server as srv  # noqa: E402
+from app.settings import GENERIC_ERROR  # noqa: E402
 from notes_engine import smart_playlist as sp
 
 SECRET = "AIza-test-SECRET-1234567890"
 IDS = ["aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc", "ddddddddddd"]
 EXC = {  # excerpts the "model" quotes from
-    IDS[0]: "[00:00] A load balancer spreads incoming traffic across many servers. [00:09] It keeps the service available.",
+    IDS[
+        0
+    ]: "[00:00] A load balancer spreads incoming traffic across many servers. [00:09] It keeps the service available.",
     IDS[1]: "[00:00] Sharding splits a large database into smaller parts called shards.",
     IDS[2]: "[00:00] Python decorators wrap a function to add behaviour.",
     IDS[3]: "",  # no transcript
@@ -20,26 +24,56 @@ EXC = {  # excerpts the "model" quotes from
 
 
 def make_inputs():
-    return {"goal": "System Design", "videos": [
-        {"id": i, "title": f"Title {n}", "channel": "Chan", "duration_sec": 300, "excerpt": EXC[i]} for n, i in enumerate(IDS)]}
+    return {
+        "goal": "System Design",
+        "videos": [
+            {"id": i, "title": f"Title {n}", "channel": "Chan", "duration_sec": 300, "excerpt": EXC[i]}
+            for n, i in enumerate(IDS)
+        ],
+    }
 
 
 def a1(topics=None):
     t = topics or {
-        IDS[0]: [("Load balancing", "spreads incoming traffic across many servers"), ("Availability", "keeps the service available")],
-        IDS[1]: [("Sharding", "splits a large database into smaller parts"), ("Invented", "this sentence is not in the transcript")],
+        IDS[0]: [
+            ("Load balancing", "spreads incoming traffic across many servers"),
+            ("Availability", "keeps the service available"),
+        ],
+        IDS[1]: [
+            ("Sharding", "splits a large database into smaller parts"),
+            ("Invented", "this sentence is not in the transcript"),
+        ],
     }
-    return {"profiles": [{"video_id": v, "level": "beginner", "summary": "s",
-                          "topics": [{"name": n, "evidence": e} for n, e in rows], "prerequisites": ["x"]}
-                         for v, rows in t.items()]}
+    return {
+        "profiles": [
+            {
+                "video_id": v,
+                "level": "beginner",
+                "summary": "s",
+                "topics": [{"name": n, "evidence": e} for n, e in rows],
+                "prerequisites": ["x"],
+            }
+            for v, rows in t.items()
+        ]
+    }
 
 
 # ---- the Result validator (also used on the real run) ----------------------------------------------------------
 def validate_result(res, video_ids, known_playlist=None):
     """Asserts `res` matches section 1 of docs/smart-playlist-contract.md."""
     ids = list(video_ids)
-    assert set(res) == {"goal", "path_summary", "order", "unplaced", "off_goal", "areas", "suggestions",
-                        "video_topics", "checks", "stats"}
+    assert set(res) == {
+        "goal",
+        "path_summary",
+        "order",
+        "unplaced",
+        "off_goal",
+        "areas",
+        "suggestions",
+        "video_topics",
+        "checks",
+        "stats",
+    }
     assert isinstance(res["goal"], str) and isinstance(res["path_summary"], str)
     placed = [r["video_id"] for r in res["order"]] + [r["video_id"] for r in res["unplaced"]]
     assert sorted(placed) == sorted(ids), "every video exactly once in order or unplaced"
@@ -65,8 +99,14 @@ def validate_result(res, video_ids, known_playlist=None):
         assert all(isinstance(x, str) for x in t["topics"])
     assert res["checks"] and all(isinstance(c, str) for c in res["checks"])
     st = res["stats"]
-    assert set(st) == {"topics_claimed", "topics_grounded", "videos_readded_to_order", "areas_downgraded_to_missing",
-                       "suggestions", "candidates_found"}
+    assert set(st) == {
+        "topics_claimed",
+        "topics_grounded",
+        "videos_readded_to_order",
+        "areas_downgraded_to_missing",
+        "suggestions",
+        "candidates_found",
+    }
     assert st["topics_grounded"] <= st["topics_claimed"]
     assert st["suggestions"] == len(res["suggestions"]) and st["candidates_found"] == n_cands
 
@@ -79,9 +119,9 @@ def validate_usage(u):
 # ---- pure verification --------------------------------------------------------------------------------------------
 def test_grounding():
     ex = EXC[IDS[0]]
-    assert sp._is_grounded("Spreads incoming TRAFFIC across many servers!", ex)      # case / punctuation tolerant
-    assert not sp._is_grounded("spreads traffic across servers", ex)                 # not a verbatim quote
-    assert not sp._is_grounded("traffic", ex)                                        # one word proves nothing
+    assert sp._is_grounded("Spreads incoming TRAFFIC across many servers!", ex)  # case / punctuation tolerant
+    assert not sp._is_grounded("spreads traffic across servers", ex)  # not a verbatim quote
+    assert not sp._is_grounded("traffic", ex)  # one word proves nothing
     assert not sp._is_grounded("anything at all", "")
 
 
@@ -98,30 +138,58 @@ def test_verify_drops_unsupported_topics_and_fills_video_topics():
     assert res["video_topics"][IDS[1]]["topics"] == ["Sharding"]
     assert res["video_topics"][IDS[2]]["topics"] == [] and res["video_topics"][IDS[2]]["level"] == "intermediate"
     assert any("1 unsupported topic" in c for c in res["checks"])
-    assert any("No transcript could be fetched for 1" in c for c in res["checks"])     # IDS[3] has no excerpt
+    assert any("No transcript could be fetched for 1" in c for c in res["checks"])  # IDS[3] has no excerpt
     assert any("no profile for 2" in c for c in res["checks"])
 
 
 def test_verify_order_is_a_permutation():
-    a2 = {"order": [{"video_id": IDS[1], "reason": "r"}, {"video_id": IDS[1], "reason": "dup"},
-                    {"video_id": "zzzzzzzzzzz", "reason": "unknown id"}, {"video_id": IDS[0], "reason": "r"}],
-          "unplaced": [{"video_id": IDS[1], "reason": "already in order"}, {"video_id": IDS[2], "reason": "off topic"}],
-          "path_summary": " Start with sharding. "}
+    a2 = {
+        "order": [
+            {"video_id": IDS[1], "reason": "r"},
+            {"video_id": IDS[1], "reason": "dup"},
+            {"video_id": "zzzzzzzzzzz", "reason": "unknown id"},
+            {"video_id": IDS[0], "reason": "r"},
+        ],
+        "unplaced": [{"video_id": IDS[1], "reason": "already in order"}, {"video_id": IDS[2], "reason": "off topic"}],
+        "path_summary": " Start with sharding. ",
+    }
     res = sp.verify(make_inputs(), a1(), a2, {})
-    assert [r["video_id"] for r in res["order"]] == [IDS[1], IDS[0], IDS[3]]        # IDS[3] re-added at the end
+    assert [r["video_id"] for r in res["order"]] == [IDS[1], IDS[0], IDS[3]]  # IDS[3] re-added at the end
     assert [r["video_id"] for r in res["unplaced"]] == [IDS[2]]
     assert res["stats"]["videos_readded_to_order"] == 1 and res["path_summary"] == "Start with sharding."
     validate_result(res, IDS)
 
 
 def test_verify_covered_needs_a_real_citation():
-    a3 = {"areas": [
-        {"area": "Caching", "why": "w", "status": "covered", "covered_by": ["nope"], "priority": "high"},       # invented id
-        {"area": "Sharding", "why": "w", "status": "covered", "covered_by": [IDS[1], IDS[1], "nope"], "priority": "bogus"},
-        {"area": "Replication", "why": "w", "status": "partial", "covered_by": [], "priority": "low"},
-        {"area": "Queues", "why": "w", "status": "missing", "covered_by": [IDS[0]], "priority": "low"},        # missing cites nothing
-        {"area": "", "why": "no name", "status": "missing"}, "junk",
-    ], "off_goal": [{"video_id": IDS[2], "reason": "python"}, {"video_id": "nope", "reason": "x"}]}
+    a3 = {
+        "areas": [
+            {
+                "area": "Caching",
+                "why": "w",
+                "status": "covered",
+                "covered_by": ["nope"],
+                "priority": "high",
+            },  # invented id
+            {
+                "area": "Sharding",
+                "why": "w",
+                "status": "covered",
+                "covered_by": [IDS[1], IDS[1], "nope"],
+                "priority": "bogus",
+            },
+            {"area": "Replication", "why": "w", "status": "partial", "covered_by": [], "priority": "low"},
+            {
+                "area": "Queues",
+                "why": "w",
+                "status": "missing",
+                "covered_by": [IDS[0]],
+                "priority": "low",
+            },  # missing cites nothing
+            {"area": "", "why": "no name", "status": "missing"},
+            "junk",
+        ],
+        "off_goal": [{"video_id": IDS[2], "reason": "python"}, {"video_id": "nope", "reason": "x"}],
+    }
     res = sp.verify(make_inputs(), a1(), {}, a3)
     got = {a["area"]: a for a in res["areas"]}
     assert list(got) == ["Caching", "Sharding", "Replication", "Queues"]
@@ -134,36 +202,50 @@ def test_verify_covered_needs_a_real_citation():
 
 
 def test_verify_suggestions_are_cleaned():
-    a3 = {"suggestions": [{"topic": f"T{i}", "reason": "r", "kind": "weird", "search_query": f"q{i}"} for i in range(9)]
-          + [{"topic": "no query", "search_query": ""}]}
+    a3 = {
+        "suggestions": [{"topic": f"T{i}", "reason": "r", "kind": "weird", "search_query": f"q{i}"} for i in range(9)]
+        + [{"topic": "no query", "search_query": ""}]
+    }
     res = sp.verify(make_inputs(), a1(), {}, a3)
     assert len(res["suggestions"]) == sp.MAX_SUGGESTIONS
     assert res["suggestions"][0]["kind"] == "overview" and res["suggestions"][0]["candidates"] == []
 
 
 def test_verify_survives_garbage():
-    res = sp.verify(make_inputs(), {"profiles": "x"}, {"order": "x", "unplaced": [1, None]}, {"areas": {"a": 1}, "suggestions": 5})
+    res = sp.verify(
+        make_inputs(), {"profiles": "x"}, {"order": "x", "unplaced": [1, None]}, {"areas": {"a": 1}, "suggestions": 5}
+    )
     validate_result(res, IDS)
 
 
 # ---- candidates ----------------------------------------------------------------------------------------------------
 def test_search_youtube_filters(monkeypatch):
-    entries = [{"id": "x" * 11, "duration": 600, "title": "ok", "channel": "C"},
-               {"id": IDS[0], "duration": 600, "title": "already in playlist"},
-               {"id": "y" * 11, "duration": 60, "title": "too short"},
-               {"id": "z" * 11, "duration": 4000, "title": "too long"},
-               {"id": "w" * 11, "duration": None, "title": "live"},
-               {"id": "bad", "duration": 600, "title": "bad id"},
-               {"id": "v" * 11, "duration": 300.0, "title": "also ok", "uploader": "U"},
-               {"id": "u" * 11, "duration": 300, "title": "over the limit"}]
+    entries = [
+        {"id": "x" * 11, "duration": 600, "title": "ok", "channel": "C"},
+        {"id": IDS[0], "duration": 600, "title": "already in playlist"},
+        {"id": "y" * 11, "duration": 60, "title": "too short"},
+        {"id": "z" * 11, "duration": 4000, "title": "too long"},
+        {"id": "w" * 11, "duration": None, "title": "live"},
+        {"id": "bad", "duration": 600, "title": "bad id"},
+        {"id": "v" * 11, "duration": 300.0, "title": "also ok", "uploader": "U"},
+        {"id": "u" * 11, "duration": 300, "title": "over the limit"},
+    ]
 
     class FakeYDL:
-        def __init__(self, opts): pass
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def extract_info(self, q, download=False): return {"entries": entries}
+        def __init__(self, opts):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, q, download=False):
+            return {"entries": entries}
 
     import yt_dlp
+
     monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
     got = sp._search_youtube("q", {IDS[0]})
     assert [c["id"] for c in got] == ["x" * 11, "v" * 11]
@@ -171,10 +253,15 @@ def test_search_youtube_filters(monkeypatch):
 
 
 def test_add_candidates_never_offers_a_video_twice(monkeypatch):
-    c = lambda i: {"id": i * 11, "title": "t", "channel": "c", "duration_sec": 300, "url": "u"}
+    def c(i):
+        return {"id": i * 11, "title": "t", "channel": "c", "duration_sec": 300, "url": "u"}
+
     monkeypatch.setattr(sp, "_search_youtube", lambda q, ex, limit=2: [c("a" if q == "q1" else "b"), c("m")])
-    res = {"suggestions": [{"search_query": "q1", "candidates": []}, {"search_query": "q2", "candidates": []}],
-           "stats": {"candidates_found": 0}, "checks": []}
+    res = {
+        "suggestions": [{"search_query": "q1", "candidates": []}, {"search_query": "q2", "candidates": []}],
+        "stats": {"candidates_found": 0},
+        "checks": [],
+    }
     sp._add_candidates(res, {"p" * 11})
     assert [[x["id"][0] for x in s["candidates"]] for s in res["suggestions"]] == [["a", "m"], ["b"]]
     assert res["stats"]["candidates_found"] == 3 and "3 real YouTube candidates" in res["checks"][0]
@@ -183,6 +270,7 @@ def test_add_candidates_never_offers_a_video_twice(monkeypatch):
 # ---- analyze() with a fake LLM client -----------------------------------------------------------------------------
 class FakeClient:
     """Stands in for llm._Client: ask_json answers per agent and goes through _post so the usage meter sees it."""
+
     instances = []
 
     def __init__(self, provider, key, model):
@@ -203,11 +291,16 @@ class FakeClient:
                 assert len(vids) <= 2
             return a1({i: [("Topic", "spreads incoming traffic across many servers")] for i in vids if EXC[i]})
         if system == sp.SYS_2:
-            return {"order": [{"video_id": i, "reason": "r"} for i in reversed(IDS[:2])],
-                    "unplaced": [{"video_id": IDS[2], "reason": "off topic"}], "path_summary": "sum"}
-        return {"areas": [{"area": "LB", "why": "w", "status": "covered", "covered_by": [IDS[0]], "priority": "high"}],
-                "suggestions": [{"topic": "Caching", "reason": "r", "kind": "overview", "search_query": "caching"}],
-                "off_goal": [{"video_id": IDS[2], "reason": "python"}]}
+            return {
+                "order": [{"video_id": i, "reason": "r"} for i in reversed(IDS[:2])],
+                "unplaced": [{"video_id": IDS[2], "reason": "off topic"}],
+                "path_summary": "sum",
+            }
+        return {
+            "areas": [{"area": "LB", "why": "w", "status": "covered", "covered_by": [IDS[0]], "priority": "high"}],
+            "suggestions": [{"topic": "Caching", "reason": "r", "kind": "overview", "search_query": "caching"}],
+            "off_goal": [{"video_id": IDS[2], "reason": "python"}],
+        }
 
 
 @pytest.fixture
@@ -224,21 +317,36 @@ def fake_engine(monkeypatch):
         return {"segments": [{"start": 0.0, "text": EXC[vid].replace("[00:00] ", "")}]}
 
     monkeypatch.setattr(sp.ingest, "get_transcript", get_transcript)
-    monkeypatch.setattr(sp, "_search_youtube", lambda q, ex, limit=2: [
-        {"id": "q" * 11, "title": "t", "channel": "c", "duration_sec": 300, "url": "https://www.youtube.com/watch?v=" + "q" * 11}])
+    monkeypatch.setattr(
+        sp,
+        "_search_youtube",
+        lambda q, ex, limit=2: [
+            {
+                "id": "q" * 11,
+                "title": "t",
+                "channel": "c",
+                "duration_sec": 300,
+                "url": "https://www.youtube.com/watch?v=" + "q" * 11,
+            }
+        ],
+    )
     return seen
 
 
 def test_analyze_end_to_end(fake_engine):
     videos = [{"id": i, "title": f"T {i}", "channel": "C", "duration_sec": 300} for i in IDS]
     stages = []
-    out = sp.analyze("  System   Design ", videos + videos[:1], "gemini", SECRET, progress=lambda s, p, m: stages.append((s, p)))
+    out = sp.analyze(
+        "  System   Design ", videos + videos[:1], "gemini", SECRET, progress=lambda s, p, m: stages.append((s, p))
+    )
     res = out["result"]
     validate_result(res, IDS)
     validate_usage(out["usage"])
     assert res["goal"] == "System Design"
-    assert out["usage"]["calls"] == 3 and out["usage"]["total_tokens"] == 300       # one profiler batch of 4, sequencer, gap analyst
-    assert sorted(fake_engine) == sorted(IDS)                                       # each transcript fetched once
+    assert (
+        out["usage"]["calls"] == 3 and out["usage"]["total_tokens"] == 300
+    )  # one profiler batch of 4, sequencer, gap analyst
+    assert sorted(fake_engine) == sorted(IDS)  # each transcript fetched once
     assert FakeClient.instances[0].model == "gemini-3.5-flash-lite"
     assert any("No transcript" in c for c in res["checks"])
     assert res["suggestions"][0]["candidates"][0]["id"] == "q" * 11
@@ -252,8 +360,8 @@ def test_analyze_end_to_end(fake_engine):
 def test_analyze_groq_uses_small_batches(fake_engine):
     videos = [{"id": i, "title": "T", "channel": "C", "duration_sec": 300} for i in IDS]
     out = sp.analyze("Goal", videos, "groq", SECRET, model="models/x")
-    assert out["usage"]["calls"] == 2 + 2                                           # two profiler batches + sequencer + gaps
-    assert FakeClient.instances[0].model == "models/x"                              # prefix only stripped for gemini
+    assert out["usage"]["calls"] == 2 + 2  # two profiler batches + sequencer + gaps
+    assert FakeClient.instances[0].model == "models/x"  # prefix only stripped for gemini
 
 
 def test_analyze_rejects_bad_input(fake_engine):
@@ -272,13 +380,16 @@ def test_analyze_rejects_bad_input(fake_engine):
 
 def test_profiler_halves_the_batch_when_truncated():
     class C:
-        def __init__(self): self.sizes = []
+        def __init__(self):
+            self.sizes = []
+
         def ask_json(self, messages, max_tokens, temperature=0.3):
             n = messages[1].count("--- video_id:")
             self.sizes.append(n)
             if n > 1:
                 raise sp._OutputTruncated("cut")
             return {"profiles": [{"video_id": messages[1].split("video_id: ")[1][:11], "topics": []}]}
+
     c = C()
     vids = [{"id": i, "title": "T", "channel": "", "duration_sec": 0, "excerpt": "x"} for i in IDS]
     got = sp._ask_profiles(c, "g", vids)
@@ -327,8 +438,11 @@ def smart_client(tmp_path, monkeypatch):
 
 
 def body(**over):
-    b = {"goal": "System Design", "provider": "gemini",
-         "videos": [{"id": i, "title": f"T{n}", "channel": "C", "duration_sec": 100} for n, i in enumerate(IDS)]}
+    b = {
+        "goal": "System Design",
+        "provider": "gemini",
+        "videos": [{"id": i, "title": f"T{n}", "channel": "C", "duration_sec": 100} for n, i in enumerate(IDS)],
+    }
     b.update(over)
     return b
 
@@ -353,7 +467,9 @@ def test_smart_full_flow(smart_client):
     assert data["status"] == "done" and data["pct"] == 100 and data["model"] == "gemini-x"
     assert data["result"] == {"goal": "Learn things"} and data["usage"] == {"calls": 1}
     assert data["stage"] == "profiling" and "error" not in data
-    assert mod.calls[0]["api_key"] == SECRET and mod.calls[0]["model"] == "gemini-x" and len(mod.calls[0]["videos"]) == 4
+    assert (
+        mod.calls[0]["api_key"] == SECRET and mod.calls[0]["model"] == "gemini-x" and len(mod.calls[0]["videos"]) == 4
+    )
     assert SECRET not in json.dumps(data)
 
 
@@ -364,19 +480,30 @@ def test_smart_status_reports_running_and_default_model(smart_client):
     time.sleep(0.2)
     data = client.get(f"/api/smart/{job_id}").get_json()
     assert data["status"] == "running" and data["stage"] == "profiling" and data["pct"] == 40 and "result" not in data
-    assert data["model"] == "gemini-3.5-flash-lite"            # the model the worker will use, not what was asked
+    assert data["model"] == "gemini-3.5-flash-lite"  # the model the worker will use, not what was asked
     gate.set()
     assert wait_smart(client, job_id)["status"] == "done"
 
 
-@pytest.mark.parametrize("over", [
-    {"goal": ""}, {"goal": "x" * 121}, {"goal": 5}, {"videos": None}, {"videos": body()["videos"][:1]},
-    {"videos": body()["videos"] * 6},
-    {"videos": [{"id": "short", "title": "t"}] * 2}, {"videos": [{"id": "a" * 11, "title": 5}, {"id": "b" * 11, "title": "t"}]},
-    {"videos": [{"id": "a" * 11, "title": "t", "duration_sec": -1}, {"id": "b" * 11, "title": "t"}]},
-    {"videos": [{"id": "a" * 11, "title": "t"}, {"id": "a" * 11, "title": "same video twice"}]},
-    {"provider": "nope"}, {"provider": None}, {"model": "bad model!"}, {"model": 5},
-])
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"goal": ""},
+        {"goal": "x" * 121},
+        {"goal": 5},
+        {"videos": None},
+        {"videos": body()["videos"][:1]},
+        {"videos": body()["videos"] * 6},
+        {"videos": [{"id": "short", "title": "t"}] * 2},
+        {"videos": [{"id": "a" * 11, "title": 5}, {"id": "b" * 11, "title": "t"}]},
+        {"videos": [{"id": "a" * 11, "title": "t", "duration_sec": -1}, {"id": "b" * 11, "title": "t"}]},
+        {"videos": [{"id": "a" * 11, "title": "t"}, {"id": "a" * 11, "title": "same video twice"}]},
+        {"provider": "nope"},
+        {"provider": None},
+        {"model": "bad model!"},
+        {"model": 5},
+    ],
+)
 def test_smart_validation(smart_client, over):
     client, state, _ = smart_client()
     r = client.post("/api/smart", json=body(**over))
@@ -388,7 +515,7 @@ def test_smart_needs_json_and_a_server_key(smart_client, monkeypatch):
     client, _, _ = smart_client()
     assert client.post("/api/smart", data="x", content_type="text/plain").status_code == 400
     monkeypatch.delenv("GEMINI_API_KEY")
-    r = client.post("/api/smart", json=body(api_key="AIzaFromTheBrowser"))           # a key in the body is ignored
+    r = client.post("/api/smart", json=body(api_key="AIzaFromTheBrowser"))  # a key in the body is ignored
     assert r.status_code == 400 and "GEMINI_API_KEY" in r.get_json()["error"]
 
 
@@ -409,6 +536,7 @@ def test_smart_503_when_engine_missing(smart_client):
 
     def missing():
         raise ImportError("no engine")
+
     state.load_smart = missing
     assert client.post("/api/smart", json=body()).status_code == 503
 
@@ -424,7 +552,7 @@ def test_smart_error_is_safe_and_redacted(smart_client):
     mod2.analyze = lambda *a, **k: (_ for _ in ()).throw(RuntimeError(f"internal {a[3]}"))
     client2, _, _ = smart_client(mod2)
     data = wait_smart(client2, client2.post("/api/smart", json=body()).get_json()["job_id"])
-    assert data["status"] == "error" and data["error"] == srv.GENERIC_ERROR and SECRET not in json.dumps(data)
+    assert data["status"] == "error" and data["error"] == GENERIC_ERROR and SECRET not in json.dumps(data)
 
 
 def test_smart_unknown_job_and_isolated_from_notes_jobs(smart_client):
@@ -433,7 +561,7 @@ def test_smart_unknown_job_and_isolated_from_notes_jobs(smart_client):
     assert client.get("/api/smart/not-a-job").status_code == 404
     job_id = client.post("/api/smart", json=body()).get_json()["job_id"]
     wait_smart(client, job_id)
-    assert client.get(f"/api/jobs/{job_id}").status_code == 404                      # separate stores
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404  # separate stores
     r = client.get(f"/api/smart/{job_id}")
     assert r.headers["Cache-Control"] == "no-store" and "default-src 'none'" in r.headers["Content-Security-Policy"]
 
@@ -454,7 +582,7 @@ def test_smart_origin_guard(smart_client):
 
 
 def test_transcripts_go_through_ingest_with_whisper_args(monkeypatch, tmp_path):
-    """F7 (#63): one transcript path, ingest.get_transcript, with the Groq key and work_dir passed on."""
+    """One transcript path, ingest.get_transcript, with the Groq key and work_dir passed on."""
     calls = []
 
     def get_transcript(url, **kw):
@@ -481,6 +609,7 @@ def test_analyze_passes_groq_key_from_env(fake_engine, monkeypatch):
 
 def test_no_own_fetching_in_smart_playlist():
     import inspect
+
     src = inspect.getsource(sp)
     for banned in ("youtube_transcript_api", "_fetch_via_", "timedtext", "requests.get"):
         assert banned not in src

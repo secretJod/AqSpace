@@ -1,4 +1,5 @@
-"""Card #75: the notes-provider evaluation runs through notes_engine with fakes only (no network)."""
+"""The notes-provider evaluation runs through notes_engine with fakes only (no network)."""
+
 from __future__ import annotations
 
 import json
@@ -7,8 +8,9 @@ import os
 import pytest
 import requests
 
-from demo.notes_eval import blind, common as C, evaluate, fakes, run_eval
 from notes_engine import llm
+from tools.notes_eval import blind, evaluate, fakes, run_eval
+from tools.notes_eval import common as C
 
 
 @pytest.fixture(autouse=True)
@@ -17,8 +19,18 @@ def _isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(requests, "post", requests.post)
     monkeypatch.setattr(requests, "get", requests.get)
     monkeypatch.setattr(llm, "_sleep", llm._sleep)
-    for k in ("GEMINI_API_KEY", "GROQ_API_KEY", "NVIDIA_API_KEY", "XAI_API_KEY", "HF_TOKEN", "LNAI_LOCAL_CTX",
-              "LNAI_LOCAL_URL", "LNA_CACHE_DIR", "LNAI_CHECKPOINT_DIR", "LNA_PROVIDER_FALLBACK"):
+    for k in (
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "NVIDIA_API_KEY",
+        "XAI_API_KEY",
+        "HF_TOKEN",
+        "LNAI_LOCAL_CTX",
+        "LNAI_LOCAL_URL",
+        "LNA_CACHE_DIR",
+        "LNAI_CHECKPOINT_DIR",
+        "LNA_PROVIDER_FALLBACK",
+    ):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(C, "CONTESTANTS", dict(C.CONTESTANTS))
     monkeypatch.setattr(C, "VIDEOS", dict(C.VIDEOS))
@@ -30,8 +42,18 @@ def _isolated(monkeypatch, tmp_path):
 
 
 def _dry(tmp_path, *extra):
-    return run_eval.main(["--dry-run", "--runs", "1", "--out", str(tmp_path / "out"),
-                          "--blind-sheet", str(tmp_path / "blind.md"), *extra])
+    return run_eval.main(
+        [
+            "--dry-run",
+            "--runs",
+            "1",
+            "--out",
+            str(tmp_path / "out"),
+            "--blind-sheet",
+            str(tmp_path / "blind.md"),
+            *extra,
+        ]
+    )
 
 
 def test_local_specs_register_as_contestants():
@@ -58,8 +80,9 @@ def test_clean_run_env_turns_cache_checkpoints_fallback_off(monkeypatch):
 
 
 def test_dry_run_goes_through_engine_with_fakes(tmp_path):
-    res = _dry(tmp_path, "--contestants", "gemini,groq,local,local:qwen3.5-9b@http://127.0.0.1:8082/v1",
-               "--videos", "default")
+    res = _dry(
+        tmp_path, "--contestants", "gemini,groq,local,local:qwen3.5-9b@http://127.0.0.1:8082/v1", "--videos", "default"
+    )
     out = tmp_path / "out"
     cids = res["contestants"]
     for cid in cids:
@@ -67,7 +90,7 @@ def test_dry_run_goes_through_engine_with_fakes(tmp_path):
             r = json.loads((out / "runs" / cid / vid / "1.json").read_text())
             assert r["status"] == "success", r
             assert r["notes"]["meta"]["model"].startswith(r["provider"] + "/")
-            assert r["timing"]["http_requests"] > 0          # real engine path, fake HTTP
+            assert r["timing"]["http_requests"] > 0  # real engine path, fake HTTP
     loc = json.loads((out / "runs" / cids[3] / "WUvTyaaNkzM" / "1.json").read_text())
     assert loc["model"] == "qwen3.5-9b" and loc["local_url"] == "http://127.0.0.1:8082/v1"
     ev = json.loads((out / "evaluation.json").read_text())
@@ -84,10 +107,11 @@ def test_dry_run_hits_only_fake_endpoints(tmp_path, monkeypatch):
         f = real_install()
         seen.append(f)
         return f
+
     monkeypatch.setattr(fakes, "install", spy)
     _dry(tmp_path, "--contestants", "local:qwen3.5-9b", "--videos", "WUvTyaaNkzM")
     urls = {c["url"] for c in seen[0].calls}
-    assert any("127.0.0.1:8081" in u for u in urls)      # local contestant
+    assert any("127.0.0.1:8081" in u for u in urls)  # local contestant
     assert any("generativelanguage" in u for u in urls)  # gemini judge (fake)
     assert all(c.get("model") in (None, "qwen3.5-9b", "gemini-3.5-flash-lite") for c in seen[0].calls)
 
@@ -125,6 +149,7 @@ def test_fallback_answer_is_rejected(tmp_path, monkeypatch):
 
     def fake_generate(transcript, **kw):
         return {"meta": {"model": "groq/openai/gpt-oss-120b"}, "sections": []}
+
     monkeypatch.setattr(llm, "generate_notes", fake_generate)
     rec = run_eval.generate("local", "v", 1, fakes.transcript("v", "t"))
     assert rec["status"] == "error" and "another provider" in rec["error"]

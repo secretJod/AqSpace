@@ -11,12 +11,14 @@ What this file does
 Read next
     ``routes.py`` (where these threads are started).
 """
+
 from __future__ import annotations
 
 import inspect
 import json
 import logging
 import traceback
+from collections.abc import Callable
 
 from .helpers import format_duration, redact
 from .settings import CHUNK_RE, GENERIC_ERROR
@@ -26,19 +28,22 @@ log = logging.getLogger("lna")
 
 
 def _missing_module_error(exc: ImportError) -> str:
-    return ("The notes engine is not fully installed yet "
-            f"(missing module: {getattr(exc, 'name', None) or 'unknown'}).")
+    return f"The notes engine is not fully installed yet (missing module: {getattr(exc, 'name', None) or 'unknown'})."
 
 
 # ----------------------------------------------------------------------------------------------
 # 1. Progress
 # ----------------------------------------------------------------------------------------------
-def scaled_progress(state: State, job: dict, lo: float, hi: float, stage: str):
+def scaled_progress(state: State, job: dict, lo: float, hi: float, stage: str) -> Callable[..., None]:
     """Map a module's stage-local progress callback (pct 0-100) into the job's global range.
 
     Example: with lo=25, hi=85 a module reporting 50 % moves the job to 55 %.
-    Progress never goes backwards.
+    Progress never goes backwards, and a "chunk i/N" message also sets the job's ``chunk`` / ``chunks``.
+
+    Returns:
+        A ``callback(stage, pct, message)`` that never raises.
     """
+
     def callback(_stage=None, pct=None, message=None, *_a, **_k):
         try:
             local = max(0.0, min(100.0, float(pct if pct is not None else 0)))
@@ -54,14 +59,32 @@ def scaled_progress(state: State, job: dict, lo: float, hi: float, stage: str):
             state.update(job, **fields)
         except Exception:  # a broken progress callback must never kill the job
             pass
+
     return callback
 
 
 # ----------------------------------------------------------------------------------------------
 # 2. Note job
 # ----------------------------------------------------------------------------------------------
-def run_note_job(state: State, job_id: str, url: str, provider: str, api_key: str,
-                 model: str | None, groq_key: str | None):
+def run_note_job(
+    state: State, job_id: str, url: str, provider: str, api_key: str, model: str | None, groq_key: str | None
+) -> None:
+    """Turn one lecture into notes; runs in a background thread started by ``POST /api/jobs``.
+
+    Writes ``notes.json``, ``notes.html`` and ``notes.pdf`` to ``<output>/<job_id>/`` and records
+    progress, links and errors on ``state.jobs[job_id]``. Never raises: every failure becomes a
+    user-safe ``error`` message (the engine's own error classes keep their text, anything else is
+    reported as ``GENERIC_ERROR`` and logged with secrets redacted).
+
+    Args:
+        state: the shared app state.
+        job_id: id of a job already registered in ``state.jobs``.
+        url: the YouTube link (already validated).
+        provider: provider id, e.g. "groq".
+        api_key: provider key, or None for keyless providers.
+        model: model name, or None for the provider default.
+        groq_key: key for Groq Whisper speech-to-text on videos without captions.
+    """
     job = state.jobs[job_id]
     secrets = [api_key, groq_key]
     job_dir = state.output_dir / job_id
@@ -78,22 +101,31 @@ def run_note_job(state: State, job_id: str, url: str, provider: str, api_key: st
         # Step 1: transcript (0-25 %)
         # speech-to-text checkpoints live in output/_cache/<video_id>/ (not a job dir, so
         # cleanup_old_jobs keeps them and a restarted job for the same video resumes)
-        transcript = ingest.get_transcript(url, groq_key=groq_key,
-                                           progress=scaled_progress(state, job, 0, 25, "transcript"),
-                                           work_dir=str(state.output_dir / "_cache"))
+        transcript = ingest.get_transcript(
+            url,
+            groq_key=groq_key,
+            progress=scaled_progress(state, job, 0, 25, "transcript"),
+            work_dir=str(state.output_dir / "_cache"),
+        )
         meta = {
             "title": str(transcript.get("title") or "Untitled lecture"),
             "channel": str(transcript.get("channel") or ""),
             "duration": format_duration(transcript.get("duration_sec")),
         }
-        state.update(job, meta=meta, stage="notes", pct=max(job["pct"], 25),
-                     message="Transcript ready. Writing notes...")
+        state.update(
+            job, meta=meta, stage="notes", pct=max(job["pct"], 25), message="Transcript ready. Writing notes..."
+        )
 
         # Step 2: notes (25-85 %)
         # per-video checkpoints (output/checkpoints/<video_id>/) let a retry resume finished chunks
-        notes = llm.generate_notes(transcript, provider=provider, api_key=api_key, model=model,
-                                   progress=scaled_progress(state, job, 25, 85, "notes"),
-                                   checkpoint_dir=str(state.output_dir / "checkpoints"))
+        notes = llm.generate_notes(
+            transcript,
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            progress=scaled_progress(state, job, 25, 85, "notes"),
+            checkpoint_dir=str(state.output_dir / "checkpoints"),
+        )
         job_dir.mkdir(parents=True, exist_ok=True)
         (job_dir / "notes.json").write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
         try:  # prefer the notes' own title if the model produced a nicer one
@@ -113,8 +145,7 @@ def run_note_job(state: State, job_id: str, url: str, provider: str, api_key: st
             have_html = True
             state.update(job, pct=max(job["pct"], 92))
         except Exception as e:
-            log.error("render_html failed: %s\n%s", redact(e, secrets),
-                      redact(traceback.format_exc(), secrets))
+            log.error("render_html failed: %s\n%s", redact(e, secrets), redact(traceback.format_exc(), secrets))
             warnings.append("The on-screen preview could not be drawn.")
         try:
             pdf.render_pdf(notes, str(job_dir / "notes.pdf"))
@@ -124,8 +155,7 @@ def run_note_job(state: State, job_id: str, url: str, provider: str, api_key: st
                 warnings.append(str(e))  # PdfError messages are written to be user-safe
             else:
                 warnings.append("The PDF could not be drawn.")
-            log.error("render_pdf failed: %s\n%s", redact(e, secrets),
-                      redact(traceback.format_exc(), secrets))
+            log.error("render_pdf failed: %s\n%s", redact(e, secrets), redact(traceback.format_exc(), secrets))
         if not (have_html or have_pdf):
             state.update(job, status="error", error=warnings[-1] if warnings else GENERIC_ERROR)
             return
@@ -136,16 +166,29 @@ def run_note_job(state: State, job_id: str, url: str, provider: str, api_key: st
             links["pdf"] = f"{base}/notes.pdf"
         if have_html:
             links["html"] = f"{base}/notes.html"
-        state.update(job, status="done", stage="pdf", pct=100, message="Your notebook is ready.",
-                     links=links, warning=" ".join(warnings) if warnings else None)
+        state.update(
+            job,
+            status="done",
+            stage="pdf",
+            pct=100,
+            message="Your notebook is ready.",
+            links=links,
+            warning=" ".join(warnings) if warnings else None,
+        )
     except Exception as e:  # map every failure to a safe message
         # Our own error classes carry friendly messages; anything else is a crash.
         user_safe = False
         try:
             ingest_mod, llm_mod, pdf_mod = state.load_modules()
-            safe_types = tuple(t for t in (getattr(ingest_mod, "IngestError", None),
-                                           getattr(llm_mod, "LLMError", None),
-                                           getattr(pdf_mod, "PdfError", None)) if isinstance(t, type))
+            safe_types = tuple(
+                t
+                for t in (
+                    getattr(ingest_mod, "IngestError", None),
+                    getattr(llm_mod, "LLMError", None),
+                    getattr(pdf_mod, "PdfError", None),
+                )
+                if isinstance(t, type)
+            )
             user_safe = bool(safe_types) and isinstance(e, safe_types)
         except Exception:
             pass
@@ -154,8 +197,13 @@ def run_note_job(state: State, job_id: str, url: str, provider: str, api_key: st
             log.warning("job %s failed (%s): %s", job_id, type(e).__name__, msg)
         else:
             msg = GENERIC_ERROR
-            log.error("job %s crashed: %s: %s\n%s", job_id, type(e).__name__, redact(e, secrets),
-                      redact(traceback.format_exc(), secrets))
+            log.error(
+                "job %s crashed: %s: %s\n%s",
+                job_id,
+                type(e).__name__,
+                redact(e, secrets),
+                redact(traceback.format_exc(), secrets),
+            )
         state.update(job, status="error", error=msg[:600])
     finally:
         # drop references to the keys as soon as possible
@@ -165,8 +213,31 @@ def run_note_job(state: State, job_id: str, url: str, provider: str, api_key: st
 # ----------------------------------------------------------------------------------------------
 # 3. Smart-playlist job
 # ----------------------------------------------------------------------------------------------
-def run_smart_job(state: State, job_id: str, goal: str, videos: list[dict], provider: str,
-                  api_key: str, model: str | None, groq_key: str | None = None):
+def run_smart_job(
+    state: State,
+    job_id: str,
+    goal: str,
+    videos: list[dict],
+    provider: str,
+    api_key: str,
+    model: str | None,
+    groq_key: str | None = None,
+) -> None:
+    """Run a smart-playlist analysis; runs in a background thread started by ``POST /api/smart``.
+
+    Stores ``result`` and ``usage`` on ``state.smart_jobs[job_id]`` when done. Never raises; failures
+    become user-safe ``error`` messages, as in ``run_note_job``.
+
+    Args:
+        state: the shared app state.
+        job_id: id of a job already registered in ``state.smart_jobs``.
+        goal: the learning goal (the playlist name).
+        videos: validated ``{id, title, channel, duration_sec}`` dicts.
+        provider: provider id; ``api_key`` is its server-side key.
+        api_key: provider key from the server environment.
+        model: model name, or None for the provider default.
+        groq_key: key for Groq Whisper speech-to-text on videos without captions.
+    """
     job = state.smart_jobs[job_id]
     secrets = [api_key, groq_key]
 
@@ -189,8 +260,9 @@ def run_smart_job(state: State, job_id: str, goal: str, videos: list[dict], prov
             log.error("module import failed: %s", redact(e, secrets))
             state.update(job, status="error", error=_missing_module_error(e))
             return
-        # same transcript path as a notes job: Whisper fallback key and the shared speech-to-text cache
-        # (keyword-only args; passed only when this smart_playlist accepts them)
+        # Same transcript path as a notes job: Whisper fallback key and the shared speech-to-text
+        # cache. They are keyword-only and passed only when ``analyze`` accepts them, because tests
+        # substitute simpler fakes for the smart_playlist module.
         extra = {"groq_key": groq_key, "work_dir": str(state.output_dir / "_cache")}
         try:
             accepted = inspect.signature(smart.analyze).parameters
@@ -198,13 +270,25 @@ def run_smart_job(state: State, job_id: str, goal: str, videos: list[dict], prov
         except (TypeError, ValueError):
             extra = {}
         out = smart.analyze(goal, videos, provider, api_key, model, progress=progress, **extra)
-        state.update(job, status="done", pct=100, message="Your learning path is ready.",
-                     result=out["result"], usage=out["usage"])
+        state.update(
+            job,
+            status="done",
+            pct=100,
+            message="Your learning path is ready.",
+            result=out["result"],
+            usage=out["usage"],
+        )
     except Exception as e:  # map every failure to a safe message
         safe = ()
         try:
-            safe = tuple(t for t in (getattr(state.load_smart(), "LLMError", None),
-                                     getattr(state.load_ingest(), "IngestError", None)) if isinstance(t, type))
+            safe = tuple(
+                t
+                for t in (
+                    getattr(state.load_smart(), "LLMError", None),
+                    getattr(state.load_ingest(), "IngestError", None),
+                )
+                if isinstance(t, type)
+            )
         except Exception:
             pass
         if safe and isinstance(e, safe):
@@ -212,8 +296,13 @@ def run_smart_job(state: State, job_id: str, goal: str, videos: list[dict], prov
             log.warning("smart job %s failed (%s): %s", job_id, type(e).__name__, msg)
         else:
             msg = GENERIC_ERROR
-            log.error("smart job %s crashed: %s: %s\n%s", job_id, type(e).__name__, redact(e, secrets),
-                      redact(traceback.format_exc(), secrets))
+            log.error(
+                "smart job %s crashed: %s: %s\n%s",
+                job_id,
+                type(e).__name__,
+                redact(e, secrets),
+                redact(traceback.format_exc(), secrets),
+            )
         state.update(job, status="error", error=msg[:600])
     finally:
         secrets.clear()

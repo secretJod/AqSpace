@@ -10,6 +10,7 @@ Exit codes: 0 ok | 1 unexpected error | 2 bad usage / missing key | 3 transcript
 How it fits: a thin wrapper around ``notes_engine.generate`` / ``render_notes`` (see ``__init__.py``)
 that adds argument parsing, a progress bar and exit codes.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,6 +67,7 @@ class _Progress:
         self.last_stage, self.last_pct = stage, pct
 
     def finish(self) -> None:
+        """End the progress line (call once, before printing the result)."""
         if self.tty and self.open_line:
             sys.stderr.write("\n")
             sys.stderr.flush()
@@ -77,19 +79,31 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="notes_engine",
         description="Turn a YouTube lecture into hand-drawn 'field notebook' study notes (PDF).",
         epilog="Keys come from the environment (GROQ_API_KEY, GEMINI_API_KEY, XAI_API_KEY, HF_TOKEN) "
-               "or a .env file; --api-key works too but may be saved in your shell history.",
+        "or a .env file; --api-key works too but may be saved in your shell history.",
     )
     p.add_argument("url", nargs="?", help="YouTube video link (watch, youtu.be, shorts, embed ...)")
-    p.add_argument("--provider", "-p", default="groq", choices=sorted([*ENV_KEYS, "local"]),
-                   help="AI provider (default: groq; 'local' = llama-server at LNAI_LOCAL_URL, no key)")
+    p.add_argument(
+        "--provider",
+        "-p",
+        default="groq",
+        choices=sorted([*ENV_KEYS, "local"]),
+        help="AI provider (default: groq; 'local' = llama-server at LNAI_LOCAL_URL, no key)",
+    )
     p.add_argument("--model", "-m", help="model name (default: the provider's default model)")
-    p.add_argument("--out", "-o", default="notes.pdf",
-                   help="output PDF path (default: notes.pdf); a folder name puts notes.pdf inside it")
+    p.add_argument(
+        "--out",
+        "-o",
+        default="notes.pdf",
+        help="output PDF path (default: notes.pdf); a folder name puts notes.pdf inside it",
+    )
     p.add_argument("--html", action="store_true", help="also save <out>.html next to the PDF")
     p.add_argument("--json", action="store_true", help="also save <out>.json (the structured notes)")
     p.add_argument("--api-key", help="API key for the provider (prefer the environment variable)")
-    p.add_argument("--groq-key", help="Groq key used to transcribe videos that have no captions "
-                                      "(default: $GROQ_API_KEY, or the main key with --provider groq)")
+    p.add_argument(
+        "--groq-key",
+        help="Groq key used to transcribe videos that have no captions "
+        "(default: $GROQ_API_KEY, or the main key with --provider groq)",
+    )
     p.add_argument("--quiet", "-q", action="store_true", help="no progress line")
     p.add_argument("--list-providers", action="store_true", help="show providers, default models and key links")
     p.add_argument("--version", action="version", version=f"lecture-notes-ai {__version__}")
@@ -109,12 +123,21 @@ def _out_paths(out: str) -> tuple[Path, str, Path]:
 def _load_dotenv() -> None:
     try:
         from dotenv import find_dotenv, load_dotenv
+
         load_dotenv(find_dotenv(usecwd=True), override=False)
     except Exception:  # python-dotenv is optional
         pass
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the command line.
+
+    Args:
+        argv: arguments without the program name (default: ``sys.argv[1:]``).
+
+    Returns:
+        The process exit code (see the table at the top of this file).
+    """
     for stream in (sys.stdout, sys.stderr):  # never crash on an odd console encoding
         try:
             stream.reconfigure(errors="replace")
@@ -139,10 +162,15 @@ def main(argv: list[str] | None = None) -> int:
     env_name = ENV_KEYS.get(args.provider, "-")
     key = (args.api_key or os.environ.get(env_name) or "").strip() if args.provider in ENV_KEYS else "local"
     groq_key = (args.groq_key or "").strip() or None
-    _secrets.extend(k for k in (key if args.provider in ENV_KEYS else None, groq_key, os.environ.get("GROQ_API_KEY")) if k)
+    _secrets.extend(
+        k for k in (key if args.provider in ENV_KEYS else None, groq_key, os.environ.get("GROQ_API_KEY")) if k
+    )
     if not key:
-        _say(f"error: no API key for '{args.provider}'. Set {env_name} (or put it in a .env file), "
-             "or pass --api-key. Free keys: run with --list-providers.", sys.stderr)
+        _say(
+            f"error: no API key for '{args.provider}'. Set {env_name} (or put it in a .env file), "
+            "or pass --api-key. Free keys: run with --list-providers.",
+            sys.stderr,
+        )
         return EXIT_USAGE
     try:
         out_dir, basename, pdf_path = _out_paths(args.out)
@@ -153,9 +181,19 @@ def main(argv: list[str] | None = None) -> int:
 
     progress = _Progress(enabled=not args.quiet)
     try:
-        result = generate(args.url, args.provider, key, args.model, groq_key, out_dir, progress,
-                          basename=basename, pdf_path=pdf_path,
-                          write_html=args.html, write_json=args.json)
+        result = generate(
+            args.url,
+            args.provider,
+            key,
+            args.model,
+            groq_key,
+            out_dir,
+            progress,
+            basename=basename,
+            pdf_path=pdf_path,
+            write_html=args.html,
+            write_json=args.json,
+        )
     except KeyboardInterrupt:
         progress.finish()
         _say("interrupted", sys.stderr)
@@ -185,9 +223,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # notes exist but no PDF: keep the work by saving the JSON and HTML preview
     from . import render_notes
+
     saved = render_notes(result["notes"], out_dir, basename, pdf=False)
-    _say(f"warning: notes were written but the PDF could not be drawn. {result.get('warning') or ''}".rstrip(),
-         sys.stderr)
+    _say(
+        f"warning: notes were written but the PDF could not be drawn. {result.get('warning') or ''}".rstrip(),
+        sys.stderr,
+    )
     _say(f"  saved: {saved['html_path']}  {saved['json_path']}", sys.stderr)
     return EXIT_NO_PDF
 

@@ -2,7 +2,7 @@
 
 1. Public exceptions   - ``IngestError`` (any failure) and ``PlaylistError`` (with an HTTP status).
 2. Video messages      - one friendly text per failure kind, plus how to pick the "best" one.
-3. Internal signal     - ``StageFailure`` (old name ``_Fail``): one fetch stage failed, and why.
+3. Internal signal     - ``StageFailure``: one fetch stage failed, and why.
 4. yt-dlp error text   - ``ytdlp_error_kind()`` maps raw yt-dlp messages to a failure kind.
 5. Playlist messages.
 
@@ -10,6 +10,7 @@ Every message here is safe to show to a user: no keys, no raw library errors.
 
 Read next: ``youtube_urls.py``.
 """
+
 from __future__ import annotations
 
 # --------------------------------------------------------------------------- #
@@ -38,8 +39,7 @@ MSG_INVALID = (
     "https://www.youtube.com/watch?v=XXXXXXXXXXX or https://youtu.be/XXXXXXXXXXX."
 )
 MSG_CHANNEL = (
-    "That is a YouTube channel link, not a video. Open one of the channel's "
-    "videos and paste that video's link instead."
+    "That is a YouTube channel link, not a video. Open one of the channel's videos and paste that video's link instead."
 )
 MSG_PLAYLIST = (
     "That is a YouTube playlist link without a specific video. Open a video "
@@ -70,13 +70,9 @@ MSG_NO_CAPTIONS = (
     "'pip install -e .[whisper]' in lecture-notes-ai, add a Groq key in the "
     "settings, or choose a video that has captions."
 )
-MSG_NO_CAPTIONS_WHISPER_FAILED = (
-    "This video has no usable captions, and the speech-to-text fallback "
-    "failed: {why}"
-)
+MSG_NO_CAPTIONS_WHISPER_FAILED = "This video has no usable captions, and the speech-to-text fallback failed: {why}"
 MSG_LIVE = (
-    "This video is a live stream or premiere that hasn't finished yet. Try "
-    "again once the recording is available."
+    "This video is a live stream or premiere that hasn't finished yet. Try again once the recording is available."
 )
 
 # When every stage fails we show the message of the most "important" failure (higher wins).
@@ -117,14 +113,24 @@ class StageFailure(Exception):
 def ytdlp_error_kind(msg: str) -> str:
     """Map a raw yt-dlp error message to a failure kind ("age", "unavailable", "live", "blocked", "other")."""
     m = (msg or "").lower()
-    if "age" in m and ("confirm your age" in m or "age-restricted" in m or "age restricted" in m
-                       or "inappropriate for some users" in m):
+    if "age" in m and (
+        "confirm your age" in m or "age-restricted" in m or "age restricted" in m or "inappropriate for some users" in m
+    ):
         return "age"
-    if "private video" in m or "video unavailable" in m or "has been removed" in m \
-            or "this video is not available" in m or "members-only" in m or "members only" in m \
-            or "join this channel" in m or "terminated" in m or "does not exist" in m \
-            or "no longer available" in m or "blocked it in your country" in m \
-            or "not made this video available" in m:
+    if (
+        "private video" in m
+        or "video unavailable" in m
+        or "has been removed" in m
+        or "this video is not available" in m
+        or "members-only" in m
+        or "members only" in m
+        or "join this channel" in m
+        or "terminated" in m
+        or "does not exist" in m
+        or "no longer available" in m
+        or "blocked it in your country" in m
+        or "not made this video available" in m
+    ):
         return "unavailable"
     if "live event will begin" in m or "premieres in" in m or "is live" in m:
         return "live"
@@ -150,9 +156,7 @@ MSG_PLAYLIST_PRIVATE = (
     "This playlist is private (or needs a signed-in account), so it can't be imported. "
     "Ask the owner to set it to Unlisted or Public, then try again."
 )
-MSG_PLAYLIST_NOT_FOUND = (
-    "YouTube couldn't find that playlist. It may be private or deleted, or the link may be wrong."
-)
+MSG_PLAYLIST_NOT_FOUND = "YouTube couldn't find that playlist. It may be private or deleted, or the link may be wrong."
 MSG_PLAYLIST_BLOCKED = (
     "YouTube is rate-limiting requests from this computer or network right now. "
     "Wait a few minutes and try again, or switch network / disable the VPN."

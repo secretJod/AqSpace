@@ -1,37 +1,30 @@
-"""Compatibility module: the notebook renderer now lives in ``notes_engine/render/``.
+"""The renderer's front door: ``render_html``, ``render_pdf`` and ``PdfError``.
 
 What this file does
-    Re-exports the renderer under the old import path, so existing code
-    (``from notes_engine import pdf``; ``pdf.render_html(...)``, ``pdf.render_pdf(...)``,
-    ``pdf.PdfError``) and the tests keep working unchanged.
+    The job runner (``backend/app/jobs.py``), ``notes_engine.generate`` and the tests import the
+    renderer as ``from notes_engine import pdf``. The code itself lives in ``notes_engine/render/``.
 
     ``render_html`` / ``render_pdf`` here are tiny wrappers that look up ``_rough_js`` in THIS
-    module each time they run. That keeps the old test hook working:
-    ``monkeypatch.setattr(pdf, "_rough_js", lambda: "")`` renders without Rough.js.
+    module each time they run, so a test can render without Rough.js:
+    ``monkeypatch.setattr(pdf, "_rough_js", lambda: "")``.
 
 Read next
     ``notes_engine/render/__init__.py`` - it lists the renderer's files in reading order.
 """
+
 from __future__ import annotations
 
 from .render import PdfError, build_diagram_svg  # noqa: F401
 from .render import page_layout as _page_layout
 from .render import pdf_export as _pdf_export
+from .render.cover import COVER_TOC_MAX  # noqa: F401
 
-# Older private names that tests and scripts still use (kept as aliases)
+# Short names the tests use for renderer internals
 from .render.diagrams import clean_diagram as _clean_diagram  # noqa: F401
 from .render.diagrams import mindmap_tree as _mindmap_tree  # noqa: F401
 from .render.page_layout import rough_js_source as _rough_js
-from .render.pdf_export import check_page_numbers as _pdf_ok  # noqa: F401
 from .render.pdf_export import find_browser as _find_browser  # noqa: F401
 from .render.pdf_export import render_budgets as _render_budgets  # noqa: F401
-from .render.cover import COVER_TOC_MAX  # noqa: F401
-
-
-def _contents_unit(notes: dict) -> str:
-    """Old private name: the long-notes contents unit ("" for short notes)."""
-    from .render.sections import contents_unit
-    return contents_unit(notes, COVER_TOC_MAX)
 
 __all__ = ["render_html", "render_pdf", "PdfError"]
 
@@ -44,8 +37,3 @@ def render_html(notes: dict, *, for_print: bool = False) -> str:
 def render_pdf(notes: dict, out_path: str) -> str:
     """Render ``notes`` to an A4 PDF at ``out_path`` (returns the path)."""
     return _pdf_export.render_pdf(notes, out_path, rough_source=_rough_js())
-
-
-def _build(notes: dict, for_print: bool) -> str:
-    """Old internal name for building the HTML document."""
-    return _page_layout.build_document(notes, for_print, _rough_js())

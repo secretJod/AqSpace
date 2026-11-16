@@ -1,4 +1,5 @@
 """Disk cache: unit behaviour, and its use for transcripts, digests and composed sections."""
+
 from __future__ import annotations
 
 import json
@@ -163,7 +164,7 @@ def _client(monkeypatch, replies):
     client = llm._Client("groq", SECRET, "openai/gpt-oss-120b")
     seen: list[tuple] = []
 
-    def complete(system, user, max_tokens, temperature=0.3, think=False):  # AQspace R5: complete() takes think
+    def complete(system, user, max_tokens, temperature=0.3, think=False):  # complete() also takes think
         seen.append((system, user))
         r = replies[min(len(seen) - 1, len(replies) - 1)]
         return (r if isinstance(r, str) else json.dumps(r)), False
@@ -236,7 +237,7 @@ def test_short_compose_answer_is_not_cached(cdir, monkeypatch):
     assert not list(cdir.rglob("compose/*.json"))
 
 
-# ------------------------------------------- F4 (#60): cache under checkpoints ---
+# ------------------------------------------------- cache under checkpoints ---
 def test_cache_key_carries_profile_hash_and_prompt_version(cdir, monkeypatch):
     client, seen = _client(monkeypatch, [DIGEST])
     chunks = [{"text": "[00:10] a cache stores recent results", "start": 10}]

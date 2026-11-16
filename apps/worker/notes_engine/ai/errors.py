@@ -6,6 +6,7 @@ pipeline in ``notes_engine/llm.py`` to decide what to try next.
 
 Read next: ``providers.py``.
 """
+
 from __future__ import annotations
 
 from typing import Any

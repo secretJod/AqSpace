@@ -24,21 +24,23 @@ How it fits: reuses ``llm._Client`` (HTTP, retries, JSON repair) and ``ingest.ge
 
 Read next: ``verify()`` (the plain-code checks) and then ``analyze()`` at the bottom.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import re
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable
 
 from . import ingest
-from .llm import PROVIDERS, LLMError, _BadJSON, _Client, _clean_key, _OutputTruncated
+from .ai.key_safety import clean_api_key
+from .llm import PROVIDERS, LLMError, _BadJSON, _Client, _OutputTruncated
 
 Progress = Callable[[str, int, str], None]
 
-WINDOW_CHARS = 1200      # how much transcript Agent 1 sees per video: start, middle and end windows
+WINDOW_CHARS = 1200  # how much transcript Agent 1 sees per video: start, middle and end windows
 MAX_AREAS = 15
 MAX_SUGGESTIONS = 6
 CANDIDATES_PER_TOPIC = 2
@@ -135,7 +137,7 @@ def _excerpt(segments: list[dict]) -> str:
     if len(text) <= WINDOW_CHARS * 3:
         return text
     mid = len(text) // 2 - WINDOW_CHARS // 2
-    return " ... ".join([text[:WINDOW_CHARS], text[mid:mid + WINDOW_CHARS], text[-WINDOW_CHARS:]])
+    return " ... ".join([text[:WINDOW_CHARS], text[mid : mid + WINDOW_CHARS], text[-WINDOW_CHARS:]])
 
 
 def _norm(s: str) -> str:
@@ -166,16 +168,23 @@ def _clean_videos(videos: list[dict]) -> list[dict]:
             continue
         seen.add(vid)
         d = v.get("duration_sec")
-        out.append({"id": vid, "title": _s(v.get("title"), 200) or f"YouTube video {vid}", "channel": _s(v.get("channel"), 120),
-                    "duration_sec": int(d) if isinstance(d, (int, float)) and not isinstance(d, bool) and d > 0 else 0})
+        out.append(
+            {
+                "id": vid,
+                "title": _s(v.get("title"), 200) or f"YouTube video {vid}",
+                "channel": _s(v.get("channel"), 120),
+                "duration_sec": int(d) if isinstance(d, (int, float)) and not isinstance(d, bool) and d > 0 else 0,
+            }
+        )
     return out
 
 
 # ---------------------------------------------------------------------------
 # 3. Transcripts
 # ---------------------------------------------------------------------------
-def _fetch_excerpts(videos: list[dict], progress: Progress | None, *, groq_key: str | None = None,
-                    work_dir: str | None = None) -> None:
+def _fetch_excerpts(
+    videos: list[dict], progress: Progress | None, *, groq_key: str | None = None, work_dir: str | None = None
+) -> None:
     """Adds `excerpt` to every video ("" when no transcript could be fetched).
 
     The one transcript path is ``ingest.get_transcript``: its 30-day disk cache, the captions API / yt-dlp fallbacks
@@ -185,13 +194,16 @@ def _fetch_excerpts(videos: list[dict], progress: Progress | None, *, groq_key: 
     def one(v: dict) -> None:
         nonlocal done
         try:
-            t = ingest.get_transcript(f"https://www.youtube.com/watch?v={v['id']}", groq_key=groq_key,
-                                      work_dir=work_dir)
+            t = ingest.get_transcript(
+                f"https://www.youtube.com/watch?v={v['id']}", groq_key=groq_key, work_dir=work_dir
+            )
             v["excerpt"] = _excerpt(t["segments"])
         except Exception:  # noqa: BLE001 - IngestError or anything odd: this video is analysed from its title
             v["excerpt"] = ""
         done += 1
-        _report(progress, "transcripts", 2 + int(23 * done / len(videos)), f"Reading transcripts ({done}/{len(videos)})...")
+        _report(
+            progress, "transcripts", 2 + int(23 * done / len(videos)), f"Reading transcripts ({done}/{len(videos)})..."
+        )
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(one, videos))
@@ -202,17 +214,25 @@ def _fetch_excerpts(videos: list[dict], progress: Progress | None, *, groq_key: 
 # ---------------------------------------------------------------------------
 def _video_block(v: dict) -> str:
     excerpt = v["excerpt"] or "(transcript unavailable - judge from the title only, topics must be empty)"
-    return (f'--- video_id: {v["id"]}\ntitle: {v["title"]}\nchannel: {v["channel"]}\n'
-            f'length: {_fmt_dur(v["duration_sec"])}\nexcerpt: {excerpt}')
+    return (
+        f"--- video_id: {v['id']}\ntitle: {v['title']}\nchannel: {v['channel']}\n"
+        f"length: {_fmt_dur(v['duration_sec'])}\nexcerpt: {excerpt}"
+    )
 
 
 def _compact_profiles(inputs: dict, profiles: dict) -> str:
     rows = []
     for v in inputs["videos"]:
         p = profiles.get(v["id"], {})
-        row = {"video_id": v["id"], "title": v["title"], "length": _fmt_dur(v["duration_sec"]),
-               "level": p.get("level", "?"), "summary": p.get("summary", ""),
-               "topics": [t["name"] for t in p.get("topics", [])], "prerequisites": p.get("prerequisites", [])}
+        row = {
+            "video_id": v["id"],
+            "title": v["title"],
+            "length": _fmt_dur(v["duration_sec"]),
+            "level": p.get("level", "?"),
+            "summary": p.get("summary", ""),
+            "topics": [t["name"] for t in p.get("topics", [])],
+            "prerequisites": p.get("prerequisites", []),
+        }
         if not v["excerpt"]:
             row["note"] = "no transcript, only the title is known"
         rows.append(row)
@@ -225,8 +245,8 @@ def _ask_profiles(client: _Client, goal: str, vids: list[dict]) -> list[dict]:
         out = client.ask_json(msgs, max_tokens=1000 * len(vids) + 1200, temperature=0.1)
     except (_OutputTruncated, _BadJSON):
         if len(vids) == 1:
-            return []                          # this video gets an empty profile; verify() says so
-        mid = len(vids) // 2                   # too much for one reply: half the videos per call
+            return []  # this video gets an empty profile; verify() says so
+        mid = len(vids) // 2  # too much for one reply: half the videos per call
         return _ask_profiles(client, goal, vids[:mid]) + _ask_profiles(client, goal, vids[mid:])
     return _rows(out.get("profiles") if isinstance(out, dict) else out)
 
@@ -242,11 +262,19 @@ def _grounded_profiles(inputs: dict, agent1: dict) -> tuple[dict, dict]:
         topics = []
         for t in p.get("topics") or []:
             total += 1
-            if isinstance(t, dict) and _s(t.get("name"), 80) and _is_grounded(t.get("evidence", ""), by_id[vid]["excerpt"]):
+            if (
+                isinstance(t, dict)
+                and _s(t.get("name"), 80)
+                and _is_grounded(t.get("evidence", ""), by_id[vid]["excerpt"])
+            ):
                 topics.append({"name": _s(t.get("name"), 80), "evidence": str(t["evidence"])})
                 kept += 1
-        out[vid] = {"level": p.get("level") if p.get("level") in LEVELS else "?", "summary": _s(p.get("summary")),
-                    "topics": topics, "prerequisites": [_s(x, 80) for x in (p.get("prerequisites") or [])][:3]}
+        out[vid] = {
+            "level": p.get("level") if p.get("level") in LEVELS else "?",
+            "summary": _s(p.get("summary")),
+            "topics": topics,
+            "prerequisites": [_s(x, 80) for x in (p.get("prerequisites") or [])][:3],
+        }
     return out, {"topics_claimed": total, "topics_grounded": kept}
 
 
@@ -264,21 +292,28 @@ def verify(inputs: dict, a1: dict, a2: dict, a3: dict) -> dict:
 
     blind = [v["title"] for v in inputs["videos"] if not v["excerpt"]]
     if blind:
-        checks.append(f"No transcript could be fetched for {len(blind)} video(s) ({'; '.join(t[:50] for t in blind[:5])}); "
-                      "they were judged from the title and channel only.")
+        checks.append(
+            f"No transcript could be fetched for {len(blind)} video(s) ({'; '.join(t[:50] for t in blind[:5])}); "
+            "they were judged from the title and channel only."
+        )
 
     profiles, stats = _grounded_profiles(inputs, a1)
     dropped = stats["topics_claimed"] - stats["topics_grounded"]
-    checks.append(f"Agent 1: {stats['topics_grounded']} of {stats['topics_claimed']} claimed topics were backed by a quote "
-                  f"found in the transcript" + (f"; {dropped} unsupported topic(s) removed." if dropped else "."))
+    checks.append(
+        f"Agent 1: {stats['topics_grounded']} of {stats['topics_claimed']} claimed topics were backed by a quote "
+        f"found in the transcript" + (f"; {dropped} unsupported topic(s) removed." if dropped else ".")
+    )
     noprofile = [v for v in ids if v not in profiles]
     if noprofile:
         checks.append(f"Agent 1 returned no profile for {len(noprofile)} video(s); they are shown without topics.")
     video_topics = {}
     for v in ids:
         p = profiles.get(v, {})
-        video_topics[v] = {"level": p.get("level") if p.get("level") in LEVELS else "intermediate",
-                           "summary": p.get("summary", ""), "topics": [t["name"] for t in p.get("topics", [])]}
+        video_topics[v] = {
+            "level": p.get("level") if p.get("level") in LEVELS else "intermediate",
+            "summary": p.get("summary", ""),
+            "topics": [t["name"] for t in p.get("topics", [])],
+        }
 
     order, seen = [], set()
     for row in _rows(a2.get("order")):
@@ -295,7 +330,10 @@ def verify(inputs: dict, a1: dict, a2: dict, a3: dict) -> dict:
     lost = [v for v in ids if v not in seen]
     for vid in lost:
         order.append({"video_id": vid, "reason": "Not placed by the Sequencer, kept at the end."})
-    checks.append("Agent 2: every video appears exactly once" + (f"; {len(lost)} missing video(s) re-added at the end." if lost else "."))
+    checks.append(
+        "Agent 2: every video appears exactly once"
+        + (f"; {len(lost)} missing video(s) re-added at the end." if lost else ".")
+    )
 
     areas, downgraded = [], 0
     for a in _rows(a3.get("areas"))[:MAX_AREAS]:
@@ -311,10 +349,19 @@ def verify(inputs: dict, a1: dict, a2: dict, a3: dict) -> dict:
             status, downgraded = "missing", downgraded + 1
         if status == "missing":
             cited = []
-        areas.append({"area": name, "why": _s(a.get("why")), "status": status, "covered_by": cited,
-                      "priority": a.get("priority") if a.get("priority") in ("high", "medium", "low") else "medium"})
-    checks.append("Agent 3: every 'covered' claim cites a real video from the playlist"
-                  + (f"; {downgraded} claim(s) without a valid citation were changed to 'missing'." if downgraded else "."))
+        areas.append(
+            {
+                "area": name,
+                "why": _s(a.get("why")),
+                "status": status,
+                "covered_by": cited,
+                "priority": a.get("priority") if a.get("priority") in ("high", "medium", "low") else "medium",
+            }
+        )
+    checks.append(
+        "Agent 3: every 'covered' claim cites a real video from the playlist"
+        + (f"; {downgraded} claim(s) without a valid citation were changed to 'missing'." if downgraded else ".")
+    )
 
     off_goal, flagged = [], set()
     for r in _rows(a3.get("off_goal")):
@@ -325,13 +372,34 @@ def verify(inputs: dict, a1: dict, a2: dict, a3: dict) -> dict:
     for s in _rows(a3.get("suggestions"))[:MAX_SUGGESTIONS]:
         topic, q = _s(s.get("topic"), 120), _s(s.get("search_query"), 150)
         if topic and q:
-            suggestions.append({"topic": topic, "reason": _s(s.get("reason")), "kind": s.get("kind") if s.get("kind") in KINDS else "overview",
-                                "search_query": q, "candidates": []})
-    return {"goal": inputs["goal"], "path_summary": _s(a2.get("path_summary")), "order": order, "unplaced": unplaced,
-            "off_goal": off_goal, "areas": areas, "suggestions": suggestions, "video_topics": video_topics, "checks": checks,
-            "stats": {"topics_claimed": stats["topics_claimed"], "topics_grounded": stats["topics_grounded"],
-                      "videos_readded_to_order": len(lost), "areas_downgraded_to_missing": downgraded,
-                      "suggestions": len(suggestions), "candidates_found": 0}}
+            suggestions.append(
+                {
+                    "topic": topic,
+                    "reason": _s(s.get("reason")),
+                    "kind": s.get("kind") if s.get("kind") in KINDS else "overview",
+                    "search_query": q,
+                    "candidates": [],
+                }
+            )
+    return {
+        "goal": inputs["goal"],
+        "path_summary": _s(a2.get("path_summary")),
+        "order": order,
+        "unplaced": unplaced,
+        "off_goal": off_goal,
+        "areas": areas,
+        "suggestions": suggestions,
+        "video_topics": video_topics,
+        "checks": checks,
+        "stats": {
+            "topics_claimed": stats["topics_claimed"],
+            "topics_grounded": stats["topics_grounded"],
+            "videos_readded_to_order": len(lost),
+            "areas_downgraded_to_missing": downgraded,
+            "suggestions": len(suggestions),
+            "candidates_found": 0,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +409,7 @@ def _search_youtube(query: str, exclude: set[str], limit: int = CANDIDATES_PER_T
     """Real YouTube search results via yt-dlp (no API key). Skips videos already in the playlist and very short/long ones."""
     try:
         import yt_dlp
+
         opts = dict(ingest._YTDLP_COMMON, skip_download=True, extract_flat=True, noplaylist=False)
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"ytsearch8:{query}", download=False)
@@ -353,8 +422,15 @@ def _search_youtube(query: str, exclude: set[str], limit: int = CANDIDATES_PER_T
             continue
         if not isinstance(d, (int, float)) or isinstance(d, bool) or not MIN_CANDIDATE_SEC <= d <= MAX_CANDIDATE_SEC:
             continue
-        found.append({"id": vid, "title": ingest._plain(e.get("title"), 200), "channel": ingest._plain(e.get("channel") or e.get("uploader"), 120),
-                      "duration_sec": int(d), "url": f"https://www.youtube.com/watch?v={vid}"})
+        found.append(
+            {
+                "id": vid,
+                "title": ingest._plain(e.get("title"), 200),
+                "channel": ingest._plain(e.get("channel") or e.get("uploader"), 120),
+                "duration_sec": int(d),
+                "url": f"https://www.youtube.com/watch?v={vid}",
+            }
+        )
         if len(found) >= limit:
             break
     return found
@@ -365,13 +441,15 @@ def _add_candidates(result: dict, known: set[str]) -> None:
     with ThreadPoolExecutor(max_workers=3) as pool:
         hits = list(pool.map(lambda s: _search_youtube(s["search_query"], known), sugg))
     used = set(known)
-    for s, cands in zip(sugg, hits):         # one video is offered for one topic only
+    for s, cands in zip(sugg, hits, strict=True):  # one video is offered for one topic only
         s["candidates"] = [c for c in cands if c["id"] not in used]
         used.update(c["id"] for c in s["candidates"])
     n_real = sum(len(s["candidates"]) for s in sugg)
     result["stats"]["candidates_found"] = n_real
-    result["checks"].append(f"Suggestions: {n_real} real YouTube candidates found for {len(sugg)} suggested topics "
-                            "(candidates are search results, not yet vetted against the transcript).")
+    result["checks"].append(
+        f"Suggestions: {n_real} real YouTube candidates found for {len(sugg)} suggested topics "
+        "(candidates are search results, not yet vetted against the transcript)."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -393,14 +471,24 @@ class _Meter:
             u, g = data.get("usage") or {}, data.get("usageMetadata") or {}
             self.tokens += int(u.get("total_tokens") or g.get("totalTokenCount") or 0)
             return data
+
         client._post = metered_post
 
 
 # ---------------------------------------------------------------------------
 # 8. Public API
 # ---------------------------------------------------------------------------
-def analyze(goal: str, videos: list[dict], provider: str, api_key: str, model: str | None = None,
-            progress: Progress | None = None, *, groq_key: str | None = None, work_dir: str | None = None) -> dict:
+def analyze(
+    goal: str,
+    videos: list[dict],
+    provider: str,
+    api_key: str,
+    model: str | None = None,
+    progress: Progress | None = None,
+    *,
+    groq_key: str | None = None,
+    work_dir: str | None = None,
+) -> dict:
     """Playlist goal + videos [{id,title,channel,duration_sec}] -> {"result": Result, "usage": Usage}.
 
     Raises LLMError (user-safe message) on failure. Usage `wall_seconds` is the whole run, `api_seconds` the time spent
@@ -410,7 +498,7 @@ def analyze(goal: str, videos: list[dict], provider: str, api_key: str, model: s
     """
     if provider not in PROVIDERS:
         raise LLMError(f"Unknown provider '{_s(provider, 40)}'. Choose one of: {', '.join(PROVIDERS)}.")
-    key = _clean_key(api_key)
+    key = clean_api_key(api_key)
     model = (model or "").strip() or PROVIDERS[provider]["default_model"]
     if provider == "gemini":
         model = model.removeprefix("models/")
@@ -426,24 +514,33 @@ def analyze(goal: str, videos: list[dict], provider: str, api_key: str, model: s
     meter = _Meter(client)
     try:
         _report(progress, "transcripts", 2, "Reading transcripts...")
-        stt_key = (groq_key or os.environ.get("GROQ_API_KEY") or (key if provider == "groq" else "") or "").strip() or None
+        stt_key = (
+            groq_key or os.environ.get("GROQ_API_KEY") or (key if provider == "groq" else "") or ""
+        ).strip() or None
         _fetch_excerpts(videos, progress, groq_key=stt_key, work_dir=work_dir)
         inputs = {"goal": goal, "videos": videos}
 
-        batch = 2 if provider == "groq" else 4         # Groq free tier: ~8k tokens per minute, keep calls small
+        batch = 2 if provider == "groq" else 4  # Groq free tier: ~8k tokens per minute, keep calls small
         profiles: list[dict] = []
         for i in range(0, len(videos), batch):
-            _report(progress, "profiling", 25 + int(30 * i / len(videos)),
-                    f"Understanding what each video teaches ({min(i + batch, len(videos))}/{len(videos)})...")
-            profiles += _ask_profiles(client, goal, videos[i:i + batch])
+            _report(
+                progress,
+                "profiling",
+                25 + int(30 * i / len(videos)),
+                f"Understanding what each video teaches ({min(i + batch, len(videos))}/{len(videos)})...",
+            )
+            profiles += _ask_profiles(client, goal, videos[i : i + batch])
         a1 = {"profiles": profiles}
         grounded, _stats = _grounded_profiles(inputs, a1)
         compact = _compact_profiles(inputs, grounded)
 
         n = len(videos)
         _report(progress, "ordering", 56, "Finding the best watch order...")
-        a2 = client.ask_json((SYS_2, USER_2.format(goal=goal, profiles=compact)),
-                             max_tokens=3500 if provider == "groq" else 2500 + 150 * n, temperature=0.1)
+        a2 = client.ask_json(
+            (SYS_2, USER_2.format(goal=goal, profiles=compact)),
+            max_tokens=3500 if provider == "groq" else 2500 + 150 * n,
+            temperature=0.1,
+        )
         _report(progress, "gaps", 70, "Looking for gaps against your goal...")
         a3 = client.ask_json((SYS_3, USER_3.format(goal=goal, profiles=compact)), max_tokens=3500, temperature=0.1)
 
@@ -457,6 +554,11 @@ def analyze(goal: str, videos: list[dict], provider: str, api_key: str, model: s
         raise LLMError(f"Unexpected error while analysing the playlist ({type(e).__name__}). Please retry.") from None
 
     wall = time.time() - t0
-    usage = {"calls": meter.calls, "total_tokens": meter.tokens, "wall_seconds": round(wall, 1),
-             "api_seconds": round(meter.api_seconds, 1), "waiting_seconds": round(max(0.0, wall - meter.api_seconds), 1)}
+    usage = {
+        "calls": meter.calls,
+        "total_tokens": meter.tokens,
+        "wall_seconds": round(wall, 1),
+        "api_seconds": round(meter.api_seconds, 1),
+        "waiting_seconds": round(max(0.0, wall - meter.api_seconds), 1),
+    }
     return {"result": result, "usage": usage}

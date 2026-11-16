@@ -11,6 +11,7 @@ If both fail, ``llm._Client.ask_json`` asks the model once to fix its own JSON.
 
 Read next: ``sections.py``.
 """
+
 from __future__ import annotations
 
 import json
@@ -64,7 +65,7 @@ def outermost_json(text: str) -> str | None:
             if stack and stack[-1] == c:
                 stack.pop()
                 if not stack:
-                    return text[start:i + 1]
+                    return text[start : i + 1]
             else:
                 return None  # mismatched bracket: give up
     return None

@@ -3,9 +3,10 @@
 Run:   python -m pytest tests/test_ingest.py -q
 Live:  LNA_LIVE=1 python -m pytest tests/test_ingest.py -q -k live
 """
+
 import json
 import os
-import sys
+import re
 from types import SimpleNamespace
 from unittest import mock
 
@@ -252,10 +253,7 @@ def test_parse_vtt():
 
 
 def _transcript(n=400, step=10.0, words=14):
-    segs = [
-        {"start": i * step, "text": " ".join(f"w{i}x{j}" for j in range(words)) + "."}
-        for i in range(n)
-    ]
+    segs = [{"start": i * step, "text": " ".join(f"w{i}x{j}" for j in range(words)) + "."} for i in range(n)]
     return {"segments": segs, "duration_sec": int(n * step)}
 
 
@@ -278,7 +276,7 @@ def test_chunk_basic_markers_and_limits():
 def test_chunk_markers_every_30s_and_format():
     t = _transcript(n=30, step=10.0)
     c = chunk_transcript(t, max_chars=100000)[0]
-    markers = ingest.re.findall(r"\[(\d+:\d{2}(?::\d{2})?)\]", c["text"])
+    markers = re.findall(r"\[(\d+:\d{2}(?::\d{2})?)\]", c["text"])
     assert markers[:4] == ["00:00", "00:30", "01:00", "01:30"]
     assert len(markers) == 10  # one per 30 s over 300 s
 
@@ -339,8 +337,10 @@ OK_RESULT = ([{"start": 0.0, "text": "hello world"}], "en", "captions", 30.0)
 def patched():
     """Patch metadata + all stages; returns call-order list."""
     order = []
-    with mock.patch.object(ingest, "_get_metadata", return_value=("T", "C", None)), \
-         mock.patch.object(ingest, "_local_whisper_available", return_value=False):
+    with (
+        mock.patch.object(ingest, "_get_metadata", return_value=("T", "C", None)),
+        mock.patch.object(ingest, "_local_whisper_available", return_value=False),
+    ):
         yield order
 
 
@@ -355,9 +355,11 @@ def _stage(order, name, result=None, fail=None):
 
 
 def test_api_success_skips_other_stages(patched):
-    with mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", OK_RESULT)), \
-         mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", OK_RESULT)), \
-         mock.patch.object(ingest, "_fetch_via_whisper", _stage(patched, "whisper", OK_RESULT)):
+    with (
+        mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", OK_RESULT)),
+        mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", OK_RESULT)),
+        mock.patch.object(ingest, "_fetch_via_whisper", _stage(patched, "whisper", OK_RESULT)),
+    ):
         t = ingest.get_transcript(f"https://youtu.be/{VID}", groq_key="k")
     assert patched == ["api"]
     assert t["video_id"] == VID and t["source"] == "captions" and t["title"] == "T"
@@ -367,9 +369,11 @@ def test_api_success_skips_other_stages(patched):
 
 
 def test_falls_back_api_then_ytdlp(patched):
-    with mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("blocked"))), \
-         mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", OK_RESULT)), \
-         mock.patch.object(ingest, "_fetch_via_whisper", _stage(patched, "whisper", OK_RESULT)):
+    with (
+        mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("blocked"))),
+        mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", OK_RESULT)),
+        mock.patch.object(ingest, "_fetch_via_whisper", _stage(patched, "whisper", OK_RESULT)),
+    ):
         ingest.get_transcript(f"https://youtu.be/{VID}", groq_key="k")
     assert patched == ["api", "ytdlp"]
 
@@ -387,9 +391,11 @@ def test_falls_back_to_whisper_only_with_key(patched):
 
 
 def test_no_key_no_captions_friendly_error(patched):
-    with mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("nocaps"))), \
-         mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", fail=ingest._Fail("nocaps"))), \
-         mock.patch.object(ingest, "_fetch_via_whisper", _stage(patched, "whisper", OK_RESULT)):
+    with (
+        mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("nocaps"))),
+        mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", fail=ingest._Fail("nocaps"))),
+        mock.patch.object(ingest, "_fetch_via_whisper", _stage(patched, "whisper", OK_RESULT)),
+    ):
         with pytest.raises(IngestError) as ei:
             ingest.get_transcript(f"https://youtu.be/{VID}")
     assert patched == ["api", "ytdlp"]
@@ -397,9 +403,11 @@ def test_no_key_no_captions_friendly_error(patched):
 
 
 def test_unavailable_short_circuits(patched):
-    with mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("unavailable"))), \
-         mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", OK_RESULT)), \
-         mock.patch.object(ingest, "_fetch_via_whisper", _stage(patched, "whisper", OK_RESULT)):
+    with (
+        mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("unavailable"))),
+        mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", OK_RESULT)),
+        mock.patch.object(ingest, "_fetch_via_whisper", _stage(patched, "whisper", OK_RESULT)),
+    ):
         with pytest.raises(IngestError) as ei:
             ingest.get_transcript(f"https://youtu.be/{VID}", groq_key="k")
     assert patched == ["api"]
@@ -407,16 +415,20 @@ def test_unavailable_short_circuits(patched):
 
 
 def test_age_restricted_message(patched):
-    with mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("age"))), \
-         mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", fail=ingest._Fail("age"))):
+    with (
+        mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("age"))),
+        mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", fail=ingest._Fail("age"))),
+    ):
         with pytest.raises(IngestError) as ei:
             ingest.get_transcript(f"https://youtu.be/{VID}")
     assert "age-restricted" in str(ei.value)
 
 
 def test_blocked_message(patched):
-    with mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("blocked"))), \
-         mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", fail=ingest._Fail("other"))):
+    with (
+        mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("blocked"))),
+        mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", fail=ingest._Fail("other"))),
+    ):
         with pytest.raises(IngestError) as ei:
             ingest.get_transcript(f"https://youtu.be/{VID}")
     assert "rate-limiting" in str(ei.value) or "blocking" in str(ei.value)
@@ -424,10 +436,15 @@ def test_blocked_message(patched):
 
 def test_whisper_failure_message_has_no_key(patched):
     key = "gsk_SUPERSECRET123"
-    with mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("nocaps"))), \
-         mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", fail=ingest._Fail("nocaps"))), \
-         mock.patch.object(ingest, "_fetch_via_whisper",
-                           _stage(patched, "whisper", fail=ingest._Fail("other", "the Groq API key was rejected"))):
+    with (
+        mock.patch.object(ingest, "_fetch_via_api", _stage(patched, "api", fail=ingest._Fail("nocaps"))),
+        mock.patch.object(ingest, "_fetch_via_ytdlp", _stage(patched, "ytdlp", fail=ingest._Fail("nocaps"))),
+        mock.patch.object(
+            ingest,
+            "_fetch_via_whisper",
+            _stage(patched, "whisper", fail=ingest._Fail("other", "the Groq API key was rejected")),
+        ),
+    ):
         with pytest.raises(IngestError) as ei:
             ingest.get_transcript(f"https://youtu.be/{VID}", groq_key=key)
     assert key not in str(ei.value)
@@ -457,8 +474,10 @@ def test_progress_callback_stage_and_robustness(patched):
 
 
 def test_unexpected_exception_does_not_leak(patched):
-    with mock.patch.object(ingest, "_fetch_via_api", side_effect=RuntimeError("secret internals")), \
-         mock.patch.object(ingest, "_fetch_via_ytdlp", side_effect=KeyError("zzz")):
+    with (
+        mock.patch.object(ingest, "_fetch_via_api", side_effect=RuntimeError("secret internals")),
+        mock.patch.object(ingest, "_fetch_via_ytdlp", side_effect=KeyError("zzz")),
+    ):
         with pytest.raises(IngestError) as ei:
             ingest.get_transcript(f"https://youtu.be/{VID}")
     assert "secret internals" not in str(ei.value)
@@ -470,12 +489,6 @@ def test_unexpected_exception_does_not_leak(patched):
 
 
 def _fake_transcript(lang, generated, snippets):
-    fetched = SimpleNamespace(
-        language_code=lang,
-        is_generated=generated,
-        __iter__=None,
-    )
-
     class F(list):
         language_code = lang
         is_generated = generated
@@ -572,7 +585,7 @@ def test_ytdlp_stage_parses_json3_from_mock_http():
         status_code = 200
 
         def iter_content(self, chunk_size=1):
-            return [body[i:i + 7] for i in range(0, len(body), 7)]
+            return [body[i : i + 7] for i in range(0, len(body), 7)]
 
         def __enter__(self):
             return self
@@ -582,8 +595,10 @@ def test_ytdlp_stage_parses_json3_from_mock_http():
 
     resp = _Resp()
     cache = {}
-    with mock.patch.object(ingest, "_ytdlp_info", return_value=info), \
-         mock.patch.object(ingest.requests, "get", return_value=resp) as g:
+    with (
+        mock.patch.object(ingest, "_ytdlp_info", return_value=info),
+        mock.patch.object(ingest.requests, "get", return_value=resp) as g,
+    ):
         segs, lang, source, est = ingest._fetch_via_ytdlp(VID, cache)
     assert "json3" in g.call_args[0][0]
     assert segs == [{"start": 0.0, "text": "hi there"}] and source == "auto-captions" and est == 120.0
@@ -592,8 +607,10 @@ def test_ytdlp_stage_parses_json3_from_mock_http():
 
 def test_ytdlp_stage_rejects_foreign_subtitle_host():
     info = {"subtitles": {"en": [{"ext": "json3", "url": "http://169.254.169.254/x"}]}, "automatic_captions": {}}
-    with mock.patch.object(ingest, "_ytdlp_info", return_value=info), \
-         mock.patch.object(ingest.requests, "get", side_effect=AssertionError("must not fetch")):
+    with (
+        mock.patch.object(ingest, "_ytdlp_info", return_value=info),
+        mock.patch.object(ingest.requests, "get", side_effect=AssertionError("must not fetch")),
+    ):
         with pytest.raises(ingest._Fail):
             ingest._fetch_via_ytdlp(VID, {})
 
@@ -619,12 +636,15 @@ def test_oembed_parsing_and_status():
 
 
 def test_metadata_falls_back_to_ytdlp():
-    with mock.patch.object(ingest, "_oembed", side_effect=ingest._Fail("other")), \
-         mock.patch.object(ingest, "_ytdlp_info",
-                           return_value={"title": "Lec 1", "channel": "MIT", "duration": 3600}):
+    with (
+        mock.patch.object(ingest, "_oembed", side_effect=ingest._Fail("other")),
+        mock.patch.object(ingest, "_ytdlp_info", return_value={"title": "Lec 1", "channel": "MIT", "duration": 3600}),
+    ):
         assert ingest._get_metadata(VID, {}) == ("Lec 1", "MIT", 3600)
-    with mock.patch.object(ingest, "_oembed", side_effect=ingest._Fail("other")), \
-         mock.patch.object(ingest, "_ytdlp_info", side_effect=ingest._Fail("other")):
+    with (
+        mock.patch.object(ingest, "_oembed", side_effect=ingest._Fail("other")),
+        mock.patch.object(ingest, "_ytdlp_info", side_effect=ingest._Fail("other")),
+    ):
         title, channel, dur = ingest._get_metadata(VID, {})
         assert VID in title and channel and dur is None
 
@@ -639,7 +659,8 @@ def test_groq_chunk_handles_errors_without_leaking_key(tmp_path):
             ingest._groq_transcribe_chunk(str(f), key)
     assert key not in str(ei.value) and key not in ei.value.detail
     good = SimpleNamespace(
-        status_code=200, headers={},
+        status_code=200,
+        headers={},
         json=lambda: {"language": "hindi", "segments": [{"start": 0, "end": 1, "text": "namaste"}]},
     )
     with mock.patch.object(ingest.requests, "post", return_value=good) as p:
@@ -655,7 +676,7 @@ def test_groq_chunk_handles_errors_without_leaking_key(tmp_path):
 
 LIVE_VIDEOS = [
     "https://www.youtube.com/watch?v=aircAruvnKk",  # 3Blue1Brown - neural networks (manual captions)
-    "https://youtu.be/rfscVS0vtbw",                  # freeCodeCamp - Python course
+    "https://youtu.be/rfscVS0vtbw",  # freeCodeCamp - Python course
 ]
 
 

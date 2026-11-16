@@ -12,6 +12,7 @@ How it fits
     Called by the worker (backend/app/server.py) and the CLI (notes_engine/__main__.py)
     through ``notes_engine.pdf.render_pdf``.
 """
+
 from __future__ import annotations
 
 import os
@@ -41,7 +42,15 @@ KNOWN_BROWSER_PATHS = [
     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ]
-BROWSER_COMMAND_NAMES = ("msedge", "microsoft-edge", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")
+BROWSER_COMMAND_NAMES = (
+    "msedge",
+    "microsoft-edge",
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+    "chrome",
+)
 
 
 def find_browser() -> str:
@@ -66,6 +75,7 @@ def check_page_numbers(path: str) -> tuple[bool, int, int]:
     """(consistent, pages, declared_total). Consistent == every page carries 'pg. N / M' with M == pages."""
     try:
         import pymupdf  # type: ignore
+
         doc = pymupdf.open(path)
     except Exception:
         return False, 0, 0
@@ -104,10 +114,24 @@ def render_budgets(n_sections: int) -> tuple[tuple[int, int], int]:
 
 def _browser_command(exe: str, profile_dir: str, budget_ms: int, pdf_path: str, html_uri: str) -> list[str]:
     """Command line for one headless print run (fresh profile, no extensions, no header/footer)."""
-    return [exe, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", "--no-first-run", "--no-default-browser-check",
-            "--disable-extensions", "--disable-background-networking", "--hide-scrollbars", "--force-color-profile=srgb",
-            "--disable-dev-shm-usage", "--js-flags=--max-old-space-size=4096",
-            "--user-data-dir=" + profile_dir, "--virtual-time-budget=%d" % budget_ms, "--print-to-pdf=" + pdf_path, html_uri]
+    return [
+        exe,
+        "--headless=new",
+        "--disable-gpu",
+        "--no-pdf-header-footer",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--hide-scrollbars",
+        "--force-color-profile=srgb",
+        "--disable-dev-shm-usage",
+        "--js-flags=--max-old-space-size=4096",
+        "--user-data-dir=" + profile_dir,
+        "--virtual-time-budget=%d" % budget_ms,
+        "--print-to-pdf=" + pdf_path,
+        html_uri,
+    ]
 
 
 def render_pdf(notes: dict, out_path: str, *, rough_source: str | None = None) -> str:

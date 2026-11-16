@@ -6,6 +6,7 @@ turns server text into a user-visible message goes through ``scrub_secrets()``.
 
 Read next: ``responses.py``.
 """
+
 from __future__ import annotations
 
 import re
@@ -17,7 +18,8 @@ from .errors import LLMError
 # and any "Bearer <token>" header that a server might echo back).
 KEY_PATTERNS = re.compile(
     r"(AIza[0-9A-Za-z_\-]{20,}|gsk_[A-Za-z0-9]{20,}|xai-[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}"
-    r"|sk-[A-Za-z0-9_\-]{20,}|Bearer\s+[A-Za-z0-9._\-]{12,})")
+    r"|sk-[A-Za-z0-9_\-]{20,}|Bearer\s+[A-Za-z0-9._\-]{12,})"
+)
 
 
 def scrub_secrets(text: Any, key: str | None, limit: int = 300) -> str:
@@ -40,7 +42,10 @@ def clean_api_key(api_key: str | None) -> str:
     if key.lower().startswith("bearer "):
         key = key[7:].strip()
     if not key:
-        raise LLMError("No API key was provided. Paste your key in the app or set it in the environment (e.g. GROQ_API_KEY) or backend/.env.")
+        raise LLMError(
+            "No API key was provided. Paste your key in the app or set "
+            "it in the environment (e.g. GROQ_API_KEY) or backend/.env."
+        )
     if not key.isascii() or re.search(r"\s", key):
         raise LLMError("The API key contains spaces or unusual characters. Re-copy it without quotes or line breaks.")
     return key
