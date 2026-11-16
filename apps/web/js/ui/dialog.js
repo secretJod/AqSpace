@@ -18,19 +18,30 @@
    AQ.dialog.confirm({ title, message, confirmLabel, danger, opener, restore }, onConfirm) */
 (function () {
   "use strict";
-  var u = AQ.util, $ = u.$, el = u.el;
+  var u = AQ.util,
+    $ = u.$,
+    el = u.el;
 
   // ===== 1. State =====
   // The dialog elements already exist in index.html; we only show/hide and fill them.
-  var modal = $("#modal"), dialog = $(".modal__dialog", modal), mTitle = $("#modal-title"), mKind = $("#modal-kind"), mBody = $("#modal-body");
+  var modal = $("#modal"),
+    dialog = $(".modal__dialog", modal),
+    mTitle = $("#modal-title"),
+    mKind = $("#modal-kind"),
+    mBody = $("#modal-body");
   var state = null; // {opener, restore, onClose}
 
-  var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
+  var FOCUSABLE =
+    'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
   function focusables() {
-    return Array.prototype.filter.call(dialog.querySelectorAll(FOCUSABLE), function (n) { return n.offsetParent !== null; });
+    return Array.prototype.filter.call(dialog.querySelectorAll(FOCUSABLE), function (n) {
+      return n.offsetParent !== null;
+    });
   }
 
-  function isOpen() { return !modal.hidden; }
+  function isOpen() {
+    return !modal.hidden;
+  }
 
   // ===== 2. Open and close =====
 
@@ -38,11 +49,18 @@
   // If that button was re-rendered meanwhile, we try restore(), then a page fallback.
   function close() {
     if (!state) return;
-    var s = state; state = null;
+    var s = state;
+    state = null;
     modal.hidden = true;
-    mBody.textContent = "";            // removing an iframe stops playback
+    mBody.textContent = ""; // removing an iframe stops playback
     document.body.classList.remove("modal-open");
-    if (s.onClose) { try { s.onClose(); } catch (e) { /* ignore */ } }
+    if (s.onClose) {
+      try {
+        s.onClose();
+      } catch (e) {
+        /* ignore */
+      }
+    }
     var target = s.opener;
     if (!target || !target.isConnected) target = s.restore ? s.restore() : null;
     if (!target || !target.isConnected) target = $("[data-focus-fallback]") || $("#view");
@@ -62,45 +80,84 @@
     modal.hidden = false;
     document.body.classList.add("modal-open");
     var api = {
-      body: mBody, element: dialog,
-      setTitle: function (t) { mTitle.textContent = t; },
-      setKind: function (k) { mKind.textContent = k; mKind.hidden = !k; },
+      body: mBody,
+      element: dialog,
+      setTitle: function (t) {
+        mTitle.textContent = t;
+      },
+      setKind: function (k) {
+        mKind.textContent = k;
+        mKind.hidden = !k;
+      },
       close: close,
-      focus: function (node) { (node || dialog).focus(); }
+      focus: function (node) {
+        (node || dialog).focus();
+      }
     };
     dialog.focus();
     return api;
   }
 
   /* Callers build their content after open(); this focuses the right thing afterwards. */
-  function focusInitial(node) { (node && node.focus ? node : dialog).focus(); }
+  function focusInitial(node) {
+    (node && node.focus ? node : dialog).focus();
+  }
 
   // ===== 3. Keyboard: Esc closes, Tab stays inside the dialog ("focus trap") =====
   document.addEventListener("keydown", function (e) {
     if (!isOpen()) return;
-    if (e.key === "Escape") { e.preventDefault(); close(); return; }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+      return;
+    }
     if (e.key === "Tab") {
       var f = focusables();
-      if (!f.length) { e.preventDefault(); dialog.focus(); return; }
-      var first = f[0], last = f[f.length - 1], a = document.activeElement;
-      if (e.shiftKey && (a === first || a === dialog)) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
-      else if (!dialog.contains(a)) { e.preventDefault(); first.focus(); }
+      if (!f.length) {
+        e.preventDefault();
+        dialog.focus();
+        return;
+      }
+      var first = f[0],
+        last = f[f.length - 1],
+        a = document.activeElement;
+      if (e.shiftKey && (a === first || a === dialog)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && a === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (!dialog.contains(a)) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   });
-  modal.addEventListener("click", function (e) { if (e.target.closest("[data-close]")) close(); });
+  modal.addEventListener("click", function (e) {
+    if (e.target.closest("[data-close]")) close();
+  });
 
   // ===== 4. Ready-made "Are you sure?" dialog =====
   function confirmDialog(opts, onConfirm) {
-    var d = open({ kind: opts.kind || "Please confirm", title: opts.title, opener: opts.opener, restore: opts.restore });
+    var d = open({
+      kind: opts.kind || "Please confirm",
+      title: opts.title,
+      opener: opts.opener,
+      restore: opts.restore
+    });
     var msg = el("p", "modal__text", opts.message || "");
     var row = el("div", "modal__row");
     var cancel = u.button("Cancel", { cls: "btn btn--ghost" });
     var ok = u.button(opts.confirmLabel || "Confirm", { cls: "btn " + (opts.danger ? "btn--danger" : "btn--white") });
     cancel.addEventListener("click", close);
-    ok.addEventListener("click", function () { onConfirm(); close(); });
-    row.appendChild(cancel); row.appendChild(ok);
-    d.body.appendChild(msg); d.body.appendChild(row);
+    ok.addEventListener("click", function () {
+      onConfirm();
+      close();
+    });
+    row.appendChild(cancel);
+    row.appendChild(ok);
+    d.body.appendChild(msg);
+    d.body.appendChild(row);
     cancel.focus();
     return d;
   }

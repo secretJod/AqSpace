@@ -5,15 +5,24 @@ Start reading at: .neural
 */
 
 /* 1. The host (the .dash page) keeps its own stacking context */
-.neural-host { position: relative; isolation: isolate; }
+.neural-host {
+  position: relative;
+  isolation: isolate;
+}
 
 /* 2. The canvas: page-sized, behind everything, never catches the pointer */
 .neural {
-  position: absolute; top: 0; left: 0; z-index: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
   pointer-events: none;
-  opacity: .95;
+  opacity: 0.95;
 }
 
 /* 3. Content above the network */
 .neural-host > .dash__head,
-.neural-host > .dash__grid { position: relative; z-index: 1; }
+.neural-host > .dash__grid {
+  position: relative;
+  z-index: 1;
+}

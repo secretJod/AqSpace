@@ -29,24 +29,30 @@
 
   // ===== 1. Theme =====
   // Colours were checked with a colour-blindness validator on the #0e0e0e panel background.
-  var PALETTE = ["#5fd4ff", "#2f8fb3", "#8aa4b8", "#c7d3dd", "#1f6a87", "#56677a"];   // instrument tints: cyan -> steel (no rainbow)
+  var PALETTE = ["#5fd4ff", "#2f8fb3", "#8aa4b8", "#c7d3dd", "#1f6a87", "#56677a"]; // instrument tints: cyan -> steel (no rainbow)
   var THEME = {
     font: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
     display: '"Playfair Display", Georgia, serif',
-    mono: '"JetBrains Mono", ui-monospace, Consolas, monospace',   // HUD numerals (ticks, tooltips)
-    text: "#8b98a8",            // axis labels (HUD muted, AA on navy)
-    textStrong: "#e6edf5",      // tooltip title (--text)
+    mono: '"JetBrains Mono", ui-monospace, Consolas, monospace', // HUD numerals (ticks, tooltips)
+    text: "#8b98a8", // axis labels (HUD muted, AA on navy)
+    textStrong: "#e6edf5", // tooltip title (--text)
     grid: "rgba(138,155,176,.28)",
     tipBg: "rgba(9,13,18,.96)",
     tipLine: "rgba(95,212,255,.7)",
-    duration: 600,              // ms for update animations (0 when the user prefers reduced motion)
-    drawIn: 900                 // ms for the first left-to-right draw of an area chart
+    duration: 600, // ms for update animations (0 when the user prefers reduced motion)
+    drawIn: 900 // ms for the first left-to-right draw of an area chart
   };
 
   function reducedMotion() {
-    try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; }
+    try {
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (e) {
+      return false;
+    }
   }
-  function hasChartJs() { return typeof window.Chart === "function"; }
+  function hasChartJs() {
+    return typeof window.Chart === "function";
+  }
 
   // ===== 1b. HUD plugins: neon glow + crosshair =====
   // Glow: Chart.js draws each line dataset with canvas shadowBlur in the line's own colour, so the
@@ -55,23 +61,40 @@
     id: "aqGlow",
     beforeDatasetDraw: function (chart, args) {
       if (chart.config.type !== "line") return;
-      var ds = chart.data.datasets[args.index], ctx = chart.ctx;
+      var ds = chart.data.datasets[args.index],
+        ctx = chart.ctx;
       ctx.save();
       ctx.shadowColor = typeof ds.borderColor === "string" ? ds.borderColor : "#3ee6ff";
       ctx.shadowBlur = 3;
     },
-    afterDatasetDraw: function (chart) { if (chart.config.type === "line") chart.ctx.restore(); }
+    afterDatasetDraw: function (chart) {
+      if (chart.config.type === "line") chart.ctx.restore();
+    }
   };
   // Crosshair: a thin dashed vertical line through the hovered point (the tooltip is the readout).
   var crosshairPlugin = {
     id: "aqCrosshair",
     afterDraw: function (chart) {
-      var tip = chart.tooltip, area = chart.chartArea;
-      if (!tip || !tip.getActiveElements || !tip.getActiveElements().length || chart.config.type === "doughnut" || !area) return;
-      var x = tip.getActiveElements()[0].element.x, ctx = chart.ctx;
+      var tip = chart.tooltip,
+        area = chart.chartArea;
+      if (
+        !tip ||
+        !tip.getActiveElements ||
+        !tip.getActiveElements().length ||
+        chart.config.type === "doughnut" ||
+        !area
+      )
+        return;
+      var x = tip.getActiveElements()[0].element.x,
+        ctx = chart.ctx;
       ctx.save();
-      ctx.strokeStyle = "rgba(95,212,255,.6)"; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
-      ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
+      ctx.strokeStyle = "rgba(95,212,255,.6)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(x, area.top);
+      ctx.lineTo(x, area.bottom);
+      ctx.stroke();
       ctx.restore();
     }
   };
@@ -82,7 +105,7 @@
     applyDefaults.done = true;
     var C = window.Chart;
     C.defaults.font.family = THEME.mono;
-    C.register(glowPlugin, crosshairPlugin);                // neon glow on lines + crosshair readout (section 1b)
+    C.register(glowPlugin, crosshairPlugin); // neon glow on lines + crosshair readout (section 1b)
     C.defaults.font.size = 10;
     C.defaults.color = THEME.text;
     C.defaults.animation.duration = reducedMotion() ? 0 : THEME.duration;
@@ -108,11 +131,15 @@
       boxPadding: 4,
       usePointStyle: false,
       caretSize: 0,
-      boxWidth: 7, boxHeight: 7,
+      boxWidth: 7,
+      boxHeight: 7,
       titleFont: { family: THEME.mono, weight: "600", size: 11 },
       bodyFont: { family: THEME.mono, size: 11 }
     };
-    if (extra) Object.keys(extra).forEach(function (k) { base[k] = extra[k]; });
+    if (extra)
+      Object.keys(extra).forEach(function (k) {
+        base[k] = extra[k];
+      });
     return base;
   }
 
@@ -120,7 +147,8 @@
   function fmtMinutes(min) {
     min = Math.round(+min || 0);
     if (min < 60) return min + " min";
-    var h = Math.floor(min / 60), r = min % 60;
+    var h = Math.floor(min / 60),
+      r = min % 60;
     return h + " hr" + (r ? " " + r + " min" : "");
   }
 
@@ -129,7 +157,7 @@
     var h = String(hex || "#ffffff").replace("#", "");
     if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
     var n = parseInt(h, 16);
-    return "rgba(" + (n >> 16 & 255) + "," + (n >> 8 & 255) + "," + (n & 255) + "," + a + ")";
+    return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
   }
 
   // A vertical gradient (solid at the top, softer at the baseline) for bars and line fills.
@@ -167,7 +195,9 @@
         ticks: {
           maxTicksLimit: 5,
           padding: 8,
-          callback: function (v) { return opts.minutes ? fmtMinutes(v) : v; }
+          callback: function (v) {
+            return opts.minutes ? fmtMinutes(v) : v;
+          }
         }
       }
     };
@@ -180,17 +210,32 @@
     if (reducedMotion()) return false;
     var perPoint = THEME.drawIn / Math.max(1, pointCount);
     var previousY = function (ctx) {
-      return ctx.index === 0 ? ctx.chart.scales.y.getPixelForValue(0)
+      return ctx.index === 0
+        ? ctx.chart.scales.y.getPixelForValue(0)
         : ctx.chart.getDatasetMeta(ctx.datasetIndex).data[ctx.index - 1].getProps(["y"], true).y;
     };
     return {
       x: {
-        type: "number", easing: "linear", duration: perPoint, from: NaN,
-        delay: function (ctx) { if (ctx.type !== "data" || ctx.xStarted) return 0; ctx.xStarted = true; return ctx.index * perPoint; }
+        type: "number",
+        easing: "linear",
+        duration: perPoint,
+        from: NaN,
+        delay: function (ctx) {
+          if (ctx.type !== "data" || ctx.xStarted) return 0;
+          ctx.xStarted = true;
+          return ctx.index * perPoint;
+        }
       },
       y: {
-        type: "number", easing: "linear", duration: perPoint, from: previousY,
-        delay: function (ctx) { if (ctx.type !== "data" || ctx.yStarted) return 0; ctx.yStarted = true; return ctx.index * perPoint; }
+        type: "number",
+        easing: "linear",
+        duration: perPoint,
+        from: previousY,
+        delay: function (ctx) {
+          if (ctx.type !== "data" || ctx.yStarted) return 0;
+          ctx.yStarted = true;
+          return ctx.index * perPoint;
+        }
       }
     };
   }
@@ -202,14 +247,25 @@
       update: function (data) {
         if (!chart) return;
         applyData(chart, data || {});
-        chart.options.animation = reducedMotion() ? false : { duration: THEME.duration };   // no draw-in on updates
+        chart.options.animation = reducedMotion() ? false : { duration: THEME.duration }; // no draw-in on updates
         chart.update();
       },
-      destroy: function () { if (chart) { try { chart.destroy(); } catch (e) { /* already gone */ } chart = null; } }
+      destroy: function () {
+        if (chart) {
+          try {
+            chart.destroy();
+          } catch (e) {
+            /* already gone */
+          }
+          chart = null;
+        }
+      }
     };
   }
   // When Chart.js is missing (file not loaded) we return a harmless no-op handle instead of throwing.
-  function noop() { return { chart: null, update: function () {}, destroy: function () {} }; }
+  function noop() {
+    return { chart: null, update: function () {}, destroy: function () {} };
+  }
 
   // ===== 2. Bar chart (stacked by kind, rounded tops, click a bar -> onClick(index)) =====
   function barDatasets(series, compact) {
@@ -249,7 +305,8 @@
         },
         onHover: function (evt, items) {
           // pointer cursor over a bar when the bars are clickable
-          if (evt.native && evt.native.target) evt.native.target.style.cursor = items.length && opts.onClick ? "pointer" : "default";
+          if (evt.native && evt.native.target)
+            evt.native.target.style.cursor = items.length && opts.onClick ? "pointer" : "default";
         },
         scales: compact
           ? { x: { display: false, stacked: true }, y: { display: false, stacked: true, beginAtZero: true } }
@@ -259,9 +316,14 @@
           tooltip: tooltipOptions({
             enabled: !compact,
             callbacks: {
-              label: function (c) { return " " + c.dataset.label + ": " + fmtMinutes(c.parsed.y); },
+              label: function (c) {
+                return " " + c.dataset.label + ": " + fmtMinutes(c.parsed.y);
+              },
               footer: function (items) {
-                var sum = 0; items.forEach(function (c) { sum += c.parsed.y || 0; });
+                var sum = 0;
+                items.forEach(function (c) {
+                  sum += c.parsed.y || 0;
+                });
                 return items.length > 1 ? "Total: " + fmtMinutes(sum) : "";
               }
             },
@@ -276,8 +338,10 @@
       if (data.series) {
         // keep the dataset objects (so Chart.js animates from old to new values) and only swap the numbers
         data.series.forEach(function (s, i) {
-          if (ch.data.datasets[i]) { ch.data.datasets[i].data = s.data; ch.data.datasets[i].label = s.label; }
-          else ch.data.datasets.push(barDatasets([s], compact)[0]);
+          if (ch.data.datasets[i]) {
+            ch.data.datasets[i].data = s.data;
+            ch.data.datasets[i].label = s.label;
+          } else ch.data.datasets.push(barDatasets([s], compact)[0]);
         });
         ch.data.datasets.length = data.series.length;
       }
@@ -319,7 +383,11 @@
     if (!hasChartJs()) return noop();
     var compact = !!opts.compact;
     var series = normaliseSeries(opts);
-    var labels = opts.labels || (series[0].data || []).map(function (_, i) { return i; });
+    var labels =
+      opts.labels ||
+      (series[0].data || []).map(function (_, i) {
+        return i;
+      });
     var minutes = opts.minutes !== false;
     var chart = new window.Chart(canvas, {
       type: "line",
@@ -338,21 +406,37 @@
           legend: { display: !compact && series.length > 1, position: "top", align: "end" },
           tooltip: tooltipOptions({
             enabled: !compact,
-            callbacks: { label: function (c) { return " " + c.dataset.label + ": " + (minutes ? fmtMinutes(c.parsed.y) : c.parsed.y); } }
+            callbacks: {
+              label: function (c) {
+                return " " + c.dataset.label + ": " + (minutes ? fmtMinutes(c.parsed.y) : c.parsed.y);
+              }
+            }
           })
         }
       }
     });
     return handle(chart, function (ch, data) {
       var next = data.series || (data.data ? [{ data: data.data }] : null);
-      if (next) next.forEach(function (s, i) { if (ch.data.datasets[i]) ch.data.datasets[i].data = s.data; });
+      if (next)
+        next.forEach(function (s, i) {
+          if (ch.data.datasets[i]) ch.data.datasets[i].data = s.data;
+        });
       if (data.labels) ch.data.labels = data.labels;
-      else if (next && !opts.labels) ch.data.labels = (next[0].data || []).map(function (_, i) { return i; });
+      else if (next && !opts.labels)
+        ch.data.labels = (next[0].data || []).map(function (_, i) {
+          return i;
+        });
     });
   }
   // Older names, kept so nothing else breaks.
-  function line(canvas, opts) { return area(canvas, opts); }
-  function sparkline(canvas, opts) { opts = opts || {}; opts.compact = true; return area(canvas, opts); }
+  function line(canvas, opts) {
+    return area(canvas, opts);
+  }
+  function sparkline(canvas, opts) {
+    opts = opts || {};
+    opts.compact = true;
+    return area(canvas, opts);
+  }
 
   // ===== 4. Donut (share of time per playlist) with an optional centre label =====
   // The centre text is drawn on the canvas by a tiny plugin (no DOM overlay, no inline styles).
@@ -361,9 +445,13 @@
     afterDraw: function (chart) {
       var c = chart.options.plugins.aqCenterText;
       if (!c || (!c.value && !c.label)) return;
-      var meta = chart.getDatasetMeta(0), arc = meta && meta.data && meta.data[0];
+      var meta = chart.getDatasetMeta(0),
+        arc = meta && meta.data && meta.data[0];
       if (!arc) return;
-      var ctx = chart.ctx, x = arc.x, y = arc.y, r = arc.innerRadius || 40;
+      var ctx = chart.ctx,
+        x = arc.x,
+        y = arc.y,
+        r = arc.innerRadius || 40;
       ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -383,18 +471,31 @@
   var dialTicksPlugin = {
     id: "aqDialTicks",
     afterDraw: function (chart) {
-      var meta = chart.getDatasetMeta(0), arc = meta && meta.data && meta.data[0];
+      var meta = chart.getDatasetMeta(0),
+        arc = meta && meta.data && meta.data[0];
       if (!arc) return;
-      var ctx = chart.ctx, x = arc.x, y = arc.y, R = arc.outerRadius, ri = arc.innerRadius;
+      var ctx = chart.ctx,
+        x = arc.x,
+        y = arc.y,
+        R = arc.outerRadius,
+        ri = arc.innerRadius;
       ctx.save();
       for (var i = 0; i < 100; i++) {
-        var a = i / 100 * Math.PI * 2 - Math.PI / 2, major = i % 10 === 0, r0 = R + 3, r1 = R + (major ? 10 : 6);
+        var a = (i / 100) * Math.PI * 2 - Math.PI / 2,
+          major = i % 10 === 0,
+          r0 = R + 3,
+          r1 = R + (major ? 10 : 6);
         ctx.strokeStyle = major ? "rgba(199,211,221,.75)" : "rgba(138,155,176,.4)";
         ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(x + r0 * Math.cos(a), y + r0 * Math.sin(a)); ctx.lineTo(x + r1 * Math.cos(a), y + r1 * Math.sin(a)); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + r0 * Math.cos(a), y + r0 * Math.sin(a));
+        ctx.lineTo(x + r1 * Math.cos(a), y + r1 * Math.sin(a));
+        ctx.stroke();
       }
       ctx.strokeStyle = "rgba(138,155,176,.25)";
-      ctx.beginPath(); ctx.arc(x, y, ri - 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, ri - 5, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
     }
   };
@@ -408,16 +509,18 @@
       plugins: [centerTextPlugin, dialTicksPlugin],
       data: {
         labels: opts.labels || [],
-        datasets: [{
-          data: opts.values || [],
-          backgroundColor: colors,
-          hoverBackgroundColor: colors,
-          borderColor: "rgba(9,13,18,1)",      // a hairline dark gap between the slices
-          borderWidth: 1.5,
-          borderRadius: 0,
-          hoverOffset: 3,
-          spacing: 0
-        }]
+        datasets: [
+          {
+            data: opts.values || [],
+            backgroundColor: colors,
+            hoverBackgroundColor: colors,
+            borderColor: "rgba(9,13,18,1)", // a hairline dark gap between the slices
+            borderWidth: 1.5,
+            borderRadius: 0,
+            hoverOffset: 3,
+            spacing: 0
+          }
+        ]
       },
       options: {
         responsive: true,
@@ -431,8 +534,11 @@
           tooltip: tooltipOptions({
             callbacks: {
               label: function (c) {
-                var total = 0; c.dataset.data.forEach(function (v) { total += v || 0; });
-                var pct = total ? Math.round(100 * c.parsed / total) : 0;
+                var total = 0;
+                c.dataset.data.forEach(function (v) {
+                  total += v || 0;
+                });
+                var pct = total ? Math.round((100 * c.parsed) / total) : 0;
                 return " " + fmtMinutes(c.parsed) + " · " + pct + "%";
               }
             }
@@ -452,7 +558,7 @@
   function hourLabel(h) {
     if (h === 0) return "12 am";
     if (h === 12) return "12 pm";
-    return h < 12 ? h + " am" : (h - 12) + " pm";
+    return h < 12 ? h + " am" : h - 12 + " pm";
   }
   // Five brightness levels of one hue (a sequential scale: dark -> bright means little -> a lot).
   function heatLevel(value, max) {
@@ -465,15 +571,18 @@
     var root = el("div", "hm");
     root.setAttribute("role", "img");
     root.setAttribute("aria-label", "Minutes studied per weekday and hour");
-    var tip = el("div", "hm__tip"); tip.setAttribute("role", "tooltip"); tip.hidden = true;
+    var tip = el("div", "hm__tip");
+    tip.setAttribute("role", "tooltip");
+    tip.hidden = true;
 
     // top row: hour labels every 3 hours
     var head = el("div", "hm__hours");
     head.appendChild(el("span", "hm__corner"));
-    for (var h = 0; h < 24; h++) head.appendChild(el("span", "hm__hour", h % 3 === 0 ? hourLabel(h).replace(" ", "") : ""));
+    for (var h = 0; h < 24; h++)
+      head.appendChild(el("span", "hm__hour", h % 3 === 0 ? hourLabel(h).replace(" ", "") : ""));
     root.appendChild(head);
 
-    var cells = [];                                   // [row][col] -> cell element
+    var cells = []; // [row][col] -> cell element
     DAYS.forEach(function (name, r) {
       var row = el("div", "hm__row");
       row.appendChild(el("span", "hm__day", name));
@@ -495,33 +604,44 @@
       current = m;
       var max = 0;
       for (var r = 0; r < 7; r++) for (var c = 0; c < 24; c++) max = Math.max(max, (m[r] && m[r][c]) || 0);
-      for (r = 0; r < 7; r++) for (c = 0; c < 24; c++) {
-        var v = (m[r] && m[r][c]) || 0;
-        cells[r][c].className = "hm__cell hm__l" + heatLevel(v, max);
-      }
+      for (r = 0; r < 7; r++)
+        for (c = 0; c < 24; c++) {
+          var v = (m[r] && m[r][c]) || 0;
+          cells[r][c].className = "hm__cell hm__l" + heatLevel(v, max);
+        }
     }
     paint(matrix || []);
 
     // one listener on the grid (not 168) shows the tooltip for the hovered cell
     function showTip(cell) {
-      var r = +cell.getAttribute("data-r"), c = +cell.getAttribute("data-c");
+      var r = +cell.getAttribute("data-r"),
+        c = +cell.getAttribute("data-c");
       var v = (current[r] && current[r][c]) || 0;
       tip.textContent = DAYS[r] + " " + hourLabel(c) + " · " + (v ? fmtMinutes(v) : "nothing yet");
       tip.hidden = false;
       // place the tip above the cell, kept inside the grid
-      var cr = cell.getBoundingClientRect(), rr = root.getBoundingClientRect();
+      var cr = cell.getBoundingClientRect(),
+        rr = root.getBoundingClientRect();
       var left = cr.left - rr.left + cr.width / 2;
       left = Math.max(60, Math.min(rr.width - 60, left));
       tip.style.left = left + "px";
-      tip.style.top = (cr.top - rr.top - 8) + "px";
+      tip.style.top = cr.top - rr.top - 8 + "px";
     }
-    function onOver(e) { var t = e.target; if (t.classList && t.classList.contains("hm__cell")) showTip(t); }
-    function onOut(e) { if (!root.contains(e.relatedTarget) || (e.relatedTarget && !e.relatedTarget.classList.contains("hm__cell"))) tip.hidden = true; }
+    function onOver(e) {
+      var t = e.target;
+      if (t.classList && t.classList.contains("hm__cell")) showTip(t);
+    }
+    function onOut(e) {
+      if (!root.contains(e.relatedTarget) || (e.relatedTarget && !e.relatedTarget.classList.contains("hm__cell")))
+        tip.hidden = true;
+    }
     root.addEventListener("mouseover", onOver);
     root.addEventListener("mouseout", onOut);
 
     return {
-      update: function (m) { paint(m || []); },
+      update: function (m) {
+        paint(m || []);
+      },
       destroy: function () {
         root.removeEventListener("mouseover", onOver);
         root.removeEventListener("mouseout", onOut);
@@ -532,7 +652,17 @@
 
   // ===== 6. Public API =====
   AQ.charts = {
-    PALETTE: PALETTE, THEME: THEME, available: hasChartJs, fmtMinutes: fmtMinutes, hourLabel: hourLabel, rgba: rgba,
-    area: area, bar: bar, line: line, donut: donut, sparkline: sparkline, heatmap: heatmap
+    PALETTE: PALETTE,
+    THEME: THEME,
+    available: hasChartJs,
+    fmtMinutes: fmtMinutes,
+    hourLabel: hourLabel,
+    rgba: rgba,
+    area: area,
+    bar: bar,
+    line: line,
+    donut: donut,
+    sparkline: sparkline,
+    heatmap: heatmap
   };
 })();

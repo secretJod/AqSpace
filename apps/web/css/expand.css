@@ -4,84 +4,189 @@
    Classes start with `xp`. Linked from index.html (order matters: see README.md). */
 
 /* ===== 1. the card while attached ===== */
-.xp-card { cursor: pointer; }
-.xp-card:focus-visible { outline: 2px solid var(--white, #fff); outline-offset: 4px; }
+.xp-card {
+  cursor: pointer;
+}
+.xp-card:focus-visible {
+  outline: 2px solid var(--white, #fff);
+  outline-offset: 4px;
+}
 /* while its panel is open the card has "become" the panel (shared-element morph), so its slot stays empty.
    expand.js sets .is-expanded; dashboards need no extra class. */
-.xp-card.is-expanded { visibility: hidden; }
+.xp-card.is-expanded {
+  visibility: hidden;
+}
 
 /* ===== 2. page lock ===== */
-body.xp-open { overflow: hidden; padding-right: var(--xp-sbw, 0px); }
+body.xp-open {
+  overflow: hidden;
+  padding-right: var(--xp-sbw, 0px);
+}
 
 /* ===== 3. overlay, backdrop ===== */
 .xp {
-  position: fixed; inset: 0; z-index: 1000;   /* above the bottom navbar (z-index 900) */
-  display: flex; align-items: center; justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: 1000; /* above the bottom navbar (z-index 900) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 5vh 3vw;
 }
 .xp__backdrop {
-  position: absolute; inset: 0;
-  background: rgba(0,0,0,.58);
-  -webkit-backdrop-filter: blur(16px) saturate(.8); backdrop-filter: blur(16px) saturate(.8);
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+  -webkit-backdrop-filter: blur(16px) saturate(0.8);
+  backdrop-filter: blur(16px) saturate(0.8);
 }
 
 /* ===== 4. the panel ===== */
 .xp__panel {
   --xp-accent: #ffffff;
-  position: relative; display: flex; flex-direction: column;
-  width: min(1100px, 94vw); max-height: 90vh;
-  background: linear-gradient(160deg, rgba(255,255,255,.04), rgba(255,255,255,0) 50%), var(--panel, #0e0e0e);
-  border: 1px solid var(--line-strong, rgba(255,255,255,.26)); border-radius: 26px;
-  box-shadow: 0 40px 120px rgba(0,0,0,.7), 0 0 0 1px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
-  overflow: hidden; transform-origin: top left; outline: none;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 94vw);
+  max-height: 90vh;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0) 50%), var(--panel, #0e0e0e);
+  border: 1px solid var(--line-strong, rgba(255, 255, 255, 0.26));
+  border-radius: 26px;
+  box-shadow:
+    0 40px 120px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  transform-origin: top left;
+  outline: none;
 }
 /* the soft radial glow in the card's accent colour, bleeding in from the top */
 .xp__glow {
-  position: absolute; left: -10%; right: -10%; top: -45%; height: 80%; pointer-events: none;
-  background: radial-gradient(50% 55% at 50% 50%, rgba(255,255,255,.14), transparent 70%);
-  background: radial-gradient(50% 55% at 50% 50%, color-mix(in srgb, var(--xp-accent) 26%, transparent), transparent 70%);
-  filter: blur(28px); opacity: .9;
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: -45%;
+  height: 80%;
+  pointer-events: none;
+  background: radial-gradient(50% 55% at 50% 50%, rgba(255, 255, 255, 0.14), transparent 70%);
+  background: radial-gradient(
+    50% 55% at 50% 50%,
+    color-mix(in srgb, var(--xp-accent) 26%, transparent),
+    transparent 70%
+  );
+  filter: blur(28px);
+  opacity: 0.9;
 }
 .xp__head {
-  position: relative; z-index: 1; flex: none;
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 18px 22px 16px; border-bottom: 1px solid var(--line, rgba(255,255,255,.11));
+  position: relative;
+  z-index: 1;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px 16px;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.11));
 }
-.xp__title { margin: 0; font-family: var(--font-display, Georgia, serif); font-weight: 500; font-size: 1.35rem; letter-spacing: -.01em; }
+.xp__title {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-weight: 500;
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+}
 .xp__close {
-  display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border-radius: 50%;
-  border: 1px solid var(--line, rgba(255,255,255,.11)); background: rgba(255,255,255,.04);
-  color: var(--muted, #9a9a9a); font-size: 22px; line-height: 1; cursor: pointer;
-  transition: background .2s, color .2s, border-color .2s, transform .2s;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.11));
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted, #9a9a9a);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s,
+    transform 0.2s;
 }
-.xp__close:hover { color: var(--white, #fff); background: rgba(255,255,255,.1); border-color: var(--line-strong, rgba(255,255,255,.26)); transform: rotate(90deg); }
-.xp__body { position: relative; z-index: 1; flex: 1 1 auto; min-height: 0; overflow: auto; padding: 24px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.2) transparent; }
+.xp__close:hover {
+  color: var(--white, #fff);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--line-strong, rgba(255, 255, 255, 0.26));
+  transform: rotate(90deg);
+}
+.xp__body {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
 
 /* the FLIP fallback's ghost: a clone of the card that scales into the panel */
-.xp-ghost { position: fixed; margin: 0; pointer-events: none; transform-origin: top left; z-index: 2; }
+.xp-ghost {
+  position: fixed;
+  margin: 0;
+  pointer-events: none;
+  transform-origin: top left;
+  z-index: 2;
+}
 
 /* ===== 5. view-transition morph (card -> panel and back) ===== */
 ::view-transition-group(xp-morph) {
-  animation-duration: .42s;
-  animation-timing-function: cubic-bezier(.2,.8,.2,1);
+  animation-duration: 0.42s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-::view-transition-image-pair(xp-morph) { border-radius: 24px; overflow: clip; }
+::view-transition-image-pair(xp-morph) {
+  border-radius: 24px;
+  overflow: clip;
+}
 ::view-transition-old(xp-morph),
 ::view-transition-new(xp-morph) {
-  width: 100%; height: 100%; object-fit: cover; object-position: top center;
-  animation-duration: .42s; animation-timing-function: cubic-bezier(.2,.8,.2,1);
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  animation-duration: 0.42s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .35s; }
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.35s;
+}
 
 /* ===== 6. small screens ===== */
 @media (max-width: 720px) {
-  .xp { padding: 0; align-items: flex-end; }
-  .xp__panel { width: 100%; max-height: 96vh; border-radius: 22px 22px 0 0; }
-  .xp__body { padding: 16px; }
+  .xp {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .xp__panel {
+    width: 100%;
+    max-height: 96vh;
+    border-radius: 22px 22px 0 0;
+  }
+  .xp__body {
+    padding: 16px;
+  }
 }
 
 /* ===== 7. reduced motion ===== */
 @media (prefers-reduced-motion: reduce) {
-  .xp__close { transition: none; }
-  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  .xp__close {
+    transition: none;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }

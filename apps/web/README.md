@@ -97,20 +97,20 @@ The dashboard is a bento of glass cards: each card is compact and opens into a f
 
 ## Glossary
 
-| Name | Meaning |
-|---|---|
-| `AQ` | the one global object every file adds to |
-| `u`, `el`, `$` | `AQ.util`, its element builder `el(tag, class, text)`, and `querySelector` |
-| `p`, `pid` | a playlist object, a playlist id (slug like `data-science`) |
-| `v`, `vid`, `id` | a video object, a YouTube video id (11 characters) |
-| `st` | a "status" or "state" object (meaning depends on the file; see the comment where it is created) |
-| `r` | in smart-arrange.js: the run record of one playlist |
-| `opts` | an options object passed to a function |
-| job | one "Get notes" request on the notes server (notes-jobs.js) |
-| watch info | per-video playback progress: `{pos, dur, done}` in seconds (store.js) |
-| route | the part of the address after `#`, e.g. `#/playlist/data-science` |
-| FLIP | animation trick: measure First and Last positions, Invert with a transform, Play (split-view.js, smart-magic.js) |
-| liquid glass | the refracting glass look of some buttons (water-button.js) |
+| Name             | Meaning                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `AQ`             | the one global object every file adds to                                                                         |
+| `u`, `el`, `$`   | `AQ.util`, its element builder `el(tag, class, text)`, and `querySelector`                                       |
+| `p`, `pid`       | a playlist object, a playlist id (slug like `data-science`)                                                      |
+| `v`, `vid`, `id` | a video object, a YouTube video id (11 characters)                                                               |
+| `st`             | a "status" or "state" object (meaning depends on the file; see the comment where it is created)                  |
+| `r`              | in smart-arrange.js: the run record of one playlist                                                              |
+| `opts`           | an options object passed to a function                                                                           |
+| job              | one "Get notes" request on the notes server (notes-jobs.js)                                                      |
+| watch info       | per-video playback progress: `{pos, dur, done}` in seconds (store.js)                                            |
+| route            | the part of the address after `#`, e.g. `#/playlist/data-science`                                                |
+| FLIP             | animation trick: measure First and Last positions, Invert with a transform, Play (split-view.js, smart-magic.js) |
+| liquid glass     | the refracting glass look of some buttons (water-button.js)                                                      |
 
 ---
 
@@ -132,11 +132,11 @@ Do not open index.html by double-click: the notes API only accepts `localhost` /
 
 ## Screens (hash routing, single page)
 
-| Route | Screen |
-|---|---|
-| `#/` | **Playlists home**: top bar (logo, search by name, avatar placeholder), "Your playlists" + count + the glass **New playlist** button, grid of **chroma cards** (full-bleed first-video thumbnail, greyscale at rest; the pointer reveals colour through a soft spotlight and a per-playlist accent glow; name, "N videos · duration", **watch progress** bar "x of N watched / %", card menu with Rename / Delete-with-confirm), dashed "+ Create playlist" card, empty state. |
-| `#/playlist/<id>` | **Playlist detail**: "← Playlists", name, description, stats, actions **Add video / Play all / Rename / Delete**. Video rows: number, thumbnail, title, channel, duration, **Watch / Get notes / Edit / Move up / Move down / Remove** (remove has Undo), drag-and-drop reordering (mouse) plus the Move buttons (keyboard / touch). Empty playlist shows an inline add form. |
-| dialogs | Create/rename playlist (name required, max 60, unique case-insensitive; description max 160), edit video (title, channel, optional duration `m:ss` / `h:mm:ss`), delete confirm, player (youtube-nocookie embed, previous/next through the playlist, switch to notes). Focus is trapped, Esc closes, focus returns to the opener. |
+| Route             | Screen                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `#/`              | **Playlists home**: top bar (logo, search by name, avatar placeholder), "Your playlists" + count + the glass **New playlist** button, grid of **chroma cards** (full-bleed first-video thumbnail, greyscale at rest; the pointer reveals colour through a soft spotlight and a per-playlist accent glow; name, "N videos · duration", **watch progress** bar "x of N watched / %", card menu with Rename / Delete-with-confirm), dashed "+ Create playlist" card, empty state. |
+| `#/playlist/<id>` | **Playlist detail**: "← Playlists", name, description, stats, actions **Add video / Play all / Rename / Delete**. Video rows: number, thumbnail, title, channel, duration, **Watch / Get notes / Edit / Move up / Move down / Remove** (remove has Undo), drag-and-drop reordering (mouse) plus the Move buttons (keyboard / touch). Empty playlist shows an inline add form.                                                                                                  |
+| dialogs           | Create/rename playlist (name required, max 60, unique case-insensitive; description max 160), edit video (title, channel, optional duration `m:ss` / `h:mm:ss`), delete confirm, player (youtube-nocookie embed, previous/next through the playlist, switch to notes). Focus is trapped, Esc closes, focus returns to the opener.                                                                                                                                              |
 
 ### Effects
 
@@ -162,21 +162,21 @@ Everything read from storage is sanitised (bad ids, duplicate videos, over-long 
 
 ## Where things live
 
-| File | What to change there |
-|---|---|
-| `index.html` | page shell: top bar, `#view` (screens are rendered into it), modal markup, script order |
-| `css/styles.css` | tokens at the top (`--bg`, `--panel`, `--white`, `--line`, `--font-display`, radii...), then top bar / grid / rows / modal / responsive sections |
-| `js/core/util.js` | DOM helpers (`el`, `icon`, `button`), YouTube id parser, thumbnail URL, duration + "time ago" formatting |
-| `js/core/store.js` | data layer: seed data (`seedData`), sanitising, CRUD (`create/update/remove`, `addVideo/removeVideo/updateVideo/moveVideo`), persistence, limits (`LIMITS`) |
-| `js/core/api.js` | adapter for the aq-api backend: detects it, loads/migrates data, write-through queue (`AQ.api.record`), `AQ.api.available()` |
-| `js/ui/dialog.js` | accessible modal host (focus trap, Esc, restore focus) + `confirm` |
-| `js/features/player/player.js` | player dialog (embed, previous/next, notes switch) |
-| `js/features/notes/notes-jobs.js` | "Get notes" client for the notes API |
-| `js/ui/water-button.js` | glass "New playlist" button: `AQ.water.button(label, {icon, onActivate})`; hover springs, lens, jelly press |
-| `js/ui/click-spark.js` | click sparks everywhere (vanilla port of React Bits ClickSpark; look = `DEFAULTS` at the top, or `AQ.clickSpark.configure({...})`) |
-| `js/app.js` | router + rendering: home grid with chroma cards, watch progress, card menu, playlist form, detail, add form, rows, drag and drop, toasts |
-| `screenshots/` | reference screenshots of the screens and effects |
-| `_landing-backup/` | previous landing page, untouched |
+| File                              | What to change there                                                                                                                                        |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.html`                      | page shell: top bar, `#view` (screens are rendered into it), modal markup, script order                                                                     |
+| `css/styles.css`                  | tokens at the top (`--bg`, `--panel`, `--white`, `--line`, `--font-display`, radii...), then top bar / grid / rows / modal / responsive sections            |
+| `js/core/util.js`                 | DOM helpers (`el`, `icon`, `button`), YouTube id parser, thumbnail URL, duration + "time ago" formatting                                                    |
+| `js/core/store.js`                | data layer: seed data (`seedData`), sanitising, CRUD (`create/update/remove`, `addVideo/removeVideo/updateVideo/moveVideo`), persistence, limits (`LIMITS`) |
+| `js/core/api.js`                  | adapter for the aq-api backend: detects it, loads/migrates data, write-through queue (`AQ.api.record`), `AQ.api.available()`                                |
+| `js/ui/dialog.js`                 | accessible modal host (focus trap, Esc, restore focus) + `confirm`                                                                                          |
+| `js/features/player/player.js`    | player dialog (embed, previous/next, notes switch)                                                                                                          |
+| `js/features/notes/notes-jobs.js` | "Get notes" client for the notes API                                                                                                                        |
+| `js/ui/water-button.js`           | glass "New playlist" button: `AQ.water.button(label, {icon, onActivate})`; hover springs, lens, jelly press                                                 |
+| `js/ui/click-spark.js`            | click sparks everywhere (vanilla port of React Bits ClickSpark; look = `DEFAULTS` at the top, or `AQ.clickSpark.configure({...})`)                          |
+| `js/app.js`                       | router + rendering: home grid with chroma cards, watch progress, card menu, playlist form, detail, add form, rows, drag and drop, toasts                    |
+| `screenshots/`                    | reference screenshots of the screens and effects                                                                                                            |
+| `_landing-backup/`                | previous landing page, untouched                                                                                                                            |
 
 All user text is inserted with `textContent` / DOM APIs; there is no `innerHTML`.
 

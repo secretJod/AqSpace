@@ -9,75 +9,293 @@ Start reading at: section 2 (core).
 /* ===== 1. Tokens ===== */
 :root {
   --hud: #5fd4ff;
-  --hud-ring-dim: rgba(95, 212, 255, .35);
-  --hud-faint: rgba(138, 155, 176, .06);
+  --hud-ring-dim: rgba(95, 212, 255, 0.35);
+  --hud-faint: rgba(138, 155, 176, 0.06);
 }
-@property --hud-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@property --hud-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
 
 /* ===== 2. Arc-reactor core ===== */
-.hud-core { position: relative; width: 200px; height: 200px; flex: none; }
-.hud-core__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.hud-core__outline { fill: none; stroke: var(--hud-ring-dim); stroke-width: .6; }
-.hud-core__ring { transform-origin: 100px 100px; transform-box: view-box; }
-.hud-core__ring line { stroke: var(--hud-ring-dim); stroke-width: 1; }
-.hud-core__ring line.is-major { stroke: var(--hud); }
-.hud-core__ring--a { animation: hud-spin 60s linear infinite; }
-.hud-core__ring--b { animation: hud-spin 28s linear infinite reverse; }
-.hud-core__ring--c { animation: hud-spin 14s linear infinite; }
-.hud-core__seg { fill: none; stroke-width: 3; transform-origin: 100px 100px; transform-box: view-box; }
-.hud-core__seg--a { stroke: var(--hud); opacity: .8; animation: hud-spin 9s linear infinite reverse;  }
-.hud-core__seg--b { stroke: #8a9bb0; opacity: .7; stroke-width: 1.5; animation: hud-spin 18s linear infinite; }
-.hud-core__glow { fill: rgba(34, 211, 238, .10); stroke: var(--hud); stroke-width: .8;
-  transform-origin: 100px 100px; transform-box: view-box; animation: hud-breathe 3.2s ease-in-out infinite; }
-.hud-core__mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-.hud-core__label { font: 600 9px/1 ui-monospace, Consolas, monospace; letter-spacing: .22em; color: var(--hud); text-transform: uppercase; }
-.hud-core__value { margin-top: 6px; font: 600 26px/1.05 ui-monospace, Consolas, monospace; color: #ecfeff; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-shadow: 0 0 8px rgba(95, 212, 255, .35); white-space: nowrap; }
-.hud-core__sub { margin-top: 5px; font: 500 10px/1 ui-monospace, Consolas, monospace; letter-spacing: .12em; color: rgba(236, 254, 255, .7); text-transform: uppercase; }
-@keyframes hud-spin { to { transform: rotate(360deg); } }
-@keyframes hud-breathe { 0%, 100% { opacity: .55; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.04); } }
+.hud-core {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  flex: none;
+}
+.hud-core__svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.hud-core__outline {
+  fill: none;
+  stroke: var(--hud-ring-dim);
+  stroke-width: 0.6;
+}
+.hud-core__ring {
+  transform-origin: 100px 100px;
+  transform-box: view-box;
+}
+.hud-core__ring line {
+  stroke: var(--hud-ring-dim);
+  stroke-width: 1;
+}
+.hud-core__ring line.is-major {
+  stroke: var(--hud);
+}
+.hud-core__ring--a {
+  animation: hud-spin 60s linear infinite;
+}
+.hud-core__ring--b {
+  animation: hud-spin 28s linear infinite reverse;
+}
+.hud-core__ring--c {
+  animation: hud-spin 14s linear infinite;
+}
+.hud-core__seg {
+  fill: none;
+  stroke-width: 3;
+  transform-origin: 100px 100px;
+  transform-box: view-box;
+}
+.hud-core__seg--a {
+  stroke: var(--hud);
+  opacity: 0.8;
+  animation: hud-spin 9s linear infinite reverse;
+}
+.hud-core__seg--b {
+  stroke: #8a9bb0;
+  opacity: 0.7;
+  stroke-width: 1.5;
+  animation: hud-spin 18s linear infinite;
+}
+.hud-core__glow {
+  fill: rgba(34, 211, 238, 0.1);
+  stroke: var(--hud);
+  stroke-width: 0.8;
+  transform-origin: 100px 100px;
+  transform-box: view-box;
+  animation: hud-breathe 3.2s ease-in-out infinite;
+}
+.hud-core__mid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.hud-core__label {
+  font:
+    600 9px/1 ui-monospace,
+    Consolas,
+    monospace;
+  letter-spacing: 0.22em;
+  color: var(--hud);
+  text-transform: uppercase;
+}
+.hud-core__value {
+  margin-top: 6px;
+  font:
+    600 26px/1.05 ui-monospace,
+    Consolas,
+    monospace;
+  color: #ecfeff;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 8px rgba(95, 212, 255, 0.35);
+  white-space: nowrap;
+}
+.hud-core__sub {
+  margin-top: 5px;
+  font:
+    500 10px/1 ui-monospace,
+    Consolas,
+    monospace;
+  letter-spacing: 0.12em;
+  color: rgba(236, 254, 255, 0.7);
+  text-transform: uppercase;
+}
+@keyframes hud-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes hud-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
 
 /* ===== 3. Card frame: brackets, hover scan line, Border Beam ===== */
-.hud-framed { position: relative; }
-.hud-frame { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; z-index: 2; overflow: hidden; }
-.hud-frame__corner { position: absolute; width: 12px; height: 12px; border: 0 solid var(--hud-steel, #8a9bb0); opacity: 1; }
-.hud-frame__corner--tl { top: 0; left: 0; border-top-width: 2px; border-left-width: 2px; }
-.hud-frame__corner--tr { top: 0; right: 0; border-top-width: 2px; border-right-width: 2px; }
-.hud-frame__corner--bl { bottom: 0; left: 0; border-bottom-width: 2px; border-left-width: 2px; }
-.hud-frame__corner--br { bottom: 0; right: 0; border-bottom-width: 2px; border-right-width: 2px; }
-.hud-frame__scan {
-  position: absolute; left: 0; right: 0; top: 0; height: 40px; opacity: 0; border-radius: inherit;
-  background: linear-gradient(180deg, transparent, rgba(95, 212, 255, .04) 85%, rgba(95, 212, 255, .35) 100%);
+.hud-framed {
+  position: relative;
 }
-.hud-framed:hover .hud-frame__scan { animation: hud-scan 1.4s ease-in-out; }
-@keyframes hud-scan { 0% { opacity: 0; transform: translateY(-40px); } 15% { opacity: 1; } 100% { opacity: 0; transform: translateY(var(--hud-scan-end, 420px)); } }
+.hud-frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 2;
+  overflow: hidden;
+}
+.hud-frame__corner {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 0 solid var(--hud-steel, #8a9bb0);
+  opacity: 1;
+}
+.hud-frame__corner--tl {
+  top: 0;
+  left: 0;
+  border-top-width: 2px;
+  border-left-width: 2px;
+}
+.hud-frame__corner--tr {
+  top: 0;
+  right: 0;
+  border-top-width: 2px;
+  border-right-width: 2px;
+}
+.hud-frame__corner--bl {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+}
+.hud-frame__corner--br {
+  bottom: 0;
+  right: 0;
+  border-bottom-width: 2px;
+  border-right-width: 2px;
+}
+.hud-frame__scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 40px;
+  opacity: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, transparent, rgba(95, 212, 255, 0.04) 85%, rgba(95, 212, 255, 0.35) 100%);
+}
+.hud-framed:hover .hud-frame__scan {
+  animation: hud-scan 1.4s ease-in-out;
+}
+@keyframes hud-scan {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(var(--hud-scan-end, 420px));
+  }
+}
 
 /* Border Beam: a conic gradient on the border ring only (mask cuts out the inside) */
 .hud-frame__beam {
-  position: absolute; inset: 0; border-radius: inherit; padding: 1px;
-  background: conic-gradient(from var(--hud-angle), transparent 0deg, transparent 320deg, var(--hud-steel, #8a9bb0) 340deg, var(--hud-cyan, #5fd4ff) 357deg, transparent 360deg);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--hud-angle),
+    transparent 0deg,
+    transparent 320deg,
+    var(--hud-steel, #8a9bb0) 340deg,
+    var(--hud-cyan, #5fd4ff) 357deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
   animation: hud-beam 4s linear infinite;
-  opacity: .55;
+  opacity: 0.55;
 }
-@keyframes hud-beam { to { --hud-angle: 360deg; } }
+@keyframes hud-beam {
+  to {
+    --hud-angle: 360deg;
+  }
+}
 /* without @property support the angle does not animate: the beam simply sits still at the top-left */
 
 /* ===== 4. Ticker ===== */
-.hud-ticker { display: flex; align-items: center; gap: 8px; min-height: 20px; font: 500 12px/1.4 ui-monospace, Consolas, monospace; letter-spacing: .06em; color: var(--hud); }
-.hud-ticker__prompt { color: #fff; opacity: .8; }
-.hud-ticker__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis;  }
-.hud-ticker__caret { width: 7px; height: 14px; background: var(--hud); animation: hud-blink 1s steps(1) infinite; }
-@keyframes hud-blink { 50% { opacity: 0; } }
+.hud-ticker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  font:
+    500 12px/1.4 ui-monospace,
+    Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+  color: var(--hud);
+}
+.hud-ticker__prompt {
+  color: #fff;
+  opacity: 0.8;
+}
+.hud-ticker__text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hud-ticker__caret {
+  width: 7px;
+  height: 14px;
+  background: var(--hud);
+  animation: hud-blink 1s steps(1) infinite;
+}
+@keyframes hud-blink {
+  50% {
+    opacity: 0;
+  }
+}
 
 /* ===== 5. Backdrop: hex/tri lattice, retro floor, scan sweep ===== */
-.hud-host { position: relative; isolation: isolate; }
-.hud-backdrop { position: absolute; inset: -40px -6vw 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.hud-host {
+  position: relative;
+  isolation: isolate;
+}
+.hud-backdrop {
+  position: absolute;
+  inset: -40px -6vw 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
 /* on narrow screens the side bleed would make the page scroll sideways */
-@media (max-width: 720px) { .hud-backdrop { inset: -40px 0 0; } }
+@media (max-width: 720px) {
+  .hud-backdrop {
+    inset: -40px 0 0;
+  }
+}
 .hud-backdrop__hex {
-  position: absolute; inset: 0;
+  position: absolute;
+  inset: 0;
   background:
     repeating-linear-gradient(0deg, var(--hud-faint) 0 1px, transparent 1px 48px),
     repeating-linear-gradient(60deg, var(--hud-faint) 0 1px, transparent 1px 48px),
@@ -85,30 +303,68 @@ Start reading at: section 2 (core).
   -webkit-mask: radial-gradient(70% 55% at 50% 30%, #000, transparent 85%);
   mask: radial-gradient(70% 55% at 50% 30%, #000, transparent 85%);
 }
-.hud-backdrop__floor { position: absolute; left: 0; right: 0; bottom: 0; height: 420px; perspective: 380px; overflow: hidden;
-  -webkit-mask: linear-gradient(transparent, #000 60%); mask: linear-gradient(transparent, #000 60%); }
+.hud-backdrop__floor {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 420px;
+  perspective: 380px;
+  overflow: hidden;
+  -webkit-mask: linear-gradient(transparent, #000 60%);
+  mask: linear-gradient(transparent, #000 60%);
+}
 .hud-backdrop__floor-grid {
-  position: absolute; left: -50%; right: -50%; bottom: 0; height: 200%;
-  transform: rotateX(62deg); transform-origin: 50% 100%;
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: 0;
+  height: 200%;
+  transform: rotateX(62deg);
+  transform-origin: 50% 100%;
   background:
-    repeating-linear-gradient(90deg, rgba(138, 155, 176, .14) 0 1px, transparent 1px 64px),
-    repeating-linear-gradient(0deg, rgba(138, 155, 176, .14) 0 1px, transparent 1px 64px);
+    repeating-linear-gradient(90deg, rgba(138, 155, 176, 0.14) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(0deg, rgba(138, 155, 176, 0.14) 0 1px, transparent 1px 64px);
   animation: hud-floor 3s linear infinite;
 }
-@keyframes hud-floor { to { transform: rotateX(62deg) translateY(64px); } }
+@keyframes hud-floor {
+  to {
+    transform: rotateX(62deg) translateY(64px);
+  }
+}
 .hud-backdrop__sweep {
-  position: absolute; left: 0; right: 0; top: 0; height: 160px;
-  background: linear-gradient(180deg, transparent, rgba(103, 232, 249, .025) 85%, rgba(103, 232, 249, .12) 100%);
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 160px;
+  background: linear-gradient(180deg, transparent, rgba(103, 232, 249, 0.025) 85%, rgba(103, 232, 249, 0.12) 100%);
   /* fade the band out towards both sides so it never shows hard edges */
   -webkit-mask: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
   mask: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
   animation: hud-sweep 11s linear infinite;
 }
-@keyframes hud-sweep { from { transform: translateY(-160px); } to { transform: translateY(1800px); } }
+@keyframes hud-sweep {
+  from {
+    transform: translateY(-160px);
+  }
+  to {
+    transform: translateY(1800px);
+  }
+}
 
 /* ===== 6. Reduced motion: keep the look, drop the movement ===== */
 @media (prefers-reduced-motion: reduce) {
-  .hud-core__ring, .hud-core__seg, .hud-core__glow, .hud-frame__beam, .hud-backdrop__floor-grid,
-  .hud-ticker__caret { animation: none; }
-  .hud-backdrop__sweep, .hud-frame__scan { display: none; }
+  .hud-core__ring,
+  .hud-core__seg,
+  .hud-core__glow,
+  .hud-frame__beam,
+  .hud-backdrop__floor-grid,
+  .hud-ticker__caret {
+    animation: none;
+  }
+  .hud-backdrop__sweep,
+  .hud-frame__scan {
+    display: none;
+  }
 }
