@@ -12,10 +12,19 @@ import { HttpError } from "../utils/http-errors.js";
 const LOCAL_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
 const LOCAL_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
 
-/** Extra trusted page origins (e.g. a Cloudflare tunnel), comma-separated; "*" matches one DNS label: https://*.trycloudflare.com */
+/**
+ * Builds the CORS origin check: loopback pages plus the extra origins in `list`.
+ *
+ * @param {string} [list]  comma-separated origins (TUNNEL_ORIGINS); "*" matches exactly one DNS label,
+ *                         e.g. "https://*.trycloudflare.com"
+ * @returns {(origin: string) => boolean}
+ */
 export function originMatcher(list = "") {
-  const res = list.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).map((o) =>
-    new RegExp("^" + o.replace(/[.+?^${}()|[\]\\/]/g, "\\$&").replace(/\*/g, "[a-z0-9-]+") + "$", "i"));
+  const res = list
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .map((o) => new RegExp("^" + o.replace(/[.+?^${}()|[\]\\/]/g, "\\$&").replace(/\*/g, "[a-z0-9-]+") + "$", "i"));
   return (origin) => LOCAL_ORIGIN_RE.test(origin) || res.some((re) => re.test(origin));
 }
 const isAllowedOrigin = originMatcher(process.env.TUNNEL_ORIGINS);
@@ -24,7 +33,10 @@ const isAllowedOrigin = originMatcher(process.env.TUNNEL_ORIGINS);
 // 1. Host guard
 // ---------------------------------------------------------------------------
 
-/** Only answer to local host names (DNS-rebinding guard). */
+/**
+ * Middleware: 403 unless the Host header is localhost / 127.0.0.1 / [::1].
+ * This stops DNS rebinding: a hostile site that points its own name at 127.0.0.1 still sends its own Host.
+ */
 export function hostGuard(req, res, next) {
   if (!LOCAL_HOST_RE.test(req.headers.host || "")) return next(new HttpError(403, "Forbidden host."));
   next();
@@ -36,10 +48,13 @@ export function hostGuard(req, res, next) {
 
 const isReadOnly = (method) => method === "GET" || method === "HEAD";
 
-/** CORS for local pages (and TUNNEL_ORIGINS) only. A non-local Origin on a state-changing request is refused outright. */
+/**
+ * Middleware: CORS for local pages (and TUNNEL_ORIGINS) only. A foreign Origin on a state-changing request is
+ * refused with 403 before any route runs, because a browser sends simple POSTs without asking first.
+ */
 export function cors(req, res, next) {
   const origin = req.headers.origin;
-  if (!origin) return next();                        // same-origin or non-browser request
+  if (!origin) return next(); // same-origin or non-browser request
 
   const isLocal = isAllowedOrigin(origin);
   if (!isLocal && !isReadOnly(req.method)) return next(new HttpError(403, "Forbidden origin."));
@@ -47,14 +62,15 @@ export function cors(req, res, next) {
   if (isLocal) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.append("Vary", "Origin");
-    if (req.method === "OPTIONS") {                  // preflight
+    if (req.method === "OPTIONS") {
+      // preflight
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type");
       res.setHeader("Access-Control-Max-Age", "600");
       return res.status(204).end();
     }
   } else if (req.method === "OPTIONS") {
-    return res.status(204).end();                    // no CORS headers: the browser blocks the real request
+    return res.status(204).end(); // no CORS headers: the browser blocks the real request
   }
   next();
 }
@@ -64,10 +80,30 @@ export function cors(req, res, next) {
 // ---------------------------------------------------------------------------
 
 /** Proxy headers that mark a request as having come through the Cloudflare tunnel (or any other reverse proxy). */
-const PROXY_HEADERS = ["cdn-loop", "cf-connecting-ip", "cf-ray", "cf-visitor", "cf-ipcountry", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded",
-  "x-forwarded-proto", "x-forwarded-port", "x-original-host", "true-client-ip", "via"];
+const PROXY_HEADERS = [
+  "cdn-loop",
+  "cf-connecting-ip",
+  "cf-ray",
+  "cf-visitor",
+  "cf-ipcountry",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-real-ip",
+  "forwarded",
+  "x-forwarded-proto",
+  "x-forwarded-port",
+  "x-original-host",
+  "true-client-ip",
+  "via"
+];
 
-/** True when the request carries any reverse-proxy header, i.e. it came through the Cloudflare tunnel. Shared by localOnly and clientKey. */
+/**
+ * True when the request carries any reverse-proxy header, i.e. it came through the Cloudflare tunnel.
+ * Shared by localOnly and clientKey (middleware/rate-limit.js).
+ *
+ * @param {import("express").Request} req
+ * @returns {boolean}
+ */
 export function viaProxy(req) {
   const h = req.headers || {};
   return PROXY_HEADERS.some((k) => h[k] !== undefined);

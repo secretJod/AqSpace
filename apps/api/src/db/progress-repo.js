@@ -10,16 +10,30 @@ import { bad } from "../utils/http-errors.js";
 import * as v from "../utils/validate.js";
 
 /** Database row -> JSON for the UI. */
-export const progressToJson = (row) => ({ pos: row.pos_sec, dur: row.dur_sec, done: !!row.done, updated: row.updated_ms });
+const progressToJson = (row) => ({
+  pos: row.pos_sec,
+  dur: row.dur_sec,
+  done: !!row.done,
+  updated: row.updated_ms
+});
 
+/**
+ * Builds the watch-progress functions of the repository.
+ *
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @param {object} helpers  from createPlaylistHelpers(db) (ensureVideo)
+ * @returns {object} getProgress, allProgress, putProgress
+ */
 export function createProgressRepo(db, helpers) {
   const { ensureVideo } = helpers;
-  const findRow = (userId, vid) => db.prepare("SELECT * FROM watch_progress WHERE user_id = ? AND video_id = ?").get(userId, vid);
+  const findRow = (userId, vid) =>
+    db.prepare("SELECT * FROM watch_progress WHERE user_id = ? AND video_id = ?").get(userId, vid);
 
   // -------------------------------------------------------------------------
   // 1. Reading
   // -------------------------------------------------------------------------
 
+  /** {pos, dur, done, updated} for one video, or null when the user never watched it. */
   function getProgress(userId, vid) {
     const row = findRow(userId, vid);
     return row ? progressToJson(row) : null;
@@ -28,7 +42,8 @@ export function createProgressRepo(db, helpers) {
   /** { videoId: {pos, dur, done, updated}, ... } */
   function allProgress(userId) {
     const out = {};
-    for (const row of db.prepare("SELECT * FROM watch_progress WHERE user_id = ?").all(userId)) out[row.video_id] = progressToJson(row);
+    for (const row of db.prepare("SELECT * FROM watch_progress WHERE user_id = ?").all(userId))
+      out[row.video_id] = progressToJson(row);
     return out;
   }
 
@@ -36,18 +51,23 @@ export function createProgressRepo(db, helpers) {
   // 2. Saving
   // -------------------------------------------------------------------------
 
-  /** body: {pos, dur, done, updated?}. An older `updated` than the stored one is ignored (returns the stored row, stale:true). */
+  /**
+   * Saves the position in one video.
+   * body: {pos, dur, done?, updated?}. An older `updated` than the stored one is ignored and the stored
+   * row is returned with stale: true. Throws a 400 for invalid values.
+   */
   function putProgress(userId, vid, body) {
     v.videoId(vid);
     if (!v.isObj(body)) throw bad("Send a JSON object {pos, dur, done}.");
-    const pos = v.nonNeg(body.pos ?? 0, "pos"), dur = v.nonNeg(body.dur ?? 0, "dur");
+    const pos = v.nonNeg(body.pos ?? 0, "pos"),
+      dur = v.nonNeg(body.dur ?? 0, "dur");
     if (body.done !== undefined && typeof body.done !== "boolean") throw bad("done must be true or false.");
 
     const now = Date.now();
     let updated = now;
     if (body.updated !== undefined) {
       if (!Number.isFinite(body.updated) || body.updated < 0) throw bad("updated must be epoch milliseconds.");
-      updated = Math.min(Math.floor(body.updated), now + 60_000);   // a client clock may be a little ahead, not more
+      updated = Math.min(Math.floor(body.updated), now + 60_000); // a client clock may be a little ahead, not more
     }
 
     return tx(db, () => {

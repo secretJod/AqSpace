@@ -7,6 +7,11 @@
    Read next: dev/dev-log-store.js */
 
 /** onPush(entry) is called for every new entry (used to also write it to disk). */
+/**
+ * @param {number} max  entries to keep
+ * @param {((entry: object) => void) | null} [onPush]
+ * @returns {{ push: Function, since: Function, last: number, size: number, all: () => object[] }}
+ */
 export function createRingBuffer(max, onPush) {
   const items = [];
   let seq = 0;
@@ -30,8 +35,12 @@ export function createRingBuffer(max, onPush) {
       }
       return out;
     },
-    get last() { return seq; },
-    get size() { return items.length; },
+    get last() {
+      return seq;
+    },
+    get size() {
+      return items.length;
+    },
     all: () => items
   };
 }

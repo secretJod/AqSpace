@@ -22,7 +22,9 @@ import { LOG_FILES, tailFile } from "./service-logs.js";
 // apps/api/dev-ui (this file lives in apps/api/src/dev/)
 const DEV_UI_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dev-ui");
 
-export const CSP_DEV = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+// The dev pages load only their own files: no inline code, no third parties, no framing.
+const CSP_DEV =
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 // ---------------------------------------------------------------------------
 // 1. Small helpers
@@ -43,11 +45,13 @@ const publicState = (status) => (status === "done" ? "ready" : status === "expir
 const durationMs = (from, to) => (from && to ? Math.max(0, Date.parse(to) - Date.parse(from)) : null);
 
 /** Same rule as history-tools isError, but without network errors (status 0). */
-const isRecentError = (e) => e.layer !== "dev" && (e.status >= 500 || (e.status >= 400 && !(e.status === 404 && e.layer === "ui")));
+const isRecentError = (e) =>
+  e.layer !== "dev" && (e.status >= 500 || (e.status >= 400 && !(e.status === 404 && e.layer === "ui")));
 
 /** ?type=requests|events&date=YYYY-MM-DD (date defaults to today), or a 400. */
 function historyArgs(query) {
-  const type = query.type || "requests", date = query.date || todayUtc();
+  const type = query.type || "requests",
+    date = query.date || todayUtc();
   if (type !== "requests" && type !== "events") throw new HttpError(400, "type must be requests or events.");
   if (typeof date !== "string" || !DAY_RE.test(date)) throw new HttpError(400, "date must be YYYY-MM-DD.");
   return { type, date };
@@ -62,7 +66,11 @@ async function probeWorker(py) {
   const startedAt = Date.now();
   try {
     const answer = await py.json("/api/providers", { timeout: 1500 });
-    return { ok: answer.status === 200, latencyMs: Date.now() - startedAt, error: answer.status === 200 ? null : `status ${answer.status}` };
+    return {
+      ok: answer.status === 200,
+      latencyMs: Date.now() - startedAt,
+      error: answer.status === 200 ? null : `status ${answer.status}`
+    };
   } catch (e) {
     return { ok: false, latencyMs: Date.now() - startedAt, error: e.code === "py_offline" ? "offline" : "error" };
   }
@@ -77,11 +85,22 @@ function countRecords(db) {
     return out;
   };
   // notes: latest record per video; smart: latest run per playlist (playlists without a run = none)
-  const notes = byState(`SELECT CASE status WHEN 'done' THEN 'ready' ELSE status END AS s, COUNT(*) AS n FROM notes_jobs
-      WHERE id IN (SELECT MAX(id) FROM notes_jobs GROUP BY video_id) AND status <> 'expired' GROUP BY s`, ["queued", "running", "ready", "error"]);
-  const smart = byState(`SELECT COALESCE(CASE s.status WHEN 'done' THEN 'ready' ELSE s.status END, 'none') AS s, COUNT(*) AS n FROM playlists p
-      LEFT JOIN smart_runs s ON s.id = (SELECT MAX(id) FROM smart_runs WHERE playlist_pk = p.pk) GROUP BY 1`, ["none", "queued", "running", "ready", "error"]);
-  return { playlists: single("SELECT COUNT(*) AS n FROM playlists"), videos: single("SELECT COUNT(*) AS n FROM videos"), notes, smart };
+  const notes = byState(
+    `SELECT CASE status WHEN 'done' THEN 'ready' ELSE status END AS s, COUNT(*) AS n FROM notes_jobs
+      WHERE id IN (SELECT MAX(id) FROM notes_jobs GROUP BY video_id) AND status <> 'expired' GROUP BY s`,
+    ["queued", "running", "ready", "error"]
+  );
+  const smart = byState(
+    `SELECT COALESCE(CASE s.status WHEN 'done' THEN 'ready' ELSE s.status END, 'none') AS s, COUNT(*) AS n FROM playlists p
+      LEFT JOIN smart_runs s ON s.id = (SELECT MAX(id) FROM smart_runs WHERE playlist_pk = p.pk) GROUP BY 1`,
+    ["none", "queued", "running", "ready", "error"]
+  );
+  return {
+    playlists: single("SELECT COUNT(*) AS n FROM playlists"),
+    videos: single("SELECT COUNT(*) AS n FROM videos"),
+    notes,
+    smart
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -89,15 +108,45 @@ function countRecords(db) {
 // ---------------------------------------------------------------------------
 
 function recentJobs(db) {
-  const notes = db.prepare("SELECT id, job_id, video_id, status, stage, pct, error, created_at, updated_at FROM notes_jobs ORDER BY id DESC LIMIT 50").all()
+  const notes = db
+    .prepare(
+      "SELECT id, job_id, video_id, status, stage, pct, error, created_at, updated_at FROM notes_jobs ORDER BY id DESC LIMIT 50"
+    )
+    .all()
     .map((j) => ({
-      kind: "notes", id: j.job_id, videoId: j.video_id, playlistId: null, state: publicState(j.status), stage: j.stage, pct: j.status === "done" ? 100 : j.pct,
-      provider: null, model: null, startedAt: j.created_at, updatedAt: j.updated_at, durationMs: durationMs(j.created_at, j.updated_at), error: j.error || null
+      kind: "notes",
+      id: j.job_id,
+      videoId: j.video_id,
+      playlistId: null,
+      state: publicState(j.status),
+      stage: j.stage,
+      pct: j.status === "done" ? 100 : j.pct,
+      provider: null,
+      model: null,
+      startedAt: j.created_at,
+      updatedAt: j.updated_at,
+      durationMs: durationMs(j.created_at, j.updated_at),
+      error: j.error || null
     }));
-  const smart = db.prepare("SELECT s.job_id, p.slug, s.status, s.stage, s.pct, s.error, s.provider, s.model, s.created_at, s.updated_at FROM smart_runs s JOIN playlists p ON p.pk = s.playlist_pk ORDER BY s.id DESC LIMIT 50").all()
+  const smart = db
+    .prepare(
+      "SELECT s.job_id, p.slug, s.status, s.stage, s.pct, s.error, s.provider, s.model, s.created_at, s.updated_at FROM smart_runs s JOIN playlists p ON p.pk = s.playlist_pk ORDER BY s.id DESC LIMIT 50"
+    )
+    .all()
     .map((j) => ({
-      kind: "smart", id: j.job_id, videoId: null, playlistId: j.slug, state: publicState(j.status), stage: j.stage, pct: j.status === "done" ? 100 : j.pct,
-      provider: j.provider || null, model: j.model || null, startedAt: j.created_at, updatedAt: j.updated_at, durationMs: durationMs(j.created_at, j.updated_at), error: j.error || null
+      kind: "smart",
+      id: j.job_id,
+      videoId: null,
+      playlistId: j.slug,
+      state: publicState(j.status),
+      stage: j.stage,
+      pct: j.status === "done" ? 100 : j.pct,
+      provider: j.provider || null,
+      model: j.model || null,
+      startedAt: j.created_at,
+      updatedAt: j.updated_at,
+      durationMs: durationMs(j.created_at, j.updated_at),
+      error: j.error || null
     }));
   return [...notes, ...smart].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "")).slice(0, 50);
 }
@@ -106,6 +155,16 @@ function recentJobs(db) {
 // 4. The router
 // ---------------------------------------------------------------------------
 
+/**
+ * Builds the /dev router. app.js mounts it behind localOnly, so it is never reachable through the tunnel.
+ *
+ * @param {object} deps
+ * @param {import("node:sqlite").DatabaseSync} deps.db  read only (job lists and counts)
+ * @param {object} deps.py  a worker client used only for the health probe
+ * @param {object} deps.tracker  from createTracker()
+ * @param {string} [deps.runDir]  folder with the service console logs ("" = log viewer off)
+ * @returns {import("express").Router}
+ */
 export function devRoutes({ db, py, tracker, runDir = "" }) {
   const router = Router();
 
@@ -120,17 +179,32 @@ export function devRoutes({ db, py, tracker, runDir = "" }) {
     res.setHeader("Cache-Control", "no-store");
     next();
   });
-  router.use((req, _res, next) => (req.method === "GET" || req.method === "HEAD" ? next() : next(new HttpError(405, "Method not allowed."))));
+  router.use((req, _res, next) =>
+    req.method === "GET" || req.method === "HEAD" ? next() : next(new HttpError(405, "Method not allowed."))
+  );
 
   // 4.2 Live data
   router.get("/api/overview", async (_req, res) => {
     const worker = await probeWorker(py);
     const counts = countRecords(db);
-    const recentErrors = tracker.requests.all().filter(isRecentError).slice(-10).map((e) => ({ ts: e.ts, path: e.path, status: e.status }));
+    const recentErrors = tracker.requests
+      .all()
+      .filter(isRecentError)
+      .slice(-10)
+      .map((e) => ({ ts: e.ts, path: e.path, status: e.status }));
     const mem = process.memoryUsage();
     res.json({
       generatedAt: new Date().toISOString(),
-      services: { api: { ok: true, uptimeSec: Math.round(process.uptime()), pid: process.pid, rssMb: Math.round(mem.rss / 1048576), node: process.version }, worker },
+      services: {
+        api: {
+          ok: true,
+          uptimeSec: Math.round(process.uptime()),
+          pid: process.pid,
+          rssMb: Math.round(mem.rss / 1048576),
+          node: process.version
+        },
+        worker
+      },
       counts,
       recentErrors
     });
@@ -145,7 +219,10 @@ export function devRoutes({ db, py, tracker, runDir = "" }) {
   });
 
   router.get("/api/events", (req, res) => {
-    res.json({ items: tracker.events.since(queryInt(req.query.since, 0, Number.MAX_SAFE_INTEGER), 500), last: tracker.events.last });
+    res.json({
+      items: tracker.events.since(queryInt(req.query.since, 0, Number.MAX_SAFE_INTEGER), 500),
+      last: tracker.events.last
+    });
   });
 
   router.get("/api/jobs", (_req, res) => {
@@ -160,15 +237,17 @@ export function devRoutes({ db, py, tracker, runDir = "" }) {
   router.get("/api/history", async (req, res) => {
     const { type, date } = historyArgs(req.query);
     const log = requireLog();
-    const all = filterEntries(type, await log.read(type, date), req.query).reverse();   // newest first
-    const limit = queryInt(req.query.limit, 100, 1000) || 100, offset = queryInt(req.query.offset, 0, Number.MAX_SAFE_INTEGER);
+    const all = filterEntries(type, await log.read(type, date), req.query).reverse(); // newest first
+    const limit = queryInt(req.query.limit, 100, 1000) || 100,
+      offset = queryInt(req.query.offset, 0, Number.MAX_SAFE_INTEGER);
     res.json({ type, date, total: all.length, offset, limit, items: all.slice(offset, offset + limit) });
   });
 
   router.get("/api/export", async (req, res) => {
     const { type, date } = historyArgs(req.query);
     const log = requireLog();
-    const format = req.query.format === "jsonl" ? "jsonl" : req.query.format === "csv" || req.query.format == null ? "csv" : null;
+    const format =
+      req.query.format === "jsonl" ? "jsonl" : req.query.format === "csv" || req.query.format == null ? "csv" : null;
     if (!format) throw new HttpError(400, "format must be csv or jsonl.");
     const items = filterEntries(type, await log.read(type, date), req.query);
     res.setHeader("Content-Disposition", `attachment; filename="aq-${type}-${date}.${format}"`);
@@ -182,27 +261,46 @@ export function devRoutes({ db, py, tracker, runDir = "" }) {
     res.json({ date, ...computeStats(items) });
   });
 
-  // 4.4 Service console logs (.run/*.log written by start-all.ps1)
+  // 4.4 Service console logs (.run/<service>.out.log / .err.log)
   router.get("/api/logs/:service", async (req, res) => {
     const files = LOG_FILES[req.params.service];
     if (!files) throw new HttpError(404, "Unknown service (api or worker).");
     if (!runDir) throw new HttpError(404, "Service log capture is not configured (AQ_RUN_DIR).");
     const tail = queryInt(req.query.tail, 200, 2000) || 200;
-    const previousRun = req.query.run === "prev";        // start-all.ps1 keeps the previous run as *.prev.log
+    const previousRun = req.query.run === "prev"; // the launcher keeps the previous run as *.prev.log
     const streams = {};
     for (const [stream, fileName] of Object.entries(files)) {
       const name = previousRun ? fileName.replace(/\.log$/, ".prev.log") : fileName;
       streams[stream] = await tailFile(path.join(runDir, name), tail);
     }
-    res.json({ service: req.params.service, run: previousRun ? "prev" : "current", generatedAt: new Date().toISOString(), tail, streams });
+    res.json({
+      service: req.params.service,
+      run: previousRun ? "prev" : "current",
+      generatedAt: new Date().toISOString(),
+      tail,
+      streams
+    });
   });
 
   router.use("/api", (_req, _res, next) => next(new HttpError(404, "Not found.")));
 
   // 4.5 The dev pages (dev-ui/): simple file names only
   if (fs.existsSync(DEV_UI_DIR)) {
-    router.use((req, _res, next) => (/^\/[A-Za-z0-9_-]*(\.(html|js|css|svg|png|json))?$/.test(req.path) ? next() : next(new HttpError(404, "Not found."))));
-    router.use(express.static(DEV_UI_DIR, { index: "index.html", dotfiles: "ignore", etag: true, maxAge: 0, redirect: false, fallthrough: true }));
+    router.use((req, _res, next) =>
+      /^\/[A-Za-z0-9_-]*(\.(html|js|css|svg|png|json))?$/.test(req.path)
+        ? next()
+        : next(new HttpError(404, "Not found."))
+    );
+    router.use(
+      express.static(DEV_UI_DIR, {
+        index: "index.html",
+        dotfiles: "ignore",
+        etag: true,
+        maxAge: 0,
+        redirect: false,
+        fallthrough: true
+      })
+    );
   }
   return router;
 }

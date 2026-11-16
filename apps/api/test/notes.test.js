@@ -1,3 +1,4 @@
+/* notes.test.js - /api/v1/notes and /import/youtube against the mock worker (services/notes-service.js). */
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { startApp, startMockPython, VID, JOB } from "./helpers.js";
@@ -6,9 +7,18 @@ let py, t;
 beforeEach(async () => {
   py = await startMockPython();
   t = await startApp({ py });
-  await t.post("/api/v1/playlists", { name: "L", videos: [{ id: VID(1), title: "one" }, { id: VID(2), title: "two" }] });
+  await t.post("/api/v1/playlists", {
+    name: "L",
+    videos: [
+      { id: VID(1), title: "one" },
+      { id: VID(2), title: "two" }
+    ]
+  });
 });
-afterEach(async () => { await t.close(); await py.close(); });
+afterEach(async () => {
+  await t.close();
+  await py.close();
+});
 
 const N = "/api/v1/notes";
 
@@ -18,7 +28,7 @@ test("status is 'none' for an unknown video; ids are validated", async () => {
   assert.equal(r.json.state, "none");
   assert.equal((await t.get(`${N}/bad`)).status, 400);
   assert.equal((await t.post(`${N}/bad`)).status, 400);
-  assert.equal((await t.get(`${N}/${VID(1)}/html`)).status, 404);        // nothing ready yet
+  assert.equal((await t.get(`${N}/${VID(1)}/html`)).status, 404); // nothing ready yet
 });
 
 test("start creates exactly one Python job per video (running jobs are shared)", async () => {
@@ -29,7 +39,7 @@ test("start creates exactly one Python job per video (running jobs are shared)",
   assert.equal(py.state.jobsCreated[0].body.url, `https://www.youtube.com/watch?v=${VID(1)}`);
   assert.equal(py.state.jobsCreated[0].body.provider, "groq");
 
-  r = await t.post(`${N}/${VID(1)}`);                                    // again while running
+  r = await t.post(`${N}/${VID(1)}`); // again while running
   assert.equal(r.status, 200);
   assert.equal(r.json.cached, true);
   assert.equal(r.json.state, "running");
@@ -67,12 +77,21 @@ test("ready notes are cached: start returns immediately without a new job; html 
   assert.equal(r.headers.get("content-type"), "application/pdf");
   assert.match(r.headers.get("content-disposition"), /attachment/);
 
-  r = await t.get(N);                                                    // list of live records
-  assert.deepEqual(r.json.notes.map((x) => [x.videoId, x.state]), [[VID(1), "ready"]]);
+  r = await t.get(N); // list of live records
+  assert.deepEqual(
+    r.json.notes.map((x) => [x.videoId, x.state]),
+    [[VID(1), "ready"]]
+  );
 });
 
 test("another user gets the same cached notes (one job per video across users)", async () => {
-  const two = await startApp({ py, authenticate: (req, _res, next) => { req.user = { id: Number(req.headers["x-user"] || 1), name: "u" }; next(); } });
+  const two = await startApp({
+    py,
+    authenticate: (req, _res, next) => {
+      req.user = { id: Number(req.headers["x-user"] || 1), name: "u" };
+      next();
+    }
+  });
   try {
     two.db.exec("INSERT INTO users (id, name) VALUES (2, 'b')");
     await two.post("/api/v1/playlists", { name: "P1", videos: [{ id: VID(5) }] }, { "x-user": "1" });
@@ -83,7 +102,9 @@ test("another user gets the same cached notes (one job per video across users)",
     assert.equal(b.json.state, "ready");
     assert.equal(b.json.cached, true);
     assert.equal(py.state.jobsCreated.filter((j) => j.body.url.endsWith(VID(5))).length, 1);
-  } finally { await two.close(); }
+  } finally {
+    await two.close();
+  }
 });
 
 test("error jobs allow a new start; progress never moves backwards", async () => {
@@ -99,7 +120,7 @@ test("error jobs allow a new start; progress never moves backwards", async () =>
   assert.equal(r.json.error, "boom");
   assert.equal((await t.get(N)).json.notes.length, 0);
 
-  r = await t.post(`${N}/${VID(1)}`);                                    // retry
+  r = await t.post(`${N}/${VID(1)}`); // retry
   assert.equal(r.status, 202);
   assert.equal(r.json.jobId, JOB(2));
   assert.equal(py.state.jobsCreated.length, 2);
@@ -110,8 +131,8 @@ test("a Python restart (job 404) expires the record and a new start works", asyn
   py.state.jobs.get(JOB(1)).status = "done";
   assert.equal((await t.get(`${N}/${VID(1)}`)).json.state, "ready");
 
-  py.state.jobs.clear();                                                 // "restart": files and jobs are gone
-  let r = await t.get(`${N}/${VID(1)}`);                                 // verify() sees a 404 on HEAD
+  py.state.jobs.clear(); // "restart": files and jobs are gone
+  let r = await t.get(`${N}/${VID(1)}`); // verify() sees a 404 on HEAD
   assert.equal(r.json.state, "none");
   assert.match(r.json.message, /expired/i);
   assert.equal((await t.get(`${N}/${VID(1)}/html`)).status, 404);
@@ -146,9 +167,9 @@ test("Python busy -> 429 with Retry-After; Python rejects -> 422; Python down ->
   r = await t.post(`${N}/${VID(1)}`);
   assert.equal(r.status, 503);
   assert.equal(r.json.code, "py_offline");
-  r = await t.get(`${N}/${VID(1)}`);                                     // status itself still answers
+  r = await t.get(`${N}/${VID(1)}`); // status itself still answers
   assert.equal(r.status, 200);
-  py = await startMockPython();                                          // so afterEach can close something
+  py = await startMockPython(); // so afterEach can close something
 });
 
 test("status refresh keeps the record when Python is unreachable", async () => {
@@ -161,12 +182,18 @@ test("status refresh keeps the record when Python is unreachable", async () => {
 });
 
 test("import/youtube forwards only the validated list id", async () => {
-  let r = await t.get("/api/v1/import/youtube?url=" + encodeURIComponent("https://www.youtube.com/playlist?list=PLabcdefghij&evil=http://169.254.169.254/"));
+  let r = await t.get(
+    "/api/v1/import/youtube?url=" +
+      encodeURIComponent("https://www.youtube.com/playlist?list=PLabcdefghij&evil=http://169.254.169.254/")
+  );
   assert.equal(r.status, 200);
   assert.equal(r.json.videos.length, 1);
   assert.equal(py.state.playlistUrls[0], "https://www.youtube.com/playlist?list=PLabcdefghij");
   assert.equal((await t.get("/api/v1/import/youtube")).status, 400);
-  assert.equal((await t.get("/api/v1/import/youtube?url=" + encodeURIComponent("https://youtube.com/watch?v=abc"))).status, 400);
+  assert.equal(
+    (await t.get("/api/v1/import/youtube?url=" + encodeURIComponent("https://youtube.com/watch?v=abc"))).status,
+    400
+  );
   assert.equal((await t.get("/api/v1/import/youtube?url=" + encodeURIComponent("x".repeat(3000)))).status, 400);
 });
 

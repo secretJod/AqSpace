@@ -9,10 +9,18 @@
      - progress only overwrites a row when the incoming `updated` is newer or equal.
    Read next: services/worker-client.js */
 import { tx } from "./database.js";
-import { nowIso } from "./playlist-helpers.js";
+import { nowIso } from "../utils/time.js";
 import { bad } from "../utils/http-errors.js";
 import * as v from "../utils/validate.js";
 
+/**
+ * Builds importState() for the repository.
+ *
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @param {object} helpers  from createPlaylistHelpers(db)
+ * @param {object} readers  listPlaylists and allProgress, used to return the resulting state
+ * @returns {{ importState: Function }}
+ */
 export function createSyncImportRepo(db, helpers, { listPlaylists, allProgress }) {
   const { ensureVideo, findPlaylistRow, isNameTaken, appendVideos } = helpers;
 
@@ -54,27 +62,55 @@ export function createSyncImportRepo(db, helpers, { listPlaylists, allProgress }
     if (!name) return null;
     const description = v.text(raw.description).slice(0, v.LIMITS.description);
     let source = null;
-    try { source = v.source(raw.source); } catch { /* ignore a bad source */ }
+    try {
+      source = v.source(raw.source);
+    } catch {
+      /* ignore a bad source */
+    }
     const videos = cleanUniqueVideos(raw.videos);
 
-    const now = nowIso(), created = v.isoOr(raw.created, now), updated = v.isoOr(raw.updated, now);
+    const now = nowIso(),
+      created = v.isoOr(raw.created, now),
+      updated = v.isoOr(raw.updated, now);
     const existing = findPlaylistRow(userId, raw.id);
     const uniqueName = pickUniqueName(userId, name, existing ? existing.pk : 0);
 
     let pk;
     if (existing) {
       pk = existing.pk;
-      db.prepare("UPDATE playlists SET name = ?, description = ?, source_list_id = ?, source_imported_at = ?, updated_at = ? WHERE pk = ?")
-        .run(uniqueName, description, source ? source.listId : null, source ? (source.importedAt || now) : null, updated, pk);
+      db.prepare(
+        "UPDATE playlists SET name = ?, description = ?, source_list_id = ?, source_imported_at = ?, updated_at = ? WHERE pk = ?"
+      ).run(
+        uniqueName,
+        description,
+        source ? source.listId : null,
+        source ? source.importedAt || now : null,
+        updated,
+        pk
+      );
       if (mode === "replace") db.prepare("DELETE FROM playlist_videos WHERE playlist_pk = ?").run(pk);
     } else {
-      pk = Number(db.prepare(
-        "INSERT INTO playlists (user_id, slug, name, description, source_list_id, source_imported_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-      ).run(userId, raw.id, uniqueName, description, source ? source.listId : null, source ? (source.importedAt || now) : null, created, updated).lastInsertRowid);
+      pk = Number(
+        db
+          .prepare(
+            "INSERT INTO playlists (user_id, slug, name, description, source_list_id, source_imported_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+          )
+          .run(
+            userId,
+            raw.id,
+            uniqueName,
+            description,
+            source ? source.listId : null,
+            source ? source.importedAt || now : null,
+            created,
+            updated
+          ).lastInsertRowid
+      );
     }
 
     appendVideos(pk, videos, null);
-    if (mode === "replace" && videos.length) {      // keep the client's order
+    if (mode === "replace" && videos.length) {
+      // keep the client's order
       const setPosition = db.prepare("UPDATE playlist_videos SET position = ? WHERE playlist_pk = ? AND video_id = ?");
       videos.forEach((video, index) => setPosition.run(index, pk, video.id));
     }
@@ -83,12 +119,18 @@ export function createSyncImportRepo(db, helpers, { listPlaylists, allProgress }
 
   /** Valid videos only, each id once, at most 1000. */
   function cleanUniqueVideos(list) {
-    const clean = [], seen = new Set();
+    const clean = [],
+      seen = new Set();
     for (const raw of (Array.isArray(list) ? list : []).slice(0, 1000)) {
       try {
         const video = v.videoInput(raw);
-        if (!seen.has(video.id)) { seen.add(video.id); clean.push(video); }
-      } catch { /* drop */ }
+        if (!seen.has(video.id)) {
+          seen.add(video.id);
+          clean.push(video);
+        }
+      } catch {
+        /* drop */
+      }
     }
     return clean;
   }
@@ -102,9 +144,11 @@ export function createSyncImportRepo(db, helpers, { listPlaylists, allProgress }
     return candidate;
   }
 
+  /** "replace" mode: the server keeps only the playlists that were in the payload. */
   function deletePlaylistsNotIn(userId, keptSlugs) {
     for (const row of db.prepare("SELECT slug FROM playlists WHERE user_id = ?").all(userId)) {
-      if (!keptSlugs.has(row.slug)) db.prepare("DELETE FROM playlists WHERE user_id = ? AND slug = ?").run(userId, row.slug);
+      if (!keptSlugs.has(row.slug))
+        db.prepare("DELETE FROM playlists WHERE user_id = ? AND slug = ?").run(userId, row.slug);
     }
   }
 
@@ -112,9 +156,12 @@ export function createSyncImportRepo(db, helpers, { listPlaylists, allProgress }
   // 3. Watch progress
   // -------------------------------------------------------------------------
 
+  /** Imports one progress entry; an invalid one is skipped. Client clocks may be at most a minute ahead. */
   function importOneProgress(userId, vid, entry) {
     if (!v.VIDEO_ID_RE.test(vid) || !v.isObj(entry)) return;
-    const pos = Number(entry.pos), dur = Number(entry.dur), updated = Number(entry.updated) || Date.now();
+    const pos = Number(entry.pos),
+      dur = Number(entry.dur),
+      updated = Number(entry.updated) || Date.now();
     if (![pos, dur].every((n) => Number.isFinite(n) && n >= 0 && n <= 1e7)) return;
     ensureVideo({ id: vid, title: "", channel: "", durationSec: Math.floor(dur) });
     // The WHERE at the end keeps a newer row that is already stored.

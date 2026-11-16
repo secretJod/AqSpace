@@ -1,5 +1,5 @@
 -- Smart playlist runs (smart arrangement + topics to cover). The Python service does the AI work; this table stores each run
--- and, once the worker reports it done, its result, so it survives worker restarts and page reloads. Applied by src/db.js.
+-- and, once the worker reports it done, its result, so it survives worker restarts and page reloads. Applied by src/db/database.js.
 -- Same shape as notes_jobs (status / pct / stage / message / error / checked_at); the result is stored as JSON text.
 
 CREATE TABLE smart_runs (

@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 /** The UI is plain JS + Google Fonts + YouTube embeds/thumbnails/oEmbed + Google profile pictures; nothing else is allowed. */
-export const CSP_APP = [
+const CSP_APP = [
   "default-src 'self'",
   "script-src 'self' https://www.youtube.com https://s.ytimg.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -19,16 +19,20 @@ export const CSP_APP = [
   "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com",
   "connect-src 'self' https://www.youtube.com",
   "media-src 'self' blob:",
-  "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'self'"
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'self'"
 ].join("; ");
 
 /** JSON answers never need to load anything. */
-export const CSP_API = "default-src 'none'; frame-ancestors 'self'";
+const CSP_API = "default-src 'none'; frame-ancestors 'self'";
 
 // ---------------------------------------------------------------------------
 // 2. The middleware
 // ---------------------------------------------------------------------------
 
+/** Middleware: sets the headers above on every response, before any route can write a body. */
 export function securityHeaders(req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");

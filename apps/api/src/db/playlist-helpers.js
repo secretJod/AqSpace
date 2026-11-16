@@ -1,15 +1,22 @@
-/* playlist-helpers.js - small database helpers shared by the playlist and sync-import code.
+/* playlist-helpers.js - small database helpers shared by the repository files.
 
    What:  find a playlist row, turn rows into the JSON shape the UI expects,
-          pick a free playlist id, append videos at a position.
+          pick a free playlist id, append videos at a position, make sure a video row exists.
    How it fits: created once per database by db/repository.js and handed to
-          playlists-repo.js and sync-import-repo.js.
+          playlists-repo.js, progress-repo.js and sync-import-repo.js.
    Read next: db/playlists-repo.js */
 import { notFound } from "../utils/http-errors.js";
+import { nowIso } from "../utils/time.js";
 import * as v from "../utils/validate.js";
 
-export const nowIso = () => new Date().toISOString();
-
+/**
+ * Builds the helpers for one database connection. None of them opens a transaction:
+ * callers run them inside their own tx().
+ *
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @returns {object} ensureVideo, findPlaylistRow, requirePlaylistRow, isNameTaken, findFreeSlug,
+ *          touchPlaylist, videosOfPlaylist, playlistToJson, appendVideos
+ */
 export function createPlaylistHelpers(db) {
   // -------------------------------------------------------------------------
   // 1. Videos table (one row per YouTube video, shared by all users)
@@ -17,8 +24,12 @@ export function createPlaylistHelpers(db) {
 
   /** Makes sure a `videos` row exists (never overwrites an existing one). */
   function ensureVideo(video) {
-    db.prepare("INSERT OR IGNORE INTO videos (id, title, channel, duration_sec) VALUES (?, ?, ?, ?)")
-      .run(video.id, video.title || "", video.channel || "", video.durationSec || 0);
+    db.prepare("INSERT OR IGNORE INTO videos (id, title, channel, duration_sec) VALUES (?, ?, ?, ?)").run(
+      video.id,
+      video.title || "",
+      video.channel || "",
+      video.durationSec || 0
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -39,14 +50,25 @@ export function createPlaylistHelpers(db) {
 
   /** Is the name used by another playlist of this user? (case-insensitive) */
   function isNameTaken(userId, name, exceptPk = 0) {
-    return !!db.prepare("SELECT 1 FROM playlists WHERE user_id = ? AND name = ? COLLATE NOCASE AND pk <> ?").get(userId, name, exceptPk);
+    return !!db
+      .prepare("SELECT 1 FROM playlists WHERE user_id = ? AND name = ? COLLATE NOCASE AND pk <> ?")
+      .get(userId, name, exceptPk);
   }
 
   /** Builds a slug from `base` ("My List!" -> "my-list") and adds -2, -3 ... until it is unused. */
   function findFreeSlug(userId, base) {
-    base = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "playlist";
-    let candidate = base, n = 1;
-    while (findPlaylistRow(userId, candidate)) { n++; candidate = `${base}-${n}`; }
+    base =
+      base
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 30) || "playlist";
+    let candidate = base,
+      n = 1;
+    while (findPlaylistRow(userId, candidate)) {
+      n++;
+      candidate = `${base}-${n}`;
+    }
     return candidate;
   }
 
@@ -58,8 +80,13 @@ export function createPlaylistHelpers(db) {
   // -------------------------------------------------------------------------
 
   const videoToJson = (row) => ({
-    id: row.video_id, title: row.title, channel: row.channel, durationSec: row.duration_sec, duration: v.clock(row.duration_sec),
-    added: row.added_at, position: row.position
+    id: row.video_id,
+    title: row.title,
+    channel: row.channel,
+    durationSec: row.duration_sec,
+    duration: v.clock(row.duration_sec),
+    added: row.added_at,
+    position: row.position
   });
 
   function videosOfPlaylist(pk) {
@@ -69,13 +96,20 @@ export function createPlaylistHelpers(db) {
   /** The playlist as JSON. With `videos` the list is included; without, only the count and total duration. */
   function playlistToJson(row, videos) {
     const out = {
-      id: row.slug, name: row.name, description: row.description, created: row.created_at, updated: row.updated_at,
-      videoCount: 0, durationSec: 0
+      id: row.slug,
+      name: row.name,
+      description: row.description,
+      created: row.created_at,
+      updated: row.updated_at,
+      videoCount: 0,
+      durationSec: 0
     };
     if (row.source_list_id) {
       out.source = {
-        type: "youtube", listId: row.source_list_id,
-        url: "https://www.youtube.com/playlist?list=" + row.source_list_id, importedAt: row.source_imported_at
+        type: "youtube",
+        listId: row.source_list_id,
+        url: "https://www.youtube.com/playlist?list=" + row.source_list_id,
+        importedAt: row.source_imported_at
       };
     }
     if (videos) {
@@ -83,7 +117,9 @@ export function createPlaylistHelpers(db) {
       out.durationSec = videos.reduce((sum, video) => sum + video.durationSec, 0);
       out.videos = videos;
     } else {
-      const totals = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(duration_sec), 0) AS d FROM playlist_videos WHERE playlist_pk = ?").get(row.pk);
+      const totals = db
+        .prepare("SELECT COUNT(*) AS n, COALESCE(SUM(duration_sec), 0) AS d FROM playlist_videos WHERE playlist_pk = ?")
+        .get(row.pk);
       out.videoCount = Number(totals.n);
       out.durationSec = Number(totals.d);
     }
@@ -97,13 +133,21 @@ export function createPlaylistHelpers(db) {
   /** Appends clean videos (skipping ones already in the playlist) at the end (or at `at`). Returns {added, skipped}. */
   function appendVideos(pk, list, at) {
     const count = Number(db.prepare("SELECT COUNT(*) AS n FROM playlist_videos WHERE playlist_pk = ?").get(pk).n);
-    const alreadyIn = new Set(db.prepare("SELECT video_id FROM playlist_videos WHERE playlist_pk = ?").all(pk).map((r) => r.video_id));
+    const alreadyIn = new Set(
+      db
+        .prepare("SELECT video_id FROM playlist_videos WHERE playlist_pk = ?")
+        .all(pk)
+        .map((r) => r.video_id)
+    );
 
     // Drop duplicates (already in the playlist, or twice in `list`).
     const fresh = [];
     let skipped = 0;
     for (const video of list) {
-      if (alreadyIn.has(video.id)) { skipped++; continue; }
+      if (alreadyIn.has(video.id)) {
+        skipped++;
+        continue;
+      }
       alreadyIn.add(video.id);
       fresh.push(video);
     }
@@ -112,11 +156,17 @@ export function createPlaylistHelpers(db) {
     // Inserting in the middle: first shift the later videos down to make room.
     let position = count;
     if (Number.isInteger(at) && at >= 0 && at < count) {
-      db.prepare("UPDATE playlist_videos SET position = position + ? WHERE playlist_pk = ? AND position >= ?").run(fresh.length, pk, at);
+      db.prepare("UPDATE playlist_videos SET position = position + ? WHERE playlist_pk = ? AND position >= ?").run(
+        fresh.length,
+        pk,
+        at
+      );
       position = at;
     }
 
-    const insert = db.prepare("INSERT INTO playlist_videos (playlist_pk, video_id, position, title, channel, duration_sec, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    const insert = db.prepare(
+      "INSERT INTO playlist_videos (playlist_pk, video_id, position, title, channel, duration_sec, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
     for (const video of fresh) {
       ensureVideo(video);
       insert.run(pk, video.id, position++, video.title, video.channel, video.durationSec, video.added || nowIso());
@@ -125,7 +175,14 @@ export function createPlaylistHelpers(db) {
   }
 
   return {
-    ensureVideo, findPlaylistRow, requirePlaylistRow, isNameTaken, findFreeSlug, touchPlaylist,
-    videosOfPlaylist, playlistToJson, appendVideos
+    ensureVideo,
+    findPlaylistRow,
+    requirePlaylistRow,
+    isNameTaken,
+    findFreeSlug,
+    touchPlaylist,
+    videosOfPlaylist,
+    playlistToJson,
+    appendVideos
   };
 }

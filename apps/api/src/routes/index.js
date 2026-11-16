@@ -24,12 +24,32 @@ import { notesRoutes } from "./notes.js";
 import { smartRoutes } from "./smart.js";
 import { youtubeImportRoutes } from "./youtube-import.js";
 
-export function createApiRouter({ db, repo, py, notes, smart, config, authenticate, google, localUserId, generalLimiter, heavyLimiter, version }) {
+/**
+ * Builds the /api/v1 router.
+ *
+ * @param {object} deps  everything app.js built: db, repo, py (worker client), notes and smart services, config,
+ *        authenticate (middleware), google (null in AUTH_MODE=local), localUserId, the two rate limiters, version
+ * @returns {import("express").Router}
+ */
+export function createApiRouter({
+  db,
+  repo,
+  py,
+  notes,
+  smart,
+  config,
+  authenticate,
+  google,
+  localUserId,
+  generalLimiter,
+  heavyLimiter,
+  version
+}) {
   const api = express.Router();
 
   api.use(generalLimiter);
   api.use(healthRoutes({ db, py, version }));
-  if (google) api.use(google.routes);                          // login / callback / logout need no user
+  if (google) api.use(google.routes); // login / callback / logout need no user
   api.use(authStatusRoutes(repo, config.authMode, google ? google.currentUser : () => localUserId));
   api.use(authenticate);
   api.use(meRoutes(repo));

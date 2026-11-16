@@ -4,9 +4,12 @@
    How it fits: app.js adds it when config.log is true (LOG=0 turns it off).
    Read next: middleware/error-handler.js */
 
+/** Middleware: logs one line when the response is finished. Query strings are left out because they can hold ids. */
 export function requestLogger(req, res, next) {
   const startedAt = Date.now();
-  if (req.path.startsWith("/dev/api/")) return next();   // tracker polling would flood the console
-  res.on("finish", () => console.log(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - startedAt}ms`));
+  if (req.path.startsWith("/dev/api/")) return next(); // tracker polling would flood the console
+  res.on("finish", () =>
+    console.log(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - startedAt}ms`)
+  );
   next();
 }

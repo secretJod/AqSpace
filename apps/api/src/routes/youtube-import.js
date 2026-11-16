@@ -9,18 +9,31 @@ import { Router } from "express";
 import { HttpError } from "../utils/http-errors.js";
 import { LIST_ID_RE } from "../utils/validate.js";
 
+/**
+ * @param {object} py  the worker client
+ * @param {object} config  uses config.notes.importTimeoutMs
+ * @param {import("express").RequestHandler} heavyLimiter
+ * @returns {import("express").Router}
+ */
 export function youtubeImportRoutes(py, config, heavyLimiter) {
   const router = Router();
 
+  /**
+   * GET /import/youtube?url=<playlist link> - the worker's playlist JSON {id, title, channel, videos, ...}.
+   * Errors: 400 not a playlist link, 422 the worker refused it, 502 the worker failed, 503 py_offline.
+   */
   router.get("/import/youtube", heavyLimiter, async (req, res) => {
     const listId = listIdFromUrl(req.query.url);
     const canonical = "https://www.youtube.com/playlist?list=" + listId;
-    const answer = await py.json("/api/playlist?url=" + encodeURIComponent(canonical), { timeout: config.notes.importTimeoutMs });
+    const answer = await py.json("/api/playlist?url=" + encodeURIComponent(canonical), {
+      timeout: config.notes.importTimeoutMs
+    });
 
     if (answer.status !== 200 || !answer.json) {
-      const message = answer.json && typeof answer.json.error === "string"
-        ? answer.json.error.slice(0, 300)
-        : `The notes service could not read that playlist (status ${answer.status}).`;
+      const message =
+        answer.json && typeof answer.json.error === "string"
+          ? answer.json.error.slice(0, 300)
+          : `The notes service could not read that playlist (status ${answer.status}).`;
       const clientProblem = answer.status >= 400 && answer.status < 500 && answer.status !== 404;
       throw new HttpError(clientProblem ? 422 : 502, message);
     }
@@ -35,6 +48,7 @@ function listIdFromUrl(value) {
   const url = typeof value === "string" ? value : "";
   if (!url || url.length > 2048) throw new HttpError(400, "Paste a YouTube playlist link.");
   const match = /[?&]list=([A-Za-z0-9_-]{10,64})(?:[&#]|$)/.exec(url);
-  if (!match || !LIST_ID_RE.test(match[1])) throw new HttpError(400, "That doesn't look like a playlist link (it should contain list=...).");
+  if (!match || !LIST_ID_RE.test(match[1]))
+    throw new HttpError(400, "That doesn't look like a playlist link (it should contain list=...).");
   return match[1];
 }

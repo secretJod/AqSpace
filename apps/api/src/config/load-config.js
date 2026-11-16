@@ -28,38 +28,49 @@ function int(value, fallback) {
 // 3. The config object
 // ---------------------------------------------------------------------------
 
-/** Reads the environment once. `overrides` is for tests. */
+/**
+ * Reads the environment once and returns the settings object used everywhere else.
+ * The README lists every variable; TUNNEL_ORIGINS is read by middleware/local-only.js.
+ *
+ * @param {Record<string, string | undefined>} [env]  the environment (default process.env)
+ * @param {object} [overrides]  top-level keys to replace afterwards (tests use this)
+ * @returns {object} the config: host, port, paths, worker settings, limits, sign-in and timings
+ */
 export function loadConfig(env = process.env, overrides = {}) {
   const config = {
-    host: env.HOST || "127.0.0.1",                     // only set HOST=0.0.0.0 inside the container; compose publishes the port on 127.0.0.1 only
+    // Loopback by default. HOST=0.0.0.0 is only for inside the container, where compose publishes the port
+    // on 127.0.0.1 only, so the API is never reachable from the network directly.
+    host: env.HOST || "127.0.0.1",
     port: int(env.PORT, 5180),
     dbFile: env.DB_FILE || path.join(ROOT, "data", "aq.db"),
     sqlDir: path.join(ROOT, "sql"),
     uiDir: env.UI_DIR || path.resolve(ROOT, "..", "web"),
 
-    // The Python worker (notes + AI)
+    // The Python worker (transcripts, notes, language-model calls)
     pyUrl: (env.PY_NOTES_URL || "http://127.0.0.1:5055").replace(/\/+$/, ""),
     pyProvider: env.PY_NOTES_PROVIDER || "groq",
-    pySmartProvider: env.PY_SMART_PROVIDER || "gemini",   // provider for smart playlist runs
-    pySmartModel: env.PY_SMART_MODEL || "",               // "" = the worker's default model for that provider
+    pySmartProvider: env.PY_SMART_PROVIDER || "gemini", // provider for smart playlist runs
+    pySmartModel: env.PY_SMART_MODEL || "", // "" = the worker's default model for that provider
     allowRemotePy: env.ALLOW_REMOTE_PY === "1",
-    requireMembership: env.NOTES_REQUIRE_MEMBERSHIP !== "0",   // notes can only be started for videos in the user's playlists
+    requireMembership: env.NOTES_REQUIRE_MEMBERSHIP !== "0", // notes can only be started for videos in the user's playlists
 
     // HTTP
     bodyLimit: env.BODY_LIMIT || "256kb",
     log: env.LOG !== "0",
 
     // Developer tools (/dev)
-    devTools: env.AQ_DEV_TOOLS !== "0",                  // /dev tracker (local only); AQ_DEV_TOOLS=0 turns it off (404)
-    devLogDir: env.AQ_DEVLOG_DIR ?? path.join(ROOT, "data", "devlogs"),   // persistent tracker JSONL; "" = off
+    devTools: env.AQ_DEV_TOOLS !== "0", // /dev tracker (local only); AQ_DEV_TOOLS=0 turns it off (404)
+    devLogDir: env.AQ_DEVLOG_DIR ?? path.join(ROOT, "data", "devlogs"), // persistent tracker JSONL; "" = off
     devLogDays: int(env.AQ_DEVLOG_DAYS, 14),
-    runDir: env.AQ_RUN_DIR ?? path.resolve(ROOT, "..", ".run"),          // start-all.ps1 service console logs
+    runDir: env.AQ_RUN_DIR ?? path.resolve(ROOT, "..", ".run"), // service console logs (<service>.out.log / .err.log); "" = off
 
     // Rate limits, per client IP, fixed window
-    trustCfHeaders: env.TRUST_CF_HEADERS === "1",       // opt-in: key the rate limit on CF-Connecting-IP, only for tunnel requests (viaProxy) from loopback cloudflared
+    // Opt-in: give each tunnel visitor their own bucket via CF-Connecting-IP. Only honoured for proxied requests
+    // that arrive from loopback (the local cloudflared), see clientKey() in middleware/rate-limit.js.
+    trustCfHeaders: env.TRUST_CF_HEADERS === "1",
     rate: {
       general: { max: int(env.RATE_LIMIT_PER_MIN, 600), windowMs: 60_000 },
-      heavy: { max: int(env.RATE_LIMIT_HEAVY_PER_MIN, 20), windowMs: 60_000 }   // starting notes / YouTube imports
+      heavy: { max: int(env.RATE_LIMIT_HEAVY_PER_MIN, 20), windowMs: 60_000 } // starting notes / YouTube imports
     },
 
     // Sign-in: local = single built-in user (default); google = Google OAuth (middleware/google-auth.js)
@@ -77,7 +88,13 @@ export function loadConfig(env = process.env, overrides = {}) {
     },
 
     // Timings for talking to the worker; maxAutoResumes = re-submits after the worker lost a job (restart)
-    notes: { pollMinMs: 800, verifyMs: 5 * 60_000, pyTimeoutMs: 10_000, importTimeoutMs: 60_000, maxAutoResumes: int(env.NOTES_MAX_AUTO_RESUMES, 3) }
+    notes: {
+      pollMinMs: 800,
+      verifyMs: 5 * 60_000,
+      pyTimeoutMs: 10_000,
+      importTimeoutMs: 60_000,
+      maxAutoResumes: int(env.NOTES_MAX_AUTO_RESUMES, 3)
+    }
   };
   return Object.assign(config, overrides);
 }

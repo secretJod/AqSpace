@@ -1,4 +1,4 @@
-/* worker-client.js - a thin client for the Python worker (notes + AI, http://127.0.0.1:5055).
+/* worker-client.js - a thin client for the Python worker (transcripts, notes and language-model work, http://127.0.0.1:5055).
 
    What:  json() for API calls that answer JSON, raw() for files we stream to the browser.
           When the worker cannot be reached, both throw a 503 HttpError with code "py_offline".
@@ -14,25 +14,48 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 // 1. Checking the worker address (runs once at start-up)
 // ---------------------------------------------------------------------------
 
+/**
+ * Refuses a worker address that is not on this machine, unless allowRemote. The worker trusts its callers,
+ * so pointing the API at someone else's server by mistake must fail at start-up.
+ *
+ * @param {string} url  PY_NOTES_URL
+ * @param {boolean} [allowRemote]  ALLOW_REMOTE_PY=1
+ * @throws {Error} for an invalid URL, a non-http(s) scheme or a remote host
+ */
 export function assertPyUrl(url, allowRemote = false) {
   let parsed;
-  try { parsed = new URL(url); } catch { throw new Error(`PY_NOTES_URL is not a valid URL: ${url}`); }
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`PY_NOTES_URL is not a valid URL: ${url}`);
+  }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("PY_NOTES_URL must be http(s).");
-  if (!allowRemote && !LOOPBACK_HOSTS.has(parsed.hostname)) throw new Error("PY_NOTES_URL must point to this machine (set ALLOW_REMOTE_PY=1 to override).");
+  if (!allowRemote && !LOOPBACK_HOSTS.has(parsed.hostname))
+    throw new Error("PY_NOTES_URL must point to this machine (set ALLOW_REMOTE_PY=1 to override).");
 }
 
 // ---------------------------------------------------------------------------
 // 2. The client
 // ---------------------------------------------------------------------------
 
-/** fetchImpl can be swapped (tests, or the dev tracker which records each call). */
+/**
+ * Builds the worker client.
+ *
+ * @param {object} options
+ * @param {string} options.baseUrl  e.g. "http://127.0.0.1:5055" (no trailing slash)
+ * @param {number} [options.timeoutMs]  default timeout of json()
+ * @param {typeof fetch} [options.fetchImpl]  swapped by the tests and by the dev tracker, which records each call
+ * @returns {{ json: Function, raw: Function }}
+ */
 export function createPyClient({ baseUrl, timeoutMs = 10_000, fetchImpl = fetch }) {
   /** -> {status, headers, json} (json = null when the body is not JSON). Throws HttpError 503 when the service is unreachable. */
   async function json(path, { method = "GET", body, timeout = timeoutMs } = {}) {
     let res;
     try {
       res = await fetchImpl(baseUrl + path, {
-        method, redirect: "error", signal: AbortSignal.timeout(timeout),
+        method,
+        redirect: "error",
+        signal: AbortSignal.timeout(timeout),
         headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
         body: body !== undefined ? JSON.stringify(body) : undefined
       });
@@ -40,7 +63,11 @@ export function createPyClient({ baseUrl, timeoutMs = 10_000, fetchImpl = fetch 
       throw offlineError(e);
     }
     let data = null;
-    try { data = await res.json(); } catch { /* not JSON */ }
+    try {
+      data = await res.json();
+    } catch {
+      /* not JSON */
+    }
     return { status: res.status, headers: res.headers, json: data };
   }
 

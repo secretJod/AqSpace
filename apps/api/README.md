@@ -1,253 +1,394 @@
-# aq-api - AQspace application backend
+# AQspace API (`apps/api`)
 
-Node.js (Express 5 + the built-in `node:sqlite`) service that owns the application data: users, playlists, videos, watch
-progress and notes records. The Python service (`D:\AQspace\lecture-notes-ai`) stays the **AI/media worker only**; this API
-proxies to it and caches its results by video id. It also serves the UI (`D:\AQspace\lecture-notes-ui`) so one origin
-(`http://127.0.0.1:5180/`) serves UI and API.
+The HTTP API of AQspace. It owns the application data (users, sign-in sessions, playlists, videos, watch progress
+and the records of generated notes and smart playlist runs) and serves the web app (`apps/web`) from the same origin.
+The Python worker (`apps/worker`) does the heavy work: transcripts, notes, PDFs and language-model calls. This API
+starts jobs there, follows their progress and keeps the results, so a finished job is reused by every user.
 
 ```
-browser (UI, localStorage = offline cache)
-   |  same origin
-aq-api  :5180   users / playlists / videos / progress / notes records     data/aq.db (SQLite)
-   |  server-to-server, loopback only
-notes service (Python / Flask) :5055   transcribe + generate notes (jobs live in its memory)
+browser (apps/web, localStorage = offline cache)
+   |  same origin, http://127.0.0.1:5180
+API (this app)       users, playlists, progress, notes and smart records   ->  data/aq.db (SQLite)
+   |  server to server, loopback only
+worker (Python)      transcripts, notes, PDFs, model calls                 ->  http://127.0.0.1:5055
 ```
 
-Not related to `D:\AQspace\backend` / `frontend` (the separate OAuth app) - see "Plugging in OAuth" below.
+Node 24+ with Express 5 and the built-in `node:sqlite`. Express is the only runtime dependency.
 
-## How the code is organized
+## Run and test
 
-Every file starts with a short header saying **what** it does, **how it fits**, and **what to read next**.
+```sh
+cd apps/api
+npm ci                 # npm cache goes to the repo-root .npm-cache (see .npmrc)
+npm start              # http://127.0.0.1:5180/  (web app + API)
+npm test               # node:test; starts a mock worker, needs no network
+npm run lint           # ESLint (eslint.config.js)
+npm run format         # Prettier, rewrites files
+npm run format:check   # Prettier, check only (CI)
+```
+
+Start the worker as well to generate notes (`docker compose up` from the repo root starts both). Without it everything
+else works and notes calls answer `503 {"code": "py_offline"}`.
+
+## Folder map
+
+Every source file starts with a short header: what it does, who uses it, and what to read next.
 
 ```
 src/
-  server.js              entry point (npm start): load config, listen, shut down cleanly
-  app.js                 builds the Express app: wires services + middleware + routers in order
+  server.js              entry point: load config, listen, shut down cleanly
+  app.js                 builds the Express app: services, middleware and routers, in order
   config/
-    load-config.js       every setting / environment variable in one place
+    load-config.js       every setting and environment variable
+  routes/                one file per API area; thin: read the request, call a service or the repo
+    index.js             builds /api/v1 and shows the middleware order
+    health.js            GET /health
+    auth-status.js       GET /auth/status
+    me.js                GET /me
+    sync.js              POST /sync/import
+    playlists.js         /playlists and their videos
+    progress.js          /progress
+    notes.js             /notes
+    smart.js             /playlists/:id/smart
+    youtube-import.js    GET /import/youtube
+    fonts.js             GET /static/fonts/:file (outside /api)
+    ui-static.js         serves apps/web (runtime assets only)
+  services/              logic that talks to the worker and keeps job state
+    worker-client.js     HTTP client for the worker
+    notes-service.js     notes jobs: start, poll, cache, resume after a worker restart, expire, stream files
+    smart-service.js     smart playlist runs: fingerprint, poll, store the result
+    job-helpers.js       shared per-key lock, progress mapping, error mapping
+  db/                    everything that touches SQLite
+    database.js          open the database, run migrations, tx(), write-contention counter
+    repository.js        combines the repo files into one `repo` object
+    users-repo.js        users, profile, sessions
+    playlists-repo.js    playlists and their videos
+    progress-repo.js     watch progress
+    sync-import-repo.js  import of the browser's localStorage data
+    playlist-helpers.js  shared row lookups, JSON shaping, appendVideos
   middleware/
     security-headers.js  CSP and other security headers
     request-logger.js    one console line per request
-    local-only.js        host guard (DNS rebinding) + CORS (local + TUNNEL_ORIGINS), viaProxy, localOnly (/dev guard)
-    rate-limit.js        per-visitor fixed-window limiter ("general" and "heavy"; clientKey, TRUST_CF_HEADERS)
-    auth.js              sets req.user (single local user, AUTH_MODE=local)
-    google-auth.js       Google sign-in (AUTH_MODE=google): login/callback/logout, server-side sessions
-    error-handler.js     404 fallback + JSON error replies
-  routes/
-    index.js             builds /api/v1 and shows the middleware order
-    health.js me.js auth-status.js sync.js playlists.js progress.js notes.js smart.js youtube-import.js
-    fonts.js             /static/fonts/* proxied from the worker
-    ui-static.js         serves lecture-notes-ui (runtime assets only: html/css/js/images/fonts; no package files, lint config, docs, "." / "_" parts, screenshots/)
-  services/
-    worker-client.js     HTTP client for the Python worker (127.0.0.1:5055)
-    notes-service.js     notes jobs: start, poll, cache, auto-resume after a worker restart, expire, stream files
-    smart-service.js     smart playlist runs: fingerprint, poll, store result
-    job-helpers.js       shared per-key lock, progress mapping, error mapping
-  db/
-    database.js          open SQLite, run sql/*.sql migrations (recorded, baselined), tx() + dbBusy counter
-    repository.js        combines the repo files into one `repo` object
-    users-repo.js        users, profile, first-sign-in data claim (USER_KEYED), sessions
-    playlists-repo.js progress-repo.js sync-import-repo.js
-    playlist-helpers.js  shared row lookups / JSON shaping / appendVideos
-  dev/                   developer tools under /dev (index.js lists the files)
-    tracker.js ring-buffer.js dev-log-store.js mask-path.js history-tools.js service-logs.js dev-router.js
+    local-only.js        host guard, CORS, proxy detection, the /dev guard
+    rate-limit.js        fixed-window limiter ("general" and "heavy")
+    local-auth.js        the single built-in user (AUTH_MODE=local)
+    google-auth.js       Google sign-in (AUTH_MODE=google)
+    error-handler.js     404 fallback and JSON error replies
+  dev/                   the /dev tracker (local only)
+    tracker.js           records requests, worker calls and job changes
+    ring-buffer.js       in-memory list of recent entries
+    dev-log-store.js     daily JSONL files in data/devlogs
+    mask-path.js         hides ids in recorded paths
+    history-tools.js     filter, CSV and statistics for saved entries
+    service-logs.js      tail of the service console logs, secrets masked
+    dev-router.js        the /dev endpoints and pages
   utils/
-    http-errors.js       HttpError + bad / notFound / conflict
+    http-errors.js       HttpError and bad / notFound / conflict
     validate.js          input checks (ids, names, durations, videos)
+    cookies.js           cookie parsing and signed cookie values
+    time.js              nowIso()
     pipe-file.js         stream a worker response to the browser
-dev-ui/                  static pages for /dev
-sql/                     database migrations
-test/                    node:test suites (npm test)
+dev-ui/                  static pages for /dev (eval-data.json is sample data for the eval page)
+sql/                     migrations, NNN_name.sql, applied once each in order
+test/                    node:test suites; helpers.js has startApp() and the mock worker
 ```
 
-### Request lifecycle
+### How a request flows
 
 ```
 request
-  -> middleware   security-headers -> request-logger -> local-only (host guard, CORS) -> dev tracker
-  -> router       /api/v1 (routes/index.js): rate limit -> health | auth/* + auth/status | auth -> JSON parser -> area router
-  -> service      notes-service / smart-service (or the repository directly for playlists/progress)
-  -> worker / db  worker-client.js (Python on :5055) and db/*-repo.js (SQLite)
-  <- reply        JSON; any thrown HttpError is turned into {error, code?} by error-handler.js
+  -> security headers -> request log -> host guard -> CORS -> dev tracker (if on)
+  -> /api/v1 router: rate limit -> health | auth routes | authenticate -> JSON parser -> area router
+  -> service (notes, smart) or the repository directly (playlists, progress)
+  -> worker-client (Python on :5055) and db/*-repo.js (SQLite)
+  <- JSON; a thrown HttpError becomes {error, code?} in error-handler.js, never a stack trace
 ```
 
-Anything outside `/api` goes to `/dev` (developer tools), `/static/fonts` (from the worker) or the UI files.
-
-### Where to start reading
-
-1. `src/server.js` -> `src/app.js` (the whole wiring on one screen)
-2. `src/routes/index.js` (every API area and the middleware order)
-3. One area end to end, e.g. `routes/notes.js` -> `services/notes-service.js` -> `services/worker-client.js`
-4. `src/db/repository.js` and the repo files for the data side
-
-## Run
-
-Needs Node 24+ (uses `node:sqlite`, `fetch`). Only dependency: `express`.
-
-```
-cd D:\AQspace\aq-api
-npm install
-npm start            # http://127.0.0.1:5180/   (UI + API)
-npm test             # node:test, no network needed (a mock Python service is started by the tests)
-```
-
-For "Get notes" start the Python service too (`D:\AQspace\lecture-notes-ai\start.ps1`, port 5055). Without it everything else works
-and notes calls answer `503 {"code":"py_offline"}`.
+Start reading at `src/app.js`, then `src/routes/index.js`, then one area end to end
+(`routes/notes.js` -> `services/notes-service.js` -> `services/worker-client.js`).
 
 ## Environment variables
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `PORT` | `5180` | listen port (the host is always `127.0.0.1`) |
-| `DB_FILE` | `aq-api/data/aq.db` | SQLite file (created, migrated on start; `:memory:` works for experiments) |
-| `UI_DIR` | `../lecture-notes-ui` | folder served statically |
-| `PY_NOTES_URL` | `http://127.0.0.1:5055` | the Python notes service. Must be loopback unless `ALLOW_REMOTE_PY=1` |
-| `PY_NOTES_PROVIDER` | `groq` | provider name sent to Python when starting a notes job |
-| `PY_SMART_PROVIDER` | `gemini` | provider name sent to Python when starting a smart playlist run (`gemini` or `groq`) |
-| `PY_SMART_MODEL` | (empty) | optional model name for smart runs; empty = the worker's default for that provider |
-| `NOTES_REQUIRE_MEMBERSHIP` | `1` | `0` lets any user start notes for any video id (default: only videos in their own playlists) |
-| `RATE_LIMIT_PER_MIN` | `600` | requests per IP per minute for `/api/v1` |
-| `RATE_LIMIT_HEAVY_PER_MIN` | `20` | starting notes + YouTube imports per IP per minute |
-| `BODY_LIMIT` | `256kb` | JSON body limit (`/sync/import` allows 2mb) |
-| `LOG` | `1` | `0` silences the request log (method, path, status, time - never query strings, headers or bodies) |
+| Variable                       | Default                                             | Meaning                                                                         |
+| ------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `HOST`                         | `127.0.0.1`                                         | listen address; `0.0.0.0` only inside the container                             |
+| `PORT`                         | `5180`                                              | listen port                                                                     |
+| `DB_FILE`                      | `apps/api/data/aq.db`                               | SQLite file, created and migrated on start                                      |
+| `UI_DIR`                       | `apps/web`                                          | the web app served on `/`                                                       |
+| `PY_NOTES_URL`                 | `http://127.0.0.1:5055`                             | the worker; must be loopback unless `ALLOW_REMOTE_PY=1`                         |
+| `ALLOW_REMOTE_PY`              | off                                                 | `1` allows a worker on another host                                             |
+| `PY_NOTES_PROVIDER`            | `groq`                                              | provider sent to the worker for notes jobs                                      |
+| `PY_SMART_PROVIDER`            | `gemini`                                            | provider sent to the worker for smart runs                                      |
+| `PY_SMART_MODEL`               | empty                                               | model for smart runs; empty = the worker's default                              |
+| `NOTES_REQUIRE_MEMBERSHIP`     | `1`                                                 | `0` lets a user start notes for any video, not only ones in their playlists     |
+| `NOTES_MAX_AUTO_RESUMES`       | `3`                                                 | how often a notes job is re-submitted after the worker lost it                  |
+| `BODY_LIMIT`                   | `256kb`                                             | JSON body limit (`/sync/import` allows 2 MB)                                    |
+| `LOG`                          | `1`                                                 | `0` silences the request log                                                    |
+| `RATE_LIMIT_PER_MIN`           | `600`                                               | requests per client per minute on `/api/v1`                                     |
+| `RATE_LIMIT_HEAVY_PER_MIN`     | `20`                                                | starting notes or smart runs, and YouTube imports, per client per minute        |
+| `TRUST_CF_HEADERS`             | off                                                 | `1` rate-limits each tunnel visitor by `CF-Connecting-IP` (loopback proxy only) |
+| `TUNNEL_ORIGINS`               | empty                                               | extra page origins allowed by CORS, e.g. `https://*.trycloudflare.com`          |
+| `AUTH_MODE`                    | `local`                                             | `local` (one built-in user) or `google`                                         |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | empty                                               | Google OAuth web client (required for `google`)                                 |
+| `GOOGLE_REDIRECT_URI`          | `http://localhost:5180/api/v1/auth/google/callback` | must match the Google Cloud Console exactly                                     |
+| `SESSION_SECRET`               | empty                                               | at least 32 characters, signs the OAuth state cookie (required for `google`)    |
+| `SESSION_MAX_AGE_HOURS`        | `168`                                               | session lifetime                                                                |
+| `AUTH_AFTER_LOGIN`             | `/`                                                 | where sign-in lands when no `?next=` was given                                  |
+| `AQ_DEV_TOOLS`                 | `1`                                                 | `0` turns the /dev tracker off (404)                                            |
+| `AQ_DEVLOG_DIR`                | `apps/api/data/devlogs`                             | saved tracker history; empty = memory only                                      |
+| `AQ_DEVLOG_DAYS`               | `14`                                                | days of saved history to keep                                                   |
+| `AQ_RUN_DIR`                   | `apps/.run`                                         | folder with service console logs for /dev; empty = off                          |
+
+Secrets only come from the environment (or the repo's `.env` via docker compose); they are never logged.
 
 ## Endpoints (`/api/v1`)
 
-All JSON. Errors: `{"error": "message"}` with 400 (validation), 403 (origin / permission), 404, 409 (conflict, e.g. duplicate name or video),
-413, 422 (Python refused the job), 429 (rate limit or Python busy, with `Retry-After`), 502/503 (Python problems).
-Everything except `health` runs through `authenticate` and is scoped to `req.user`.
+All JSON. Errors are `{"error": "message", "code"?: "..."}` with 400 (validation), 401 (`auth_required`),
+403 (origin or permission), 404, 409 (conflict), 413, 422 (the worker refused the input), 429 (with `Retry-After`)
+and 502/503 (worker problems, `py_offline`). Everything after `authenticate` is scoped to `req.user`.
 
-| Method + path | Purpose |
-|---|---|
-| `GET /health` (`?deep=1` also pings Python) | liveness: `{ok, service, version, db, notesService?}` (no auth) |
-| `GET /me` | `{user, bootstrapped}` (`bootstrapped` = localStorage data was imported once) |
-| `GET /playlists` (`?include=videos`) | the user's playlists with `videoCount`, `durationSec` |
-| `POST /playlists` | `{name, description?, id?, videos?, source?}` -> 201 `{playlist, added, skipped}`; 409 on a duplicate name (case-insensitive) |
-| `GET /playlists/:id` | playlist with ordered `videos` |
-| `PATCH /playlists/:id` | `{name?, description?}` |
-| `DELETE /playlists/:id` | 204 |
-| `POST /playlists/:id/videos` | one video `{id, title?, channel?, duration?, position?}` -> 201 `{video}` (409 if present), or a batch `{videos:[...]}` -> `{added, skipped, playlist}` (max 500; invalid/duplicate entries are skipped and counted) |
-| `PUT /playlists/:id/videos/order` | `{order:[videoId,...]}` - every video of the playlist exactly once, in the new order |
-| `PATCH /playlists/:id/videos/:videoId` | `{title?, channel?, duration?, position?}` (edit and/or move) |
-| `DELETE /playlists/:id/videos/:videoId` | 204, positions are compacted |
-| `GET /progress` | `{progress: {videoId: {pos, dur, done, updated}}}` (same shape as the UI's `aq.watch.v1`) |
-| `GET /progress/:videoId` / `PUT /progress/:videoId` | `PUT {pos, dur, done, updated?}`; an `updated` older than the stored one is ignored (`stale: true`) |
-| `GET /notes` | every record that is queued / running / ready (database only) |
-| `GET /notes/:videoId` | `{state: none\|queued\|running\|ready\|error, pct, stage, message, error, jobId}` (refreshes from Python) |
-| `POST /notes/:videoId` | start notes. **Cache:** ready -> 200 immediately (`cached:true`); already running -> 200 with its progress; otherwise starts one Python job -> 202. One live job per video across all users |
-| `GET /notes/:videoId/html`, `/pdf` | streams the finished file from Python (404 when not ready or expired) |
-| `POST /playlists/:id/smart` | smart arrangement + topics to cover (the playlist name is the learning goal). 404 unknown playlist, 422 when it has < 2 or > 20 videos. **Cache:** a queued / running / ready run with the same fingerprint (sha256 of the goal + the sorted video ids) is returned -> 200 with `cached:true`; otherwise one Python job is started -> 202. A failed run never blocks a new one. Heavy rate limiter |
-| `GET /playlists/:id/smart` | the latest run of that playlist: `{state: none\|queued\|running\|ready\|error, pct, stage, message, error, fingerprint, current, generatedAt, provider, model, result?, usage?}`. `current:false` = the playlist changed since the run (the result is still returned). `result`/`usage` only when `ready`; they are stored in SQLite, so they survive restarts. Refreshes from Python while running; a Python 404 (restart) -> `error` "The analysis was interrupted - run it again" |
-| `GET /import/youtube?url=` | proxies Python `/api/playlist` (only the validated `list=` id is forwarded, as a canonical URL) |
-| `POST /sync/import` | `{mode: "merge"\|"replace", playlists, progress}`: one-time import of the browser's localStorage, also used to push offline edits. Lenient (bad entries dropped); returns the full resulting state |
+| Method and path                                            | Purpose                                                                                      |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET /health` (`?deep=1` also asks the worker)             | `{ok, service, version, uptimeSec, db, notesService?, localModel?, dbBusy?}`; no sign-in     |
+| `GET /auth/status`                                         | `{authMode, signedIn, user, loginUrl}`; no sign-in                                           |
+| `GET /auth/google/login`, `/callback`, `POST /auth/logout` | Google sign-in (`AUTH_MODE=google` only)                                                     |
+| `GET /me`                                                  | `{user, bootstrapped}`                                                                       |
+| `GET /playlists` (`?include=videos`)                       | the user's playlists                                                                         |
+| `POST /playlists`                                          | `{name, description?, id?, videos?, source?}` -> 201 `{playlist, added, skipped}`            |
+| `GET` / `PATCH` / `DELETE /playlists/:id`                  | one playlist; PATCH takes `{name?, description?}`                                            |
+| `POST /playlists/:id/videos`                               | one video -> 201 `{video}`, or `{videos: [...]}` -> `{added, skipped, playlist}`             |
+| `PUT /playlists/:id/videos/order`                          | `{order: [videoId, ...]}`, every video exactly once                                          |
+| `PATCH` / `DELETE /playlists/:id/videos/:videoId`          | edit or move one video / remove it                                                           |
+| `GET /progress`, `GET` / `PUT /progress/:videoId`          | watch progress `{pos, dur, done, updated}`; an older `updated` is ignored (`stale: true`)    |
+| `GET /notes`, `GET /notes/:videoId`                        | notes state `none / queued / running / ready / error`                                        |
+| `POST /notes/:videoId`                                     | start notes: 202 new job, 200 existing job or cached notes                                   |
+| `GET /notes/:videoId/html`, `/pdf`                         | the finished file, streamed from the worker                                                  |
+| `GET` / `POST /playlists/:id/smart`                        | smart arrange runs for a playlist (2 to 20 videos)                                           |
+| `GET /import/youtube?url=`                                 | reads a YouTube playlist through the worker (only the validated `list=` id is forwarded)     |
+| `POST /sync/import`                                        | `{mode: "merge" or "replace", playlists, progress}`: imports the browser's localStorage data |
 
-Also: `GET /static/fonts/:file` (not under `/api`) streams the fonts the generated notes page references from Python.
+Outside `/api`: `GET /static/fonts/:file` (fonts for the notes page, from the worker), `/dev/*` and the web app.
 
-Smart runs (`sql/002_smart_runs.sql`, table `smart_runs`) are kept per playlist (deleted with it). The stored result must be a JSON object of at most 512 KB, otherwise the run becomes an `error`.
+## Database
 
-Notes records expire when Python forgets a job (restart): a definitive 404 from Python marks the record `expired`
-(status becomes `none`) and a new `POST` starts a fresh job. Network errors never expire anything.
+SQLite in WAL mode. `src/db/database.js` runs every `sql/NNN_*.sql` file once, in numeric order, each in a
+transaction, and records it in `schema_migrations`. Never edit a migration that has shipped; add a new file instead.
+All SQL uses `?` placeholders; user input is never concatenated into SQL. Main tables: `users`, `sessions`, `videos`,
+`playlists`, `playlist_videos`, `watch_progress`, `notes_jobs`, `smart_runs` (see the `sql/` files for columns).
 
-### Validation limits
+## Security model
 
-Video id `[A-Za-z0-9_-]{11}`; playlist id (slug) `[a-z0-9][a-z0-9-]{0,47}` (generated from the name, kept stable on rename); name 1-60,
-description 0-160, title 150, channel 80 (long titles are truncated, long names are rejected); durations `m:ss` / `h:mm:ss` or seconds, < 100 h.
-
-## Schema (`sql/001_init.sql`, applied by `src/db/database.js`, tracked in `schema_migrations`)
-
-| Table | Columns / notes |
-|---|---|
-| `users` | `id`, `external_id` (UNIQUE, the OAuth subject), `name`, `email`, `bootstrapped_at`, `created_at`. Row 1 = `local` |
-| `videos` | `id` (11 chars), `title`, `channel`, `duration_sec` - registry that playlists, progress and notes point to |
-| `playlists` | `pk`, `user_id`, `slug` (public id, UNIQUE per user), `name` (UNIQUE per user, NOCASE), `description`, `source_list_id`, `source_imported_at`, `created_at`, `updated_at` |
-| `playlist_videos` | PK `(playlist_pk, video_id)`, `position` (0..n-1), per-entry `title`, `channel`, `duration_sec`, `added_at` (cascade on playlist delete) |
-| `watch_progress` | PK `(user_id, video_id)`, `pos_sec`, `dur_sec`, `done`, `updated_ms` |
-| `smart_runs` (`002`) | `playlist_pk` (cascade), `fingerprint`, `job_id`, `status` queued/running/done/error, `pct`, `stage`, `message`, `error`, `provider`, `model`, `result_json`, `usage_json`, `checked_at`. Partial UNIQUE index on `(playlist_pk, fingerprint)` where status in (queued, running, done) |
-| `notes_jobs` | `video_id`, `job_id` (Python), `status` queued/running/done/error/expired, `pct`, `stage`, `message`, `error`, `requested_by`, `checked_at`. Partial UNIQUE index on `video_id` where status in (queued, running, done) = one live job per video |
-
-All SQL is parameterized (`?`); there is no string-built SQL with user input. New migrations: add `sql/002_*.sql`.
-
-## Security notes
-
-- Binds `127.0.0.1` only; `Host` must be `localhost` / `127.0.0.1` / `[::1]` (DNS-rebinding guard).
-- CORS: only `http://localhost|127.0.0.1[:port]` origins; a non-local `Origin` on POST/PUT/PATCH/DELETE is rejected (403). Bodies must be `application/json` (forms are not parsed).
-- Headers written by hand (`src/middleware/security-headers.js`, `local-only.js`, `rate-limit.js`): nosniff, frame options, referrer policy, CORP/COOP, permissions policy, CSP (strict for the API; the UI gets a CSP that allows only itself, Google Fonts, YouTube embeds/thumbnails/oEmbed, Google profile pictures), `Cache-Control: no-store` on `/api`.
-- In-memory per-IP rate limit (general + a stricter one for notes start / imports); JSON body limits; errors never include stack traces.
-- Static serving only for web asset extensions, never dot-files, `_landing-backup`, `*.ps1` or docs.
-- Python is called only on fixed paths with validated ids; `PY_NOTES_URL` must be loopback; redirects from Python are refused.
-- Logs contain method, path, status, time only.
-
-## Google sign-in (`AUTH_MODE=google`)
-
-Default `AUTH_MODE=local` = single built-in user (unchanged). With `AUTH_MODE=google` (`src/middleware/google-auth.js`):
-
-| Env | Meaning |
-|---|---|
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth web client from Google Cloud Console |
-| `GOOGLE_REDIRECT_URI` | default `http://localhost:5180/api/v1/auth/google/callback`; must match the Console exactly |
-| `SESSION_SECRET` | >= 32 chars, signs the session cookie (HMAC-SHA256) |
-| `SESSION_MAX_AGE_HOURS` | default 168 |
-| `AUTH_AFTER_LOGIN` | where the callback redirects, default `/` |
-
-Routes: `GET /api/v1/auth/google/login`, `GET /api/v1/auth/google/callback`, `POST /api/v1/auth/logout`, `GET /api/v1/me`.
-Unauthenticated API calls get 401; `health` and the static UI stay public. Sessions are stateless signed cookies (`aq_session`, HttpOnly, SameSite=Lax, Secure when the redirect URI is https); logout clears the cookie (no server-side revocation).
-
-
-Every `/api/v1` route (except `health`) runs one middleware, `authenticate(req, res, next)` (`src/middleware/auth.js`), and then only uses
-`req.user.id`. Today it is `localAuth` (always user 1, `local`). To use the OAuth app (`D:\AQspace\backend`):
-
-1. Write an authenticator, e.g. verify the session cookie / `Authorization: Bearer` token the OAuth app issued (shared secret or JWKS), read `sub`, `name`, `email`.
-2. Map it to a row: `const id = repo.upsertExternalUser(sub, name, email)` (uses `users.external_id`; `app.locals.repo` exposes the repo).
-3. `req.user = { id, name }; next()` - or `next(new HttpError(401, "Sign in required."))`.
-4. Pass it in: `createApp(config, { authenticate: myAuth })` in `src/server.js`.
-
-Nothing else changes: every query is already filtered by `user_id`, and notes records are shared on purpose (one job per video).
-Because the session will be cookie-based, keep the `Origin` check in `cors` (it is the CSRF defence) and add `SameSite=Lax; HttpOnly` on the cookie.
-The built-in local user can be migrated by setting `external_id` on row 1 to the owner's OAuth subject.
-
-## UI integration (`lecture-notes-ui`)
-
-- `api.js` (new) detects the API (same origin, else `http://127.0.0.1:5180`), loads playlists and progress on start, imports the old localStorage data once (`/sync/import`, decided by `bootstrapped`), and writes every change through in order. If a write cannot be sent it sets `aq.dirty.v1` and the whole local state is pushed on the next successful connection.
-- `store.js` calls `AQ.api.record(...)` after each mutation; localStorage stays the offline cache / fallback, and every store function is still synchronous.
-- `notes.js` uses `/api/v1/notes/*` when the API is available (server-side cache, one job per video), else talks to `:5055` directly. `importpl.js` uses `/api/v1/import/youtube` in the same way.
-
-Conflict policy: the server wins on start when nothing is pending; local wins when there are unsent (offline) edits.
+- Listens on `127.0.0.1`; the `Host` header must be localhost (DNS-rebinding guard).
+- CORS only for loopback pages and `TUNNEL_ORIGINS`; a foreign `Origin` on a write is refused (403). This is the
+  CSRF defence, together with JSON-only bodies and `SameSite=Lax` cookies.
+- Security headers and CSP are set by hand in `middleware/security-headers.js`; `/api` replies are `no-store`.
+- Per-client rate limits; body size limits; errors never contain stack traces.
+- Only web asset files of `apps/web` are served: no dot-files, `_` folders, package files, docs or screenshots.
+- The worker is called only on fixed paths with validated ids, must be on loopback, and its redirects are refused.
+- Google sessions are server-side: the cookie holds a random token, the database only its SHA-256, logout deletes it.
+- `/dev` answers only on this machine: anything that came through the tunnel (proxy headers) gets a plain 404.
+- The request log holds method, path, status and time only.
 
 ## Developer tracker (`/dev`)
 
-Local-only debugging pages and JSON, on by default (the service is loopback-only); `AQ_DEV_TOOLS=0` turns it off and `/dev/*` returns 404.
-Same host guard as everything else; `/dev` pages get their own stricter CSP (`script-src 'self'`, no inline, no external origins).
+Local debugging pages, on by default: `/dev/` (hub), `/dev/tracker.html` (live requests, job events, history,
+statistics, service logs), `/dev/flow.html` (how the services connect) and `/dev/eval.html` (notes provider
+evaluation, from `dev-ui/eval-data.json`). The JSON endpoints live under `/dev/api/*` (see `src/dev/dev-router.js`).
+Only method, masked path, status and timing are recorded; never headers, cookies, bodies or query strings.
+History is written to `data/devlogs/*.jsonl` and pruned after `AQ_DEVLOG_DAYS`.
 
-- `/dev/tracker.html` - live requests (filter by layer/status/text), pipeline events, jobs, service health + counts, recent errors (polls every 2 s).
-- `GET /dev/api/overview` - api/worker health (`/api/health` on the worker), counts of playlists, videos, notes and smart states, last 10 errors.
-- `GET /dev/api/requests?since=<seq>&limit=<n<=500>[&include_dev=1]` - in-memory ring buffer (last 2000) of `{seq, ts, method, path, status, ms, layer}`;
-  `layer` is `ui`, `api`, `worker` (calls this service makes to Python, status 0 = unreachable) or `dev` (hidden unless `include_dev=1`).
-- `GET /dev/api/events?since=<seq>` - notes job / smart run changes `{seq, ts, kind, jobId, videoId, playlistId, from, to, stage, pct}` (public states: queued/running/ready/error/none).
-- `GET /dev/api/jobs` - the latest 50 notes jobs and smart runs from SQLite.
+## How to add a feature
 
-Only method, masked path (no query string, ids as `:id`), status and timing are kept - never headers, cookies, bodies or query strings.
-Buffers live in memory and reset when the service restarts (`last` drops; clients should start again from 0).
+Worked example: **video bookmarks**, so a user can save moments in a video they study.
+`GET /api/v1/bookmarks/:videoId` lists them and `POST /api/v1/bookmarks/:videoId` adds one `{atSec, label}`.
+Work from the bottom up: schema, repository, service, route, test.
 
-**Persistent logs.** Every request entry (except `layer: dev`, i.e. the tracker's own polling) and every pipeline event is also appended to
-`data/devlogs/requests-YYYY-MM-DD.jsonl` / `events-YYYY-MM-DD.jsonl` (UTC day, same redacted fields as above). Writes are buffered and
-flushed asynchronously once per second (and synchronously on exit); files older than `AQ_DEVLOG_DAYS` (default 14) are deleted at startup.
-`AQ_DEVLOG_DIR` moves the folder, `AQ_DEVLOG_DIR=` (empty) turns persistence off (history endpoints then return 404). `data/devlogs/` is git-ignored.
-`seq` restarts with the process, so it is unique only within one run.
+### 1. Migration: `sql/006_bookmarks.sql`
 
-- `GET /dev/api/history/days` - `{keepDays, items:[{date, requests, events, bytes}]}` newest first.
-- `GET /dev/api/history?type=requests|events&date=YYYY-MM-DD&q=&layer=&status=&limit=<=1000&offset=` - search one day, newest first,
-  `{type, date, total, offset, limit, items}`. Requests: `layer` ui/api/worker, `status` first digit (`2`..`5`) or `0`; events: `layer` = kind (notes/smart), `status` = new state.
-- `GET /dev/api/export?type=..&date=..&format=csv|jsonl` (+ same filters) - download (`Content-Disposition: attachment`); CSV is RFC 4180, cells starting with `= + - @` get a leading `'`.
-- `GET /dev/api/stats?date=&layer=` - `{total, errors, errorRate, p50, p95, max, paths:[{layer, method, path, count, errors, errorRate, p50, p95, max}], hours:[{hour, count, errors} x24]}`;
-  nearest-rank percentiles; an error is status 0, 5xx or 4xx (except UI 404s); hours are UTC.
-- `GET /dev/api/logs/api|worker?tail=<n<=2000>[&run=prev]` - last N lines of the service console output captured by `start-all.ps1`
-  (`../.run/api.out.log`, `api.err.log`, `ai.out.log`, `ai.err.log`; `AQ_RUN_DIR` overrides the folder) as `{service, run, tail, streams:{out, err}}`
-  (each `{size, mtime, lines}` or `null` if not captured). Lines are redacted: `gsk_`, `AIza`, `nvapi-`, `hf_`, `xai-`, `sk-` keys, `Bearer`/`Basic` tokens and
-  `key=` / `token=` / `api_key:` style values become `***`. `run=prev` reads `*.prev.log`, the previous run kept by start-all.ps1.
+Use the next free number. The file runs once on every database, in a transaction.
 
-The tracker page has matching **History**, **Stats** (hourly SVG chart + per-path table) and **Service logs** (auto-refresh every 3 s, pause, level colouring) tabs.
-## Docker
+```sql
+-- Moments a user saved in a video.
+CREATE TABLE bookmarks (
+  id          INTEGER PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  video_id    TEXT NOT NULL REFERENCES videos(id),
+  at_sec      INTEGER NOT NULL,
+  label       TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX bookmarks_user_video ON bookmarks (user_id, video_id);
+```
 
-`docker compose up --build` (repo root) runs aq-api inside the `notes-ai` network namespace (`network_mode: service:notes-ai`), so it talks to the Python worker at `PY_NOTES_URL=http://127.0.0.1:5055` and port 5055 is never exposed. The UI/API is published on `127.0.0.1:5180` only. SQLite lives in `./aq-api/data` (bind mount, gitignored).
+Because the table is owned by a user, also add `["bookmarks", "user_id"]` to `USER_KEYED` in `src/db/users-repo.js`,
+so the first Google user takes over the local user's bookmarks. Add a `BASELINE_PROBES` entry in `src/db/database.js`
+only if databases might already contain this table without the migration being recorded.
 
-The notes-ai side uses `PY_NOTES_PROVIDER=local`: the local model at `LNAI_LOCAL_URL=http://host.docker.internal:8081/v1` (`scripts/llm.sh`), with `LNA_PROVIDER_FALLBACK=1` falling back to Groq for videos up to 1 h. The Whisper speech-to-text model is cached in `./.tools/whisper-models` (bind mount via `LNAI_WHISPER_DIR`), so it is not downloaded again after a rebuild. `scripts/nuke.sh` removes it. Optional public link: `docker compose --profile tunnel up`.
+### 2. Repository: `src/db/bookmarks-repo.js`
+
+Plain data access. Every function takes the owner's `userId` and touches only that user's rows.
+
+```js
+/* bookmarks-repo.js - saved moments in a video, per user.
+
+   What:  list and add bookmarks.
+   How it fits: part of the repository object (db/repository.js); used by services/bookmarks-service.js.
+   Read next: services/bookmarks-service.js */
+import { tx } from "./database.js";
+import { nowIso } from "../utils/time.js";
+
+/**
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @param {object} helpers  from createPlaylistHelpers(db) (ensureVideo)
+ */
+export function createBookmarksRepo(db, { ensureVideo }) {
+  const toJson = (row) => ({ id: row.id, atSec: row.at_sec, label: row.label, created: row.created_at });
+
+  /** The user's bookmarks in one video, in time order. */
+  function listBookmarks(userId, videoId) {
+    return db
+      .prepare("SELECT * FROM bookmarks WHERE user_id = ? AND video_id = ? ORDER BY at_sec")
+      .all(userId, videoId)
+      .map(toJson);
+  }
+
+  /** Adds one bookmark (values already validated) and returns it. */
+  function addBookmark(userId, videoId, atSec, label) {
+    return tx(db, () => {
+      ensureVideo({ id: videoId, title: "", channel: "", durationSec: 0 });
+      const id = Number(
+        db
+          .prepare("INSERT INTO bookmarks (user_id, video_id, at_sec, label, created_at) VALUES (?, ?, ?, ?, ?)")
+          .run(userId, videoId, atSec, label, nowIso()).lastInsertRowid
+      );
+      return toJson(db.prepare("SELECT * FROM bookmarks WHERE id = ?").get(id));
+    });
+  }
+
+  return { listBookmarks, addBookmark };
+}
+```
+
+Then spread it into the repository in `src/db/repository.js`:
+
+```js
+const bookmarks = createBookmarksRepo(db, helpers);
+return { ...users, /* ... */ ...bookmarks };
+```
+
+### 3. Service: `src/services/bookmarks-service.js`
+
+Rules that are more than storage go here; the route stays thin. A feature that only stores data
+(like playlists and progress) may call the repository straight from the route and skip this step.
+
+```js
+/* bookmarks-service.js - the rules for bookmarks.
+
+   What:  input checks and limits; storage is in db/bookmarks-repo.js.
+   How it fits: routes/bookmarks.js calls list() and add().
+   Read next: db/bookmarks-repo.js */
+import { HttpError, bad } from "../utils/http-errors.js";
+import { isObj, nonNeg, text } from "../utils/validate.js";
+
+// Keeps one video's list short enough for the player sidebar.
+const MAX_PER_VIDEO = 200;
+
+/** @param {{ repo: object }} deps */
+export function createBookmarksService({ repo }) {
+  /** The user's bookmarks in one video. */
+  const list = (user, videoId) => repo.listBookmarks(user.id, videoId);
+
+  /**
+   * Adds a bookmark. body: {atSec, label?}.
+   * Errors: 400 bad body, 403 video not in the user's playlists, 409 too many bookmarks.
+   */
+  function add(user, videoId, body) {
+    if (!isObj(body)) throw bad("Send a JSON object {atSec, label}.");
+    const atSec = Math.floor(nonNeg(body.atSec, "atSec"));
+    const label = text(body.label).slice(0, 80);
+    if (!repo.userHasVideo(user.id, videoId))
+      throw new HttpError(403, "Add this video to one of your playlists first.");
+    if (repo.listBookmarks(user.id, videoId).length >= MAX_PER_VIDEO) {
+      throw new HttpError(409, `At most ${MAX_PER_VIDEO} bookmarks per video.`);
+    }
+    return repo.addBookmark(user.id, videoId, atSec, label);
+  }
+
+  return { list, add };
+}
+```
+
+Create it in `src/app.js` next to the other services (`const bookmarks = createBookmarksService({ repo });`)
+and pass it to `createApiRouter`.
+
+### 4. Route: `src/routes/bookmarks.js`
+
+Read and validate URL parameters, call the service, shape the reply. Throw `HttpError`s; never catch them here.
+
+```js
+/* bookmarks.js - /api/v1/bookmarks : saved moments in a video.
+
+   How it fits: mounted in routes/index.js after authentication; logic in services/bookmarks-service.js.
+   Read next: services/bookmarks-service.js */
+import { Router } from "express";
+import { videoId } from "../utils/validate.js";
+
+/**
+ * @param {object} bookmarks  the bookmarks service
+ * @returns {import("express").Router}
+ */
+export function bookmarkRoutes(bookmarks) {
+  const router = Router();
+
+  /** GET /bookmarks/:videoId - {bookmarks: [{id, atSec, label, created}]}. */
+  router.get("/bookmarks/:videoId", (req, res) => {
+    res.json({ bookmarks: bookmarks.list(req.user, videoId(req.params.videoId)) });
+  });
+
+  /** POST /bookmarks/:videoId - body {atSec, label?}; 201 {bookmark}. */
+  router.post("/bookmarks/:videoId", (req, res) => {
+    res.status(201).json({ bookmark: bookmarks.add(req.user, videoId(req.params.videoId), req.body) });
+  });
+
+  return router;
+}
+```
+
+Mount it in `src/routes/index.js` **after** `express.json()` (it needs the parsed body) and before the final
+`notFoundHandler`: `api.use(bookmarkRoutes(bookmarks));`. Place it before `authenticate` only for routes that
+must work signed out.
+
+### 5. Test: `test/bookmarks.test.js`
+
+`startApp()` runs the real app on a random port with an in-memory database, so a test covers every layer.
+
+```js
+/* bookmarks.test.js - /api/v1/bookmarks. */
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { startApp, VID } from "./helpers.js";
+
+let t;
+before(async () => {
+  t = await startApp();
+  await t.post("/api/v1/playlists", { name: "Course", videos: [{ id: VID(1) }] });
+});
+after(() => t.close());
+
+test("bookmarks: add, list in time order, validation and membership", async () => {
+  assert.equal((await t.post(`/api/v1/bookmarks/${VID(1)}`, { atSec: 90, label: "proof" })).status, 201);
+  await t.post(`/api/v1/bookmarks/${VID(1)}`, { atSec: 30 });
+  const list = (await t.get(`/api/v1/bookmarks/${VID(1)}`)).json.bookmarks;
+  assert.deepEqual(
+    list.map((b) => b.atSec),
+    [30, 90]
+  );
+  assert.equal((await t.post(`/api/v1/bookmarks/${VID(1)}`, { atSec: -1 })).status, 400);
+  assert.equal((await t.post(`/api/v1/bookmarks/${VID(2)}`, { atSec: 1 })).status, 403);
+});
+```
+
+### 6. Finish
+
+Run `npm test`, `npm run lint` and `npm run format:check`, add the endpoint to the table above, and give every new
+file its header and every exported function its doc comment.

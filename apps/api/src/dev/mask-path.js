@@ -11,11 +11,15 @@ const FIXED_WORDS = new Set(["order", "html", "pdf", "smart", "videos"]);
 
 /** Path without query string, ids masked, capped at 300 characters. */
 export function maskPath(p) {
-  const parts = String(p || "/").split(/[?#]/)[0].slice(0, 300).split("/");
+  const parts = String(p || "/")
+    .split(/[?#]/)[0]
+    .slice(0, 300)
+    .split("/");
   const isApi = parts[1] === "api";
   for (let i = 1; i < parts.length; i++) {
     const part = parts[i];
-    if (/^[a-f0-9]{16,}$/i.test(part)) parts[i] = ":id";            // long hex = a job id, anywhere
+    if (/^[a-f0-9]{16,}$/i.test(part))
+      parts[i] = ":id"; // long hex = a job id, anywhere
     else if (isApi && part && ID_PARENTS.has(parts[i - 1]) && !FIXED_WORDS.has(part)) parts[i] = ":id";
   }
   return parts.join("/");

@@ -15,6 +15,10 @@ function jsonBody(req) {
 
 const userIdOf = (req) => req.user.id;
 
+/**
+ * @param {object} repo  the repository (db/playlists-repo.js functions)
+ * @returns {import("express").Router}
+ */
 export function playlistRoutes(repo) {
   const router = Router();
 
@@ -22,22 +26,27 @@ export function playlistRoutes(repo) {
   // 1. Playlists
   // -------------------------------------------------------------------------
 
+  /** GET /playlists[?include=videos] - {playlists: [...]}. */
   router.get("/playlists", (req, res) => {
     res.json({ playlists: repo.listPlaylists(userIdOf(req), { withVideos: req.query.include === "videos" }) });
   });
 
+  /** POST /playlists - body {id?, name, description?, videos?, source?}; 201 {playlist, added, skipped}; 409 name taken. */
   router.post("/playlists", (req, res) => {
     res.status(201).json(repo.createPlaylist(userIdOf(req), jsonBody(req)));
   });
 
+  /** GET /playlists/:id - {playlist} with its videos; 404 when unknown. */
   router.get("/playlists/:id", (req, res) => {
     res.json({ playlist: repo.getPlaylist(userIdOf(req), slug(req.params.id)) });
   });
 
+  /** PATCH /playlists/:id - body {name?, description?}; {playlist}. */
   router.patch("/playlists/:id", (req, res) => {
     res.json({ playlist: repo.updatePlaylist(userIdOf(req), slug(req.params.id), jsonBody(req)) });
   });
 
+  /** DELETE /playlists/:id - 204. */
   router.delete("/playlists/:id", (req, res) => {
     repo.deletePlaylist(userIdOf(req), slug(req.params.id));
     res.status(204).end();
@@ -47,22 +56,28 @@ export function playlistRoutes(repo) {
   // 2. Videos inside a playlist
   // -------------------------------------------------------------------------
 
-  // add one video ({id, title, channel, duration, position?}) or a batch ({videos: [...]})
+  /**
+   * POST /playlists/:id/videos - one video {id, title, channel, duration, position?} -> 201 {video} (409 when
+   * already there), or a batch {videos: [...]} -> 200 {added, skipped, playlist}.
+   */
   router.post("/playlists/:id/videos", (req, res) => {
-    const body = jsonBody(req), playlistId = slug(req.params.id);
+    const body = jsonBody(req),
+      playlistId = slug(req.params.id);
     if (body.videos !== undefined) return res.json(repo.addVideos(userIdOf(req), playlistId, body.videos));
     res.status(201).json({ video: repo.addVideo(userIdOf(req), playlistId, body) });
   });
 
-  // reorder: {order: [videoId, ...]} (all videos of the playlist, new order)
+  /** PUT /playlists/:id/videos/order - body {order: [videoId, ...]} listing every video once; {playlist}. */
   router.put("/playlists/:id/videos/order", (req, res) => {
     res.json({ playlist: repo.reorder(userIdOf(req), slug(req.params.id), jsonBody(req).order) });
   });
 
+  /** PATCH /playlists/:id/videos/:videoId - body {title?, channel?, duration?, position?}; {video}. */
   router.patch("/playlists/:id/videos/:videoId", (req, res) => {
     res.json({ video: repo.editVideo(userIdOf(req), slug(req.params.id), videoId(req.params.videoId), jsonBody(req)) });
   });
 
+  /** DELETE /playlists/:id/videos/:videoId - 204; 404 when the video is not in the playlist. */
   router.delete("/playlists/:id/videos/:videoId", (req, res) => {
     repo.removeVideo(userIdOf(req), slug(req.params.id), videoId(req.params.videoId));
     res.status(204).end();

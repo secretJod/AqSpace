@@ -1,3 +1,4 @@
+/* security.test.js - host guard, CORS, security headers, rate limits, worker URL checks and the static UI filter. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -24,7 +25,9 @@ test("health, security headers, JSON 404s", async () => {
     assert.equal(nf.status, 404);
     assert.equal(typeof nf.json.error, "string");
     assert.equal((await t.get("/api/other")).status, 404);
-  } finally { await t.close(); }
+  } finally {
+    await t.close();
+  }
 });
 
 test("health?deep=1 reports the notes service", async () => {
@@ -34,7 +37,9 @@ test("health?deep=1 reports the notes service", async () => {
     assert.equal((await t.get("/api/v1/health?deep=1")).json.notesService, "ok");
     await py.close();
     assert.equal((await t.get("/api/v1/health?deep=1")).json.notesService, "offline");
-  } finally { await t.close(); }
+  } finally {
+    await t.close();
+  }
 });
 
 test("DNS-rebinding guard: foreign Host header is refused", async () => {
@@ -42,10 +47,17 @@ test("DNS-rebinding guard: foreign Host header is refused", async () => {
   try {
     const port = new URL(t.base).port;
     const status = await new Promise((res, rej) => {
-      http.get({ host: "127.0.0.1", port, path: "/api/v1/health", headers: { Host: "evil.example.com" } }, (r) => { r.resume(); res(r.statusCode); }).on("error", rej);
+      http
+        .get({ host: "127.0.0.1", port, path: "/api/v1/health", headers: { Host: "evil.example.com" } }, (r) => {
+          r.resume();
+          res(r.statusCode);
+        })
+        .on("error", rej);
     });
     assert.equal(status, 403);
-  } finally { await t.close(); }
+  } finally {
+    await t.close();
+  }
 });
 
 test("CORS: local origins allowed, foreign origins get no CORS headers and cannot write", async () => {
@@ -65,12 +77,17 @@ test("CORS: local origins allowed, foreign origins get no CORS headers and canno
     assert.equal(r.status, 403);
     assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM playlists").get().n, 0);
 
-    r = await t.call("OPTIONS", "/api/v1/playlists", undefined, { Origin: "http://localhost:5180", "Access-Control-Request-Method": "PATCH" });
+    r = await t.call("OPTIONS", "/api/v1/playlists", undefined, {
+      Origin: "http://localhost:5180",
+      "Access-Control-Request-Method": "PATCH"
+    });
     assert.equal(r.status, 204);
     assert.match(r.headers.get("access-control-allow-methods"), /PATCH/);
     r = await t.call("OPTIONS", "/api/v1/playlists", undefined, { Origin: "https://evil.example" });
     assert.equal(r.headers.get("access-control-allow-origin"), null);
-  } finally { await t.close(); }
+  } finally {
+    await t.close();
+  }
 });
 
 test("body handling: invalid JSON, too large, wrong content type", async () => {
@@ -82,51 +99,76 @@ test("body handling: invalid JSON, too large, wrong content type", async () => {
     r = await t.post("/api/v1/playlists", { name: "x", description: "y".repeat(5000) });
     assert.equal(r.status, 413);
     r = await t.call("POST", "/api/v1/playlists", "name=x", { "content-type": "application/x-www-form-urlencoded" });
-    assert.equal(r.status, 400);                                          // forms are not accepted
+    assert.equal(r.status, 400); // forms are not accepted
     assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM playlists").get().n, 0);
-  } finally { await t.close(); }
+  } finally {
+    await t.close();
+  }
 });
 
 test("rate limit per IP: 429 with Retry-After once the window budget is used", async () => {
-  const t = await startApp({ overrides: { rate: { general: { max: 5, windowMs: 60000 }, heavy: { max: 2, windowMs: 60000 } } } });
+  const t = await startApp({
+    overrides: { rate: { general: { max: 5, windowMs: 60000 }, heavy: { max: 2, windowMs: 60000 } } }
+  });
   try {
     for (let i = 0; i < 5; i++) assert.equal((await t.get("/api/v1/health")).status, 200);
     const r = await t.get("/api/v1/health");
     assert.equal(r.status, 429);
     assert.ok(Number(r.headers.get("retry-after")) >= 1);
-  } finally { await t.close(); }
+  } finally {
+    await t.close();
+  }
 });
 
 test("rateLimit(): window resets", () => {
   let now = 1000;
   const lim = rateLimit({ max: 2, windowMs: 100 }, () => now);
   const req = { socket: { remoteAddress: "1.2.3.4" } };
-  const run = () => { let err = null; lim(req, { setHeader() {} }, (e) => { err = e || null; }); return err; };
-  assert.equal(run(), null); assert.equal(run(), null);
+  const run = () => {
+    let err = null;
+    lim(req, { setHeader() {} }, (e) => {
+      err = e || null;
+    });
+    return err;
+  };
+  assert.equal(run(), null);
+  assert.equal(run(), null);
   assert.equal(run().status, 429);
   now += 150;
   assert.equal(run(), null);
 });
 
 test("clientKey(): CF-Connecting-IP only trusted from loopback, when enabled, and when it is an IP", () => {
-  const r = (sock, cf) => ({ socket: { remoteAddress: sock }, headers: cf === undefined ? {} : { "cf-connecting-ip": cf } });
-  assert.equal(clientKey(r("127.0.0.1", "203.0.113.7"), false), "127.0.0.1");          // flag off
+  const r = (sock, cf) => ({
+    socket: { remoteAddress: sock },
+    headers: cf === undefined ? {} : { "cf-connecting-ip": cf }
+  });
+  assert.equal(clientKey(r("127.0.0.1", "203.0.113.7"), false), "127.0.0.1"); // flag off
   assert.equal(clientKey(r("127.0.0.1", "203.0.113.7"), true), "203.0.113.7");
   assert.equal(clientKey(r("::1", "2001:DB8::1"), true), "2001:db8::1");
   assert.equal(clientKey(r("::ffff:127.0.0.1", "198.51.100.2"), true), "198.51.100.2");
-  assert.equal(clientKey(r("10.0.0.5", "203.0.113.7"), true), "10.0.0.5");            // non-loopback peer: spoof ignored
+  assert.equal(clientKey(r("10.0.0.5", "203.0.113.7"), true), "10.0.0.5"); // non-loopback peer: spoof ignored
   assert.equal(clientKey(r("127.0.0.1", "not-an-ip"), true), "127.0.0.1");
   assert.equal(clientKey(r("127.0.0.1", "1.2.3.4, 5.6.7.8"), true), "127.0.0.1");
   assert.equal(clientKey(r("127.0.0.1", "999.1.1.1"), true), "127.0.0.1");
   assert.equal(clientKey(r("127.0.0.1"), true), "127.0.0.1");
   assert.equal(clientKey({ socket: {} }, true), "?");
   // a plain local request (no tunnel/proxy headers) always keys on the socket address
-  assert.equal(clientKey({ socket: { remoteAddress: "127.0.0.1" }, headers: { host: "localhost:5180" } }, true), "127.0.0.1");
+  assert.equal(
+    clientKey({ socket: { remoteAddress: "127.0.0.1" }, headers: { host: "localhost:5180" } }, true),
+    "127.0.0.1"
+  );
 });
 
 test("rateLimit(): trustCf gives each tunnel visitor their own bucket", () => {
   const lim = rateLimit({ max: 1, windowMs: 60_000, trustCf: true }, () => 1000);
-  const run = (cf) => { let err = null; lim({ socket: { remoteAddress: "127.0.0.1" }, headers: { "cf-connecting-ip": cf } }, { setHeader() {} }, (e) => { err = e || null; }); return err; };
+  const run = (cf) => {
+    let err = null;
+    lim({ socket: { remoteAddress: "127.0.0.1" }, headers: { "cf-connecting-ip": cf } }, { setHeader() {} }, (e) => {
+      err = e || null;
+    });
+    return err;
+  };
   assert.equal(run("203.0.113.1"), null);
   assert.equal(run("203.0.113.2"), null);
   assert.equal(run("203.0.113.1").status, 429);
@@ -152,35 +194,69 @@ test("static UI: serves web assets, hides dot-files, scripts, docs and backups; 
     assert.equal((await t.get("/%2e%2e/%2e%2e/package.json")).status, 404);
     assert.equal((await t.get("/..%2f..%2fpackage.json")).status, 404);
     assert.equal((await t.call("POST", "/app.js", {})).status, 405);
-  } finally { await t.close(); }
+  } finally {
+    await t.close();
+  }
 });
 
-test("#158 static UI: only runtime assets; package files, lint config, docs, dotfiles and screenshots are 404", async () => {
+test("static UI: only runtime assets; package files, lint config, docs, dotfiles and screenshots are 404", async () => {
   const t = await startApp({ withUi: true });
   try {
-    for (const ok of ["/css/styles.css", "/js/app.js", "/vendor/chart.umd.min.js", "/index.html"]) assert.equal((await t.get(ok)).status, 200, ok);
-    for (const no of ["/package.json", "/package-lock.json", "/eslint.config.mjs", "/eslint.config.js", "/README.md", "/.npmrc", "/notes.txt",
-      "/screenshots/desktop.png", "/PACKAGE.JSON", "/js/../package.json", "/%2enpmrc"]) assert.equal((await t.get(no)).status, 404, no);
-  } finally { await t.close(); }
+    for (const ok of ["/css/styles.css", "/js/app.js", "/vendor/chart.umd.min.js", "/index.html"])
+      assert.equal((await t.get(ok)).status, 200, ok);
+    for (const no of [
+      "/package.json",
+      "/package-lock.json",
+      "/eslint.config.mjs",
+      "/eslint.config.js",
+      "/README.md",
+      "/.npmrc",
+      "/notes.txt",
+      "/screenshots/desktop.png",
+      "/PACKAGE.JSON",
+      "/js/../package.json",
+      "/%2enpmrc"
+    ])
+      assert.equal((await t.get(no)).status, 404, no);
+  } finally {
+    await t.close();
+  }
 });
 
 test("migrations are idempotent and create the expected tables", async () => {
   const cfg = loadConfig({}, {});
   const db = openDb(":memory:", cfg.sqlDir);
-  const names = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
-  for (const n of ["users", "videos", "playlists", "playlist_videos", "watch_progress", "notes_jobs", "smart_runs", "schema_migrations"]) assert.ok(names.includes(n), n);
+  const names = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+    .all()
+    .map((r) => r.name);
+  for (const n of [
+    "users",
+    "videos",
+    "playlists",
+    "playlist_videos",
+    "watch_progress",
+    "notes_jobs",
+    "smart_runs",
+    "schema_migrations"
+  ])
+    assert.ok(names.includes(n), n);
   assert.equal(db.prepare("SELECT name FROM users WHERE id = 1").get().name, "local");
   const { migrate } = await import("../src/db/database.js");
   migrate(db, cfg.sqlDir);
   const fs = await import("node:fs");
   const files = fs.readdirSync(cfg.sqlDir).filter((f) => /^\d+.*\.sql$/.test(f)).length;
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get().n, files);   // each applied exactly once
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get().n, files); // each applied exactly once
   // the "one live job per video" rule is enforced by the database itself
   db.prepare("INSERT INTO videos (id) VALUES ('aaaaaaaaaaa')").run();
-  const ins = (s) => db.prepare("INSERT INTO notes_jobs (video_id, status, created_at, updated_at) VALUES ('aaaaaaaaaaa', ?, 'x', 'x')").run(s);
+  const ins = (s) =>
+    db
+      .prepare("INSERT INTO notes_jobs (video_id, status, created_at, updated_at) VALUES ('aaaaaaaaaaa', ?, 'x', 'x')")
+      .run(s);
   ins("running");
   assert.throws(() => ins("done"), /UNIQUE/);
-  ins("error"); ins("error");
+  ins("error");
+  ins("error");
   db.close();
 });
 

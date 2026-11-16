@@ -20,7 +20,9 @@ const cleanQueryValue = (value) => (typeof value === "string" ? value.slice(0, 1
 /** requests: layer = layer, status = first digit ("2","4","5") or "0" (network error).
     events:   layer = kind (notes/smart), status = the new state. q = free text search. */
 export function filterEntries(type, items, { q = "", layer = "", status = "" } = {}) {
-  const search = cleanQueryValue(q).trim().toLowerCase(), wantedLayer = cleanQueryValue(layer), wantedStatus = cleanQueryValue(status);
+  const search = cleanQueryValue(q).trim().toLowerCase(),
+    wantedLayer = cleanQueryValue(layer),
+    wantedStatus = cleanQueryValue(status);
   return items.filter((e) => {
     if (type === "requests") {
       if (wantedLayer && e.layer !== wantedLayer) return false;
@@ -29,7 +31,10 @@ export function filterEntries(type, items, { q = "", layer = "", status = "" } =
     }
     if (wantedLayer && e.kind !== wantedLayer) return false;
     if (wantedStatus && e.to !== wantedStatus) return false;
-    return !search || [e.kind, e.jobId, e.videoId, e.playlistId, e.from, e.to, e.stage].join(" ").toLowerCase().includes(search);
+    return (
+      !search ||
+      [e.kind, e.jobId, e.videoId, e.playlistId, e.from, e.to, e.stage].join(" ").toLowerCase().includes(search)
+    );
   });
 }
 
@@ -65,7 +70,8 @@ export function percentile(sorted, p) {
 }
 
 /** Network errors, 5xx and 4xx count as errors - except a UI 404 (browsers ask for favicon etc.). */
-const isError = (e) => e.status === 0 || e.status >= 500 || (e.status >= 400 && !(e.status === 404 && e.layer === "ui"));
+const isError = (e) =>
+  e.status === 0 || e.status >= 500 || (e.status >= 400 && !(e.status === 404 && e.layer === "ui"));
 
 /** Sorts `ms` in place and returns {p50, p95, max}. */
 function latencySummary(ms) {
@@ -75,6 +81,12 @@ function latencySummary(ms) {
 
 const rate = (part, total) => (total ? +(part / total).toFixed(4) : 0);
 
+/**
+ * Statistics for one day of request entries.
+ *
+ * @param {object[]} items  request entries {layer, method, path, status, ms, ts}
+ * @returns {object} {total, errors, errorRate, p50, p95, max, paths: [...per path], hours: [24 x {hour, count, errors}]}
+ */
 export function computeStats(items) {
   const byPath = new Map();
   const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0, errors: 0 }));
@@ -84,13 +96,14 @@ export function computeStats(items) {
   for (const e of items) {
     const key = `${e.layer} ${e.method} ${e.path}`;
     let group = byPath.get(key);
-    if (!group) byPath.set(key, (group = { layer: e.layer, method: e.method, path: e.path, count: 0, errors: 0, ms: [] }));
+    if (!group)
+      byPath.set(key, (group = { layer: e.layer, method: e.method, path: e.path, count: 0, errors: 0, ms: [] }));
     group.count++;
     group.ms.push(e.ms);
     allMs.push(e.ms);
 
     const hour = new Date(e.ts).getUTCHours();
-    const validHour = hour >= 0 && hour < 24;        // NaN for a broken timestamp
+    const validHour = hour >= 0 && hour < 24; // NaN for a broken timestamp
     if (validHour) hours[hour].count++;
     if (isError(e)) {
       group.errors++;

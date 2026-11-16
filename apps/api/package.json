@@ -2,14 +2,25 @@
   "name": "aq-api",
   "version": "0.1.0",
   "private": true,
-  "description": "AQspace application backend: users, playlists, videos, watch progress, notes records. Python service stays the AI/media worker.",
+  "description": "AQspace HTTP API: users, sign-in, playlists, watch progress and notes records. The Python worker does the AI and media work.",
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test --test-concurrency=1 \"test/*.test.js\""
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1"
   }
 }

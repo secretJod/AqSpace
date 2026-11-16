@@ -11,12 +11,21 @@ import { createPlaylistsRepo } from "./playlists-repo.js";
 import { createProgressRepo } from "./progress-repo.js";
 import { createSyncImportRepo } from "./sync-import-repo.js";
 
+/**
+ * Builds the repository: every data function the routes and services use, in one object.
+ *
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @returns {object} user, session, playlist, progress and import functions (see the files listed above)
+ */
 export function createRepo(db) {
   const helpers = createPlaylistHelpers(db);
   const users = createUsersRepo(db);
   const playlists = createPlaylistsRepo(db, helpers);
   const progress = createProgressRepo(db, helpers);
-  const syncImport = createSyncImportRepo(db, helpers, { listPlaylists: playlists.listPlaylists, allProgress: progress.allProgress });
+  const syncImport = createSyncImportRepo(db, helpers, {
+    listPlaylists: playlists.listPlaylists,
+    allProgress: progress.allProgress
+  });
 
   return {
     // users and sign-in sessions

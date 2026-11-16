@@ -1,4 +1,4 @@
--- #14: server-side login sessions for AUTH_MODE=google. Applied by src/db.js (ordered, recorded in schema_migrations).
+-- Server-side login sessions for AUTH_MODE=google. Applied by src/db/database.js (ordered, recorded in schema_migrations).
 -- The browser cookie holds a random 256-bit token; only its sha256 is stored here, so a leaked database cannot be replayed
 -- as a cookie. Logout deletes the row (real revocation); expired rows are pruned whenever a new session is created.
 

@@ -16,6 +16,17 @@ import { createDevLog } from "./dev-log-store.js";
 const PUBLIC_STATE = { done: "ready", expired: "none" };
 const publicState = (status) => (status == null ? null : PUBLIC_STATE[status] || status);
 
+/**
+ * Builds the tracker.
+ *
+ * @param {object} [options]
+ * @param {number} [options.max]  entries kept in memory per ring buffer
+ * @param {string} [options.logDir]  folder for the daily JSONL files ("" = memory only)
+ * @param {number} [options.keepDays]  JSONL files older than this are deleted
+ * @param {number} [options.flushMs]  how long lines wait in memory before they are written
+ * @returns {{ requests, events, log, keepDays, change: Function, wrapFetch: Function, middleware: Function }}
+ *          `log` is null when logDir is empty or cannot be created (the tracker then keeps working in memory)
+ */
 export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs } = {}) {
   // -------------------------------------------------------------------------
   // 1. Storage: optional disk log + two ring buffers
@@ -23,11 +34,20 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
 
   let log = null;
   if (logDir) {
-    try { log = createDevLog({ dir: logDir, keepDays, flushMs }); }
-    catch (e) { console.error(`dev log disabled: ${e.code || e.message}`); }
+    try {
+      log = createDevLog({ dir: logDir, keepDays, flushMs });
+    } catch (e) {
+      console.error(`dev log disabled: ${e.code || e.message}`);
+    }
   }
   // Tracker polling (layer "dev") is kept in memory but not written to disk.
-  const requests = createRingBuffer(max, log && ((entry) => { if (entry.layer !== "dev") log.append("requests", entry); }));
+  const requests = createRingBuffer(
+    max,
+    log &&
+      ((entry) => {
+        if (entry.layer !== "dev") log.append("requests", entry);
+      })
+  );
   const events = createRingBuffer(max, log && ((entry) => log.append("events", entry)));
 
   // -------------------------------------------------------------------------
@@ -37,11 +57,18 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
   /** {kind, jobId, videoId, playlistId, before, after}: pushed only when status/stage/pct changed. */
   function change(kind, ids, before, after) {
     if (!after) return;
-    const nothingChanged = before && before.status === after.status && before.stage === after.stage && before.pct === after.pct;
+    const nothingChanged =
+      before && before.status === after.status && before.stage === after.stage && before.pct === after.pct;
     if (nothingChanged) return;
     events.push({
-      kind, jobId: after.job_id || null, videoId: ids.videoId ?? null, playlistId: ids.playlistId ?? null,
-      from: before ? publicState(before.status) : null, to: publicState(after.status), stage: after.stage, pct: after.pct
+      kind,
+      jobId: after.job_id || null,
+      videoId: ids.videoId ?? null,
+      playlistId: ids.playlistId ?? null,
+      from: before ? publicState(before.status) : null,
+      to: publicState(after.status),
+      stage: after.stage,
+      pct: after.pct
     });
   }
 
@@ -55,8 +82,13 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
       const startedAt = Date.now();
       const method = opts.method || "GET";
       let pathname = "/";
-      try { pathname = new URL(url).pathname; } catch { /* keep "/" */ }
-      const record = (status) => requests.push({ method, path: maskPath(pathname), status, ms: Date.now() - startedAt, layer: "worker" });
+      try {
+        pathname = new URL(url).pathname;
+      } catch {
+        /* keep "/" */
+      }
+      const record = (status) =>
+        requests.push({ method, path: maskPath(pathname), status, ms: Date.now() - startedAt, layer: "worker" });
       try {
         const res = await fetchImpl(url, opts);
         record(res.status);
@@ -72,19 +104,30 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
   // 4. Requests to this server
   // -------------------------------------------------------------------------
 
+  /** Middleware: records every request when its response is finished (layer "dev", "api" or "ui"). */
   function middleware(req, res, next) {
     const startedAt = Date.now();
     res.on("finish", () => {
       const p = req.originalUrl.split("?")[0];
       const layer = p.startsWith("/dev") ? "dev" : p.startsWith("/api/") ? "api" : "ui";
-      requests.push({ method: req.method, path: maskPath(p), status: res.statusCode, ms: Date.now() - startedAt, layer });
+      requests.push({
+        method: req.method,
+        path: maskPath(p),
+        status: res.statusCode,
+        ms: Date.now() - startedAt,
+        layer
+      });
     });
     next();
   }
 
   return {
-    requests, events, log, keepDays,
-    request: (fields) => requests.push(fields),
-    change, wrapFetch, middleware
+    requests,
+    events,
+    log,
+    keepDays,
+    change,
+    wrapFetch,
+    middleware
   };
 }
