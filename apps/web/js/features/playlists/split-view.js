@@ -38,7 +38,7 @@
   function reduced() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -79,10 +79,10 @@
   // ===== 1. per-video notes state dot + watched tick =====
   function stateOf(id) {
     var j = AQ.notesJobs,
-      s = null;
+      s;
     try {
       s = j && typeof j.status === "function" ? j.status(id) : null;
-    } catch (e) {
+    } catch {
       s = null;
     }
     var t = String((s && (s.state || s.status)) || (typeof s === "string" ? s : "none")).toLowerCase();
@@ -125,10 +125,10 @@
       }
       if (txt) txt.textContent = STATE_TEXT[s];
       if (tick) {
-        var w = false;
+        var w;
         try {
           w = !!(S.isWatched && S.isWatched(id));
-        } catch (e) {
+        } catch {
           w = false;
         }
         tick.hidden = !w;
@@ -192,7 +192,7 @@
       st.ol.getAnimations({ subtree: true }).forEach(function (a) {
         try {
           a.cancel();
-        } catch (e) {
+        } catch {
           /* ignore */
         }
       });
@@ -244,7 +244,7 @@
     try {
       if (AQ.notesView && typeof AQ.notesView.mount === "function")
         mounted = AQ.notesView.mount(box, v, { onClose: onClose });
-    } catch (e) {
+    } catch {
       mounted = null;
       box.textContent = "";
     }
@@ -257,7 +257,7 @@
       if (AQ.noteButton) {
         try {
           card.appendChild(AQ.noteButton(v, { onView: function () {} }));
-        } catch (e) {
+        } catch {
           /* ignore */
         }
       }
@@ -279,7 +279,7 @@
         if (mounted && typeof mounted.destroy === "function") {
           try {
             mounted.destroy();
-          } catch (e) {
+          } catch {
             /* ignore */
           }
         }
@@ -539,7 +539,7 @@
     if (st.unsub) {
       try {
         st.unsub();
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }
@@ -600,7 +600,7 @@
     else if (o.openId) {
       try {
         history.replaceState(null, "", "#/playlist/" + p.id);
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }

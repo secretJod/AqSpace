@@ -59,7 +59,7 @@
   function reduced() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -67,13 +67,12 @@
   // ===== 2. Arc instrument gauge =====
   // opts: { size, segments, value (0..1), caption } -> { node, set(value) }
   // A real instrument face: a 270deg hairline scale (-135..+135) with minor/major ticks and numeric
-  // labels 0..100, a thin value arc and a needle. `segments` only sets the minor tick density.
+  // labels 0..100, a thin value arc and a needle. `segments` is ignored: the tick layout is fixed.
   function segArc(opts) {
     opts = opts || {};
     var size = opts.size || 140,
       c = size / 2,
-      r = size / 2 - 16,
-      n = Math.max(20, opts.segments || 40);
+      r = size / 2 - 16;
     var s = svg("svg", {
       viewBox: "0 0 " + size + " " + size,
       class: "hg-arc is-inst",

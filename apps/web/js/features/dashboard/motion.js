@@ -26,14 +26,14 @@ window.AQ = window.AQ || {};
   function reducedMotion() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
   function coarsePointer() {
     try {
       return window.matchMedia("(hover: none)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }

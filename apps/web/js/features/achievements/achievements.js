@@ -81,7 +81,7 @@ window.AQ = window.AQ || {};
       if (raw == null) return null; // null = first run ever
       var list = JSON.parse(raw);
       return Array.isArray(list) ? list : [];
-    } catch (e) {
+    } catch {
       return Object.keys(memorySeen).length ? Object.keys(memorySeen) : null;
     }
   }
@@ -91,14 +91,9 @@ window.AQ = window.AQ || {};
     });
     try {
       window.localStorage.setItem(SEEN_KEY, JSON.stringify(list));
-    } catch (e) {
+    } catch {
       /* memory only */
     }
-  }
-  function markSeen(id) {
-    var list = readSeen() || [];
-    if (list.indexOf(id) < 0) list.push(id);
-    writeSeen(list);
   }
 
   // ===== 4. evaluate: which registered badges are earned but not yet celebrated =====
@@ -110,10 +105,10 @@ window.AQ = window.AQ || {};
     var changed = false;
     defs.forEach(function (d) {
       if (typeof d.isEarned !== "function" || seenList.indexOf(d.id) >= 0) return;
-      var earned = false;
+      var earned;
       try {
         earned = !!d.isEarned(st);
-      } catch (e) {
+      } catch {
         earned = false;
       }
       if (!earned) return;
@@ -126,7 +121,7 @@ window.AQ = window.AQ || {};
   function streakStats() {
     try {
       return AQ.streak && AQ.streak.stats ? AQ.streak.stats() : null;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
@@ -173,7 +168,7 @@ window.AQ = window.AQ || {};
   function reducedMotion() {
     try {
       return matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -181,7 +176,7 @@ window.AQ = window.AQ || {};
     var d = new Date(iso || Date.now());
     try {
       return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
-    } catch (e) {
+    } catch {
       return d.toDateString();
     }
   }
@@ -288,7 +283,7 @@ window.AQ = window.AQ || {};
           if (previousFocus && previousFocus.focus && document.contains(previousFocus)) {
             try {
               previousFocus.focus({ preventScroll: true });
-            } catch (e) {
+            } catch {
               /* ignore */
             }
           }
@@ -574,7 +569,7 @@ window.AQ = window.AQ || {};
     }
     try {
       if (neuralHandle && neuralHandle.pulse) neuralHandle.pulse("core", "streak");
-    } catch (e) {
+    } catch {
       /* optional */
     }
     setTimeout(
@@ -686,7 +681,7 @@ window.AQ = window.AQ || {};
     try {
       var m = /[?&]celebrate=([\w-]+)/.exec(location.search);
       forced = m && m[1].toLowerCase();
-    } catch (e) {
+    } catch {
       /* no location */
     }
     if (forced && findDef(forced)) {

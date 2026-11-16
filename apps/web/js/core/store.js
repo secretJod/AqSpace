@@ -39,7 +39,7 @@
     if (A && A.record) {
       try {
         A.record(name, Array.prototype.slice.call(arguments, 1));
-      } catch (e) {
+      } catch {
         /* the local copy is already saved */
       }
     }
@@ -147,7 +147,7 @@
     var raw = null;
     try {
       raw = window.localStorage.getItem(KEY);
-    } catch (e) {
+    } catch {
       storageOk = false;
     }
     if (raw == null) {
@@ -158,7 +158,7 @@
     }
     try {
       playlists = cleanPlaylists(JSON.parse(raw));
-    } catch (e) {
+    } catch {
       playlists = [];
     }
   }
@@ -167,7 +167,7 @@
       window.localStorage.setItem(KEY, JSON.stringify(playlists));
       storageOk = true;
       return true;
-    } catch (e) {
+    } catch {
       storageOk = false;
       return false;
     }
@@ -178,7 +178,7 @@
     listeners.slice().forEach(function (fn) {
       try {
         fn();
-      } catch (e) {
+      } catch {
         /* keep going */
       }
     });
@@ -189,13 +189,13 @@
     if (e.key !== KEY) return;
     try {
       playlists = e.newValue == null ? [] : cleanPlaylists(JSON.parse(e.newValue));
-    } catch (err) {
+    } catch {
       return;
     }
     listeners.slice().forEach(function (fn) {
       try {
         fn();
-      } catch (x) {
+      } catch {
         /* ignore */
       }
     });
@@ -435,21 +435,21 @@
     try {
       window.localStorage.setItem(WATCH_KEY, JSON.stringify(watch));
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
   (function loadWatch() {
     try {
       watch = cleanWatch(JSON.parse(window.localStorage.getItem(WATCH_KEY) || "{}"));
-    } catch (e) {
+    } catch {
       watch = {};
     }
     // the old `aq.watched.v1` list only meant "opened once", not "finished": drop it instead of marking videos done
     try {
       window.localStorage.removeItem(OLD_WATCHED_KEY);
       persistWatch();
-    } catch (e) {
+    } catch {
       /* storage unavailable */
     }
   })();
@@ -458,7 +458,7 @@
     if (e.key !== WATCH_KEY) return;
     try {
       watch = cleanWatch(JSON.parse(e.newValue || "{}"));
-    } catch (err) {
+    } catch {
       return;
     }
     emit();
@@ -467,7 +467,7 @@
     listeners.slice().forEach(function (fn) {
       try {
         fn();
-      } catch (e) {
+      } catch {
         /* keep going */
       }
     });

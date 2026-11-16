@@ -41,7 +41,7 @@ window.AQ = window.AQ || {};
   function reducedMotion() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -64,7 +64,7 @@ window.AQ = window.AQ || {};
     var accent = "";
     try {
       accent = getComputedStyle(card).getPropertyValue("--card-accent").trim();
-    } catch (e) {
+    } catch {
       /* ignore */
     }
     if (accent) panel.style.setProperty("--xp-accent", accent);
@@ -227,7 +227,7 @@ window.AQ = window.AQ || {};
       card.setAttribute("aria-expanded", "true");
       try {
         state.full = opts.renderFull ? opts.renderFull(built.body) : null;
-      } catch (e) {
+      } catch {
         state.full = null;
       }
     }
@@ -238,7 +238,7 @@ window.AQ = window.AQ || {};
       if (opts.onOpen) {
         try {
           opts.onOpen();
-        } catch (e) {
+        } catch {
           /* isolate */
         }
       }
@@ -269,7 +269,7 @@ window.AQ = window.AQ || {};
     if (s.full && s.full.destroy) {
       try {
         s.full.destroy();
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }
@@ -280,7 +280,7 @@ window.AQ = window.AQ || {};
     if (s.opts.onClose) {
       try {
         s.opts.onClose();
-      } catch (e) {
+      } catch {
         /* isolate */
       }
     }

@@ -322,7 +322,9 @@ window.AQ = window.AQ || {};
         dragging = true;
         try {
           pill.setPointerCapture(pid);
-        } catch (_) {}
+        } catch {
+          /* capture is best-effort: the drag still works without it */
+        }
         kick();
       }
       var nx = Math.max(

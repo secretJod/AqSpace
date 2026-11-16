@@ -74,7 +74,7 @@
     if (window.AQ && AQ.dialog && AQ.dialog.isOpen && AQ.dialog.isOpen()) {
       try {
         AQ.dialog.close();
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }

@@ -25,7 +25,7 @@
     try {
       var r = fn();
       return r == null ? fallback : r;
-    } catch (e) {
+    } catch {
       return fallback;
     }
   }

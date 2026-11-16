@@ -45,21 +45,21 @@
   function isDirty() {
     try {
       return localStorage.getItem(DIRTY_KEY) === "1";
-    } catch (e) {
+    } catch {
       return false;
     }
   }
   function markDirty() {
     try {
       localStorage.setItem(DIRTY_KEY, "1");
-    } catch (e) {
+    } catch {
       /* storage blocked */
     }
   }
   function clearDirty() {
     try {
       localStorage.removeItem(DIRTY_KEY);
-    } catch (e) {
+    } catch {
       /* storage blocked */
     }
   }
@@ -79,7 +79,7 @@
     });
     try {
       window.dispatchEvent(new CustomEvent("aq:auth-required"));
-    } catch (e) {
+    } catch {
       /* old browser */
     }
     if (window.AQ && AQ.profile && AQ.profile.authRequired) AQ.profile.authRequired();

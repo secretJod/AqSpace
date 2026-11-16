@@ -1184,7 +1184,7 @@
         e.dataTransfer.effectAllowed = "move";
         try {
           e.dataTransfer.setData("text/plain", dragId);
-        } catch (x) {
+        } catch {
           /* ignore */
         }
       }
@@ -1265,7 +1265,7 @@
         }
       });
       document.body.classList.add("has-navbar");
-    } catch (e) {
+    } catch {
       navbar = null;
     }
   }
@@ -1275,7 +1275,7 @@
       r.name === "home" || r.name === "playlist" ? "playlists" : SOON[r.name] || r.name === "dashboard" ? r.name : null;
     try {
       navbar.setActive(id);
-    } catch (e) {
+    } catch {
       /* ignore */
     }
   }
@@ -1288,7 +1288,7 @@
     if (screen) {
       try {
         screen.destroy();
-      } catch (e) {
+      } catch {
         /* ignore */
       }
       screen = null;

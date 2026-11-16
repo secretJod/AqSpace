@@ -33,7 +33,7 @@ AQ.neural.mount(gridEl, { cards: [{ id, el, accent }] }) -> { pulse(fromId, toId
   function panelOpen() {
     try {
       return !!(AQ.expand && AQ.expand.isOpen && AQ.expand.isOpen());
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -471,7 +471,7 @@ AQ.neural.mount(gridEl, { cards: [{ id, el, accent }] }) -> { pulse(fromId, toId
         unsub = AQ.activity.subscribe(function (evt) {
           if (evt && evt.type === "log") chain(CHAIN);
         });
-    } catch (e) {
+    } catch {
       unsub = null;
     }
 
@@ -501,7 +501,7 @@ AQ.neural.mount(gridEl, { cards: [{ id, el, accent }] }) -> { pulse(fromId, toId
         if (typeof unsub === "function")
           try {
             unsub();
-          } catch (e) {
+          } catch {
             /* ignore */
           }
         host.classList.remove("neural-host");

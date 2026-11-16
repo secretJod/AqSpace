@@ -37,10 +37,10 @@ window.AQ = window.AQ || {};
   // ===== 1. small lookups =====
   /* { title, playlistId } of a video id from any playlist (first match), or {} */
   function describeVideo(videoId) {
-    var pls = [];
+    var pls;
     try {
       pls = S.all() || [];
-    } catch (e) {
+    } catch {
       return {};
     }
     for (var i = 0; i < pls.length; i++) {
@@ -88,7 +88,7 @@ window.AQ = window.AQ || {};
         if (patch && typeof id === "string" && typeof patch.pos === "number" && isFinite(patch.pos))
           countWatch(id, patch.pos, patch);
         else if (patch && patch.ended) delete open[id];
-      } catch (e) {
+      } catch {
         /* counting must never break playback */
       }
       return orig.apply(this, arguments);
@@ -114,7 +114,7 @@ window.AQ = window.AQ || {};
           minutes: NOTES_MINUTES,
           streak: streakFlag()
         });
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     });
@@ -131,7 +131,7 @@ window.AQ = window.AQ || {};
           var p = res.playlist || res; // createWithVideos returns { playlist, added, skipped }
           try {
             A.log("playlist", { playlistId: p.id, title: p.name, minutes: 0, streak: streakFlag() });
-          } catch (e) {
+          } catch {
             /* ignore */
           }
         }

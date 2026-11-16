@@ -27,7 +27,6 @@ window.AQ = window.AQ || {};
   // ===== PART 1: the data (AQ.streak) - no DOM code until PART 2 =====
 
   var KEY = "aq.activity.v1";
-  var DAY = 86400000;
   var data = { days: {}, freezes: 0 };
   var storageOk = true;
   var listeners = [];
@@ -80,7 +79,7 @@ window.AQ = window.AQ || {};
     try {
       var s = localStorage.getItem(KEY);
       if (s) data = sanitize(JSON.parse(s));
-    } catch (e) {
+    } catch {
       storageOk = false;
     }
   }
@@ -88,7 +87,7 @@ window.AQ = window.AQ || {};
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
       storageOk = true;
-    } catch (e) {
+    } catch {
       storageOk = false;
     }
   }
@@ -96,7 +95,7 @@ window.AQ = window.AQ || {};
     listeners.slice().forEach(function (fn) {
       try {
         fn(evt || {});
-      } catch (e) {
+      } catch {
         /* isolate listeners */
       }
     });
@@ -278,14 +277,14 @@ window.AQ = window.AQ || {};
   function fmtDate(d) {
     try {
       return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-    } catch (e) {
+    } catch {
       return WD[dayIdx(d)] + ", " + MON[d.getMonth()] + " " + d.getDate();
     }
   }
   function reducedMotion() {
     try {
       return matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }

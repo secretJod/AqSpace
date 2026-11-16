@@ -38,14 +38,14 @@
     try {
       var s = localStorage.getItem(key);
       return s ? JSON.parse(s) : null;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
   function write(key, v) {
     try {
       localStorage.setItem(key, JSON.stringify(v));
-    } catch (e) {
+    } catch {
       /* storage blocked: nothing to clean */
     }
   }
@@ -137,7 +137,7 @@
   function run() {
     try {
       if (localStorage.getItem(DONE_KEY)) return;
-    } catch (e) {
+    } catch {
       return;
     }
     var act = cleanActivity();
@@ -148,13 +148,13 @@
     if (act.removed || streak || goals || notes) {
       try {
         localStorage.removeItem(K.seen);
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }
     try {
       localStorage.setItem(DONE_KEY, new Date().toISOString());
-    } catch (e) {
+    } catch {
       /* ignore */
     }
     if (act.removed || streak || goals || notes || watch) {
@@ -172,7 +172,7 @@
             watch +
             " watch entries"
         );
-      } catch (e) {
+      } catch {
         /* no console */
       }
     }

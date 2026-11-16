@@ -43,10 +43,10 @@ window.AQ = window.AQ || {};
 
   function load() {
     if (memory) return memory;
-    var raw = null;
+    var raw;
     try {
       raw = JSON.parse(localStorage.getItem(KEY) || "[]");
-    } catch (e) {
+    } catch {
       raw = [];
     }
     memory = (Array.isArray(raw) ? raw : []).map(clean).filter(Boolean);
@@ -55,13 +55,13 @@ window.AQ = window.AQ || {};
   function save() {
     try {
       localStorage.setItem(KEY, JSON.stringify(memory));
-    } catch (e) {
+    } catch {
       /* private mode: keep it in memory */
     }
     listeners.slice().forEach(function (fn) {
       try {
         fn();
-      } catch (e) {
+      } catch {
         /* one bad listener must not stop the rest */
       }
     });
@@ -164,7 +164,7 @@ window.AQ = window.AQ || {};
     listeners.slice().forEach(function (fn) {
       try {
         fn();
-      } catch (err) {
+      } catch {
         /* ignore */
       }
     });
@@ -192,7 +192,7 @@ window.AQ = window.AQ || {};
   function reducedMotion() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -208,7 +208,7 @@ window.AQ = window.AQ || {};
     if (d < 7) return d + (d === 1 ? " day ago" : " days ago");
     try {
       return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    } catch (e) {
+    } catch {
       return "";
     }
   }

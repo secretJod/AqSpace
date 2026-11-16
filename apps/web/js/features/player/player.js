@@ -31,7 +31,7 @@
     w.forEach(function (x) {
       try {
         (ok ? x.ok : x.fail)();
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     });
@@ -50,7 +50,7 @@
       if (typeof prev === "function") {
         try {
           prev();
-        } catch (e) {
+        } catch {
           /* ignore */
         }
       }
@@ -99,7 +99,7 @@
         state = c.yt.getPlayerState();
         t = c.yt.getCurrentTime();
         dur = c.yt.getDuration();
-      } catch (e) {
+      } catch {
         return;
       }
       if (dur > 0 && !c.learned) {
@@ -133,7 +133,7 @@
         if (cur !== c || myGen !== gen || heard || tries++ > 20) return;
         try {
           frame.contentWindow.postMessage(JSON.stringify({ event: "listening", id: c.id, channel: "widget" }), "*");
-        } catch (e) {
+        } catch {
           /* ignore */
         }
         setTimeout(hello, 1000);
@@ -147,7 +147,7 @@
         var data;
         try {
           data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        } catch (x) {
+        } catch {
           return;
         }
         if (!data || !data.info) return;
@@ -184,12 +184,12 @@
       clearInterval(c.timer);
       try {
         sample(c);
-      } catch (e) {
+      } catch {
         /* ignore */
       }
       try {
         if (c.yt && c.yt.destroy) c.yt.destroy();
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }
@@ -270,7 +270,7 @@
                 }
               }
             });
-          } catch (e) {
+          } catch {
             c.yt = null;
           }
         },

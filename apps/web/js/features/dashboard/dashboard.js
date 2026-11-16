@@ -91,28 +91,28 @@
   function shortDate(d) {
     try {
       return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    } catch (e) {
+    } catch {
       return d.toDateString();
     }
   }
   function weekday(d) {
     try {
       return d.toLocaleDateString(undefined, { weekday: "short" });
-    } catch (e) {
+    } catch {
       return d.toDateString().slice(0, 3);
     }
   }
   function longDate(d) {
     try {
       return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-    } catch (e) {
+    } catch {
       return d.toDateString();
     }
   }
   function clockTime(d) {
     try {
       return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    } catch (e) {
+    } catch {
       return d.toTimeString().slice(0, 5);
     }
   }
@@ -130,7 +130,7 @@
   function reducedMotion() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -138,7 +138,7 @@
     try {
       var r = fn();
       return r == null ? fallback : r;
-    } catch (e) {
+    } catch {
       return fallback;
     }
   }

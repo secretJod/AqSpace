@@ -74,7 +74,7 @@
           out[id] = { jobId: e.jobId || null, state: e.state };
       });
       localStorage.setItem(KEY, JSON.stringify(out));
-    } catch (err) {
+    } catch {
       /* storage blocked: keep working in memory */
     }
   }
@@ -97,7 +97,7 @@
     var o = {};
     try {
       o = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
-    } catch (err) {
+    } catch {
       o = {};
     }
     Object.keys(o).forEach(function (id) {
@@ -161,7 +161,7 @@
     listeners.slice().forEach(function (fn) {
       try {
         fn(id, s);
-      } catch (err) {
+      } catch {
         /* a bad listener must not stop the others */
       }
     });

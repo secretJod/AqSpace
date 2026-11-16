@@ -46,7 +46,7 @@
   function reducedMotion() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -254,7 +254,7 @@
         if (chart) {
           try {
             chart.destroy();
-          } catch (e) {
+          } catch {
             /* already gone */
           }
           chart = null;
@@ -567,7 +567,6 @@
     return r < 0.2 ? 1 : r < 0.45 ? 2 : r < 0.75 ? 3 : 4;
   }
   function heatmap(container, matrix, opts) {
-    opts = opts || {};
     var root = el("div", "hm");
     root.setAttribute("role", "img");
     root.setAttribute("aria-label", "Minutes studied per weekday and hour");

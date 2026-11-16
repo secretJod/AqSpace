@@ -163,7 +163,7 @@
     if (!(target instanceof Element)) return false;
     try {
       return !!target.closest(selector);
-    } catch (err) {
+    } catch {
       return false;
     }
   }
@@ -210,7 +210,7 @@
       if (typeof sel !== "string" || !sel) return;
       try {
         document.createDocumentFragment().querySelector(sel);
-      } catch (err) {
+      } catch {
         return;
       }
       if (excludes.indexOf(sel) < 0) {

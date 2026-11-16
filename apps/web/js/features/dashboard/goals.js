@@ -102,7 +102,7 @@ window.AQ = window.AQ || {};
     var raw = null;
     try {
       raw = localStorage.getItem(KEY);
-    } catch (e) {
+    } catch {
       storageOk = false;
     }
     if (!raw) return;
@@ -113,7 +113,7 @@ window.AQ = window.AQ || {};
         var g = cleanGoal(r);
         if (g) goals.push(g);
       });
-    } catch (e) {
+    } catch {
       goals = [];
     }
   }
@@ -121,7 +121,7 @@ window.AQ = window.AQ || {};
     try {
       localStorage.setItem(KEY, JSON.stringify(goals));
       storageOk = true;
-    } catch (e) {
+    } catch {
       storageOk = false;
     }
   }
@@ -129,7 +129,7 @@ window.AQ = window.AQ || {};
     listeners.slice().forEach(function (fn) {
       try {
         fn(evt || {});
-      } catch (e) {
+      } catch {
         /* isolate listeners */
       }
     });
@@ -383,7 +383,7 @@ window.AQ = window.AQ || {};
         emit({ type: "sync" });
       }
     });
-  } catch (e) {
+  } catch {
     /* no window */
   }
 
@@ -449,7 +449,7 @@ window.AQ = window.AQ || {};
   function reducedMotion() {
     try {
       return matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {
+    } catch {
       return false;
     }
   }

@@ -95,7 +95,7 @@ window.AQ = window.AQ || {};
     var u;
     try {
       u = new URL(/^https?:\/\//i.test(s) ? s : "https://" + s);
-    } catch (e) {
+    } catch {
       return null;
     }
     var host = u.hostname.replace(/^www\.|^m\./, "").toLowerCase();
@@ -195,7 +195,7 @@ window.AQ = window.AQ || {};
     }
     try {
       return new Date(t).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-    } catch (e) {
+    } catch {
       return new Date(t).toDateString();
     }
   }

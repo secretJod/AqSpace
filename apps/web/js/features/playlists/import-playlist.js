@@ -25,8 +25,7 @@
     S = AQ.store,
     D = AQ.dialog;
   var el = u.el,
-    button = u.button,
-    icon = u.icon;
+    button = u.button;
 
   var OFFLINE_MSG = "AQspace server is not running. Start it with: docker compose up";
   var LIST_RE = /[?&]list=([A-Za-z0-9_-]{10,64})(?:[&#]|$)/;
@@ -468,7 +467,7 @@
       name.select();
       try {
         preview.scrollIntoView({ block: "nearest" });
-      } catch (e) {
+      } catch {
         /* old browser */
       }
     }

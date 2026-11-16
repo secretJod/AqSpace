@@ -57,7 +57,7 @@
     if (s.onClose) {
       try {
         s.onClose();
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }

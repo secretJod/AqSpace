@@ -99,14 +99,14 @@ window.AQ = window.AQ || {};
     var raw = null;
     try {
       raw = localStorage.getItem(KEY);
-    } catch (e) {
+    } catch {
       storageOk = false;
     }
     if (!raw) return;
     var arr;
     try {
       arr = JSON.parse(raw);
-    } catch (e) {
+    } catch {
       return;
     }
     if (!Array.isArray(arr)) return;
@@ -126,7 +126,7 @@ window.AQ = window.AQ || {};
     try {
       localStorage.setItem(KEY, JSON.stringify(sessions));
       storageOk = true;
-    } catch (e) {
+    } catch {
       storageOk = false;
     }
   }
@@ -138,7 +138,7 @@ window.AQ = window.AQ || {};
       listeners.slice().forEach(function (fn) {
         try {
           fn(evt || {});
-        } catch (e) {
+        } catch {
           /* one bad listener must not stop the rest */
         }
       });
@@ -189,7 +189,7 @@ window.AQ = window.AQ || {};
     if (!S || typeof S.record !== "function") return;
     try {
       S.record(kind, 1, { minutes: minutes });
-    } catch (e) {
+    } catch {
       /* the streak is a bonus, never a blocker */
     }
   }
@@ -309,7 +309,7 @@ window.AQ = window.AQ || {};
         emit({ type: "sync" });
       }
     });
-  } catch (e) {
+  } catch {
     /* no window */
   }
 

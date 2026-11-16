@@ -194,7 +194,7 @@ AQ.hud.backdrop(container)                    -> { destroy() }
     function load() {
       try {
         lines = (getLines && getLines()) || [];
-      } catch (e) {
+      } catch {
         lines = [];
       }
     }

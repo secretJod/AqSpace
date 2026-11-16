@@ -30,7 +30,7 @@
     if (!j || typeof j.status !== "function") return { state: "none" };
     try {
       return j.status(video.id) || { state: "none" };
-    } catch (e) {
+    } catch {
       return { state: "none" };
     }
   }
@@ -39,7 +39,7 @@
     if (!j || typeof j.urls !== "function") return {};
     try {
       return j.urls(video.id) || {};
-    } catch (e) {
+    } catch {
       return {};
     }
   }
@@ -230,7 +230,7 @@
             var nb = AQ.noteButton(video, { onView: render });
             var node = nb && nb.el ? nb.el : nb;
             if (node && node.nodeType === 1) slot.appendChild(node);
-          } catch (e) {
+          } catch {
             /* fall back to the plain button */
           }
         }
@@ -268,7 +268,7 @@
           if (id === video.id) render();
         });
         if (typeof r === "function") unsub = r;
-      } catch (e) {
+      } catch {
         /* no live updates */
       }
     }
@@ -281,7 +281,7 @@
         if (unsub) {
           try {
             unsub();
-          } catch (e) {
+          } catch {
             /* ignore */
           }
         }
