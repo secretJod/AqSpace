@@ -1,115 +1,93 @@
 # AQspace
 
-AQspace turns YouTube lectures (up to 24 hours long) into hand-drawn "field notebook" study notes, as a web page and a PDF. Paste a video or a playlist, watch it inside the app, and read the notes beside the video. Notes are written by Google Gemini by default (fast, handles long videos), with an automatic fallback chain (see [AI providers](#ai-providers)).
+AQspace turns YouTube lectures into hand-drawn "field notebook" study notes, as a web page and a PDF. Paste a video or a playlist, watch it inside the app, and read the notes beside the video. Notes are written by Google Gemini by default, with automatic fallback to other providers when it is unavailable.
 
-The app opens on a dashboard with a daily study streak, and you move between screens with a bottom navigation bar.
+<!-- Screenshot: add one here when the UI is final, e.g. docs/images/app.png -->
 
-Everything the app creates stays inside this folder (`.data/`, `models/`, `.npm-cache/`, `aq-api/data/`, `lecture-notes-ai/backend/output/`). `scripts/nuke.sh` removes it all.
+## Quick start
 
-## Start (one command)
+You need Docker Desktop (or another Docker engine with Compose).
 
-Requirements: Docker Desktop running.
-
-1. Get the code. Until PR #82 merges into `main`, the latest build lives on `preview/latest`:
-   ```bash
-   git fetch origin && git checkout preview/latest
-   ```
-2. Put the keys in place (see [Keys](#keys)). For the default setup, `GEMINI_API_KEY` is enough.
-3. Start everything:
+1. Add an AI key. Copy `apps/worker/backend/.env.example` to `apps/worker/backend/.env` and set `GEMINI_API_KEY`. That is enough for the default setup.
+2. Start everything:
    ```bash
    docker compose up --build
    ```
-   The first build is slow (Chromium, ffmpeg, Whisper). Later starts are fast.
-4. Open http://localhost:5180
+   The first build is slow (it installs Chromium, ffmpeg and Whisper). Later starts are fast.
+3. Open http://localhost:5180
 
-First time? Follow the step-by-step check in [docs/qa/first-run.md](docs/qa/first-run.md).
+Stop with `docker compose down`. Follow the logs with `docker compose logs -f notes-ai aq-api`.
 
-| URL | What |
+Everything the app creates stays inside this folder. `scripts/nuke.sh` removes all of it, including the containers and images.
+
+## Project layout
+
+| Path | What it is |
 |---|---|
-| http://localhost:5180 | AQspace notes app (UI + API) |
+| [`apps/api/`](apps/api/README.md) | Node 24 and Express: the HTTP API, sign-in and the SQLite database. Serves the web app on port 5180. |
+| [`apps/worker/`](apps/worker/README.md) | Python 3.12 and Flask: transcripts, AI notes and PDF rendering. Internal port 5055, never exposed. |
+| [`apps/web/`](apps/web/README.md) | The browser app: plain HTML, CSS and JavaScript with no build step. |
+| `scripts/` | Developer and operations scripts: `nuke.sh`, `backup-db.sh`, `deploy.sh`, `secret-scan.sh`. |
+| `docs/` | Documentation. |
 
-Stop with `docker compose down`. Logs: `docker compose logs -f notes-ai aq-api`.
+Each app's README explains how it works and how to add a feature to it.
 
-## What you see
+## Running the checks
 
-- **Dashboard:** the home screen, bringing your playlists and activity together.
-- **Daily streak:** counts the days in a row you studied, saved in your browser.
-- **Bottom nav:** a "liquid glass" navigation bar at the bottom of the screen to switch between screens.
-
-## AI providers
-
-Notes use **Gemini** by default (`PY_NOTES_PROVIDER=gemini` in `docker-compose.yml`; set `PY_NOTES_PROVIDER=local` or `groq` to change it). If the provider fails (rate limit, outage, timeout), AQspace retries the whole video once with another provider: the local model if it is online, then Groq (videos up to 1 hour), then NVIDIA. Providers are never mixed inside one video.
-
-| Provider | Model | Status | Key |
-|---|---|---|---|
-| Google Gemini | gemini-3.5-flash-lite | **Default** | `GEMINI_API_KEY` |
-| Groq | cloud, free tier | Fallback, videos up to 1 h | `GROQ_API_KEY` |
-| NVIDIA NIM | Nemotron | Fallback for longer videos | `NVIDIA_API_KEY` |
-| Local (Mac) | Qwen3-8B via llama.cpp | Waiting for llama.cpp approval (#37) | none |
-| Local candidates | Qwen3.5-9B, gpt-oss-20b | Being evaluated (#75) | none |
-| Google Colab | Qwen3-32B | Optional, when the Mac is busy | `COLAB_LLM_URL`, `COLAB_LLM_KEY` |
-
-## Local model
-
-The notes worker talks to a llama.cpp `llama-server` running natively on the Mac at `127.0.0.1:8081` (Metal GPU). The model file, Qwen3-8B-Q4_K_M GGUF (about 5 GB), lives in `models/` and is not in git.
+From the repository root:
 
 ```bash
-scripts/llm.sh start     # pending card #37 (llama.cpp install)
+npm test               # API tests and worker tests
+npm run lint           # ESLint (api, web) and Ruff (worker)
+npm run format:check   # Prettier (api, web) and Ruff format (worker)
 ```
 
-Until #37 lands, the local model is not available and notes use Gemini (or the fallback chain above). `curl -s 'localhost:5180/api/v1/health?deep=1'` shows `localModel: ok` or `offline`. Plain-language guide: [docs/client/local-model.md](docs/client/local-model.md).
-
-## Public link (Cloudflare tunnel, optional)
+The worker checks use its virtual environment. Create it once:
 
 ```bash
-docker compose --profile tunnel up --build
-docker compose logs tunnel | grep trycloudflare.com   # your public https link
+python3.12 -m venv apps/worker/.venv
+apps/worker/.venv/bin/pip install -e "apps/worker[web,dev]"
 ```
 
-The tunnel only exposes the app on port 5180. The link changes on every restart. There is no login, so anyone with the link can make notes on your machine and your AI keys. Stop it with `docker compose stop tunnel`.
+You can also run one app at a time, for example `npm --prefix apps/api test`. CI runs the same checks on every push.
 
-## Google sign-in (optional)
-By default the app runs as a single local user. To turn on Google sign-in:
-1. In Google Cloud Console (APIs & Services > Credentials), create a Web OAuth client and add the redirect URI `http://localhost:5180/api/v1/auth/google/callback`.
-2. In the root `.env` (see `.env.example`), set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (the URI above) and `SESSION_SECRET` (`openssl rand -hex 32`).
-3. Set `AUTH_MODE=google` in the same `.env`.
-4. Run `docker compose up -d` (it recreates aq-api with the new settings).
+## Configuration
 
-A quick tunnel URL changes on every restart, so sign-in through the tunnel needs a fixed hostname.
-
-## Keys
-
-Keys are never committed and never baked into an image. Copy the `.example` files and fill them in.
+Settings and keys live in `.env` files, which are never committed. Copy each `.env.example` and fill it in.
 
 | File | What goes there |
 |---|---|
-| `lecture-notes-ai/backend/.env` | AI provider keys: `GEMINI_API_KEY` (default), optional `GROQ_API_KEY`, `NVIDIA_API_KEY`, Colab link/key. Copy from `lecture-notes-ai/backend/.env.example`. |
-| `.env` (repo root) | Google OAuth client id/secret and `SESSION_SECRET` for the sign-in app. Copy from `.env.example`. |
+| `apps/worker/backend/.env` | AI provider keys: `GEMINI_API_KEY` (default), and optionally `GROQ_API_KEY`, `NVIDIA_API_KEY` and a Colab endpoint. |
+| `.env` (repository root) | Sign-in settings for the API: `AUTH_MODE`, the Google OAuth client and `SESSION_SECRET`. |
 
-`.env` files are not on GitHub: back them up before deleting the repo. Run `scripts/secret-scan.sh` before pushing.
+To change the notes provider, set `PY_NOTES_PROVIDER` (`gemini`, `local` or `groq`) in your shell before `docker compose up`. The `local` provider expects a llama.cpp `llama-server` running on the host at port 8081.
 
-## Layout
+Back up your `.env` files before deleting the repository, and run `scripts/secret-scan.sh` before pushing.
 
-| Path | What |
-|---|---|
-| `aq-api/` | Node/Express app backend and SQLite store, port 5180 |
-| `lecture-notes-ai/` | Python notes worker (transcripts, Whisper, LLM, PDF), internal port 5055 |
-| `lecture-notes-ui/` | Vanilla JS UI (no build step): dashboard, streak, bottom nav, player, notes |
-| `scripts/` | `nuke.sh` (remove everything), `secret-scan.sh` (check for leaked keys), `gh.sh` + `board.sh` (GitHub board), `backup-db.sh` (database backup), `deploy.sh` (deploy to a second Mac) |
+## Public link (optional)
 
-## Tests
+A Cloudflare quick tunnel gives the app a temporary public HTTPS address:
 
 ```bash
-cd aq-api && npm test
-cd lecture-notes-ai && LNA_OFFLINE=1 .venv/bin/python -m pytest tests -q
+docker compose --profile tunnel up --build
+docker compose logs tunnel | grep trycloudflare.com
 ```
 
-## Docs
+Only port 5180 is exposed, and the address changes on every restart. Unless Google sign-in is on, anyone with the link can use the app and your AI keys. Stop it with `docker compose stop tunnel`.
 
-- [docs/PLAN.md](docs/PLAN.md): the plan and requirements (R1, R2, ...)
-- [docs/qa/first-run.md](docs/qa/first-run.md): first-run check
-- [docs/qa/](docs/qa/): test plans and checklists
-- [docs/client/](docs/client/): release notes ([v0.3](docs/client/release-notes-v0.3.md)), demo script, guides
-- [docs/decisions/](docs/decisions/): architecture decisions (ADRs)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/AGENT_JOURNAL.md](docs/AGENT_JOURNAL.md)
-- Board: https://github.com/users/secretJod/projects/2
+## Google sign-in (optional)
+
+By default the app runs as a single local user. To turn on Google sign-in:
+
+1. In Google Cloud Console (APIs & Services > Credentials), create a Web OAuth client and add the redirect URI `http://localhost:5180/api/v1/auth/google/callback`.
+2. Copy `.env.example` to `.env` and set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` and `SESSION_SECRET` (`openssl rand -hex 32`).
+3. Set `AUTH_MODE=google` in the same file.
+4. Run `docker compose up -d` to restart the API with the new settings.
+
+A quick tunnel address changes on every restart, so sign-in through a tunnel needs a fixed hostname.
+
+## Documentation
+
+- [Architecture](docs/architecture.md): how the services fit together and how a request flows through them.
+- [Adding a feature](docs/adding-a-feature.md): a walkthrough across the API, worker and web app.
+- [Notes schema](apps/worker/docs/notes-schema.md): the JSON the AI writes and the renderer reads.
