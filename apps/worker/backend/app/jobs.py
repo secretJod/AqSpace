@@ -18,6 +18,7 @@ import inspect
 import json
 import logging
 import traceback
+from collections.abc import Callable
 
 from .helpers import format_duration, redact
 from .settings import CHUNK_RE, GENERIC_ERROR
@@ -33,11 +34,14 @@ def _missing_module_error(exc: ImportError) -> str:
 # ----------------------------------------------------------------------------------------------
 # 1. Progress
 # ----------------------------------------------------------------------------------------------
-def scaled_progress(state: State, job: dict, lo: float, hi: float, stage: str):
+def scaled_progress(state: State, job: dict, lo: float, hi: float, stage: str) -> Callable[..., None]:
     """Map a module's stage-local progress callback (pct 0-100) into the job's global range.
 
     Example: with lo=25, hi=85 a module reporting 50 % moves the job to 55 %.
-    Progress never goes backwards.
+    Progress never goes backwards, and a "chunk i/N" message also sets the job's ``chunk`` / ``chunks``.
+
+    Returns:
+        A ``callback(stage, pct, message)`` that never raises.
     """
 
     def callback(_stage=None, pct=None, message=None, *_a, **_k):
@@ -64,7 +68,23 @@ def scaled_progress(state: State, job: dict, lo: float, hi: float, stage: str):
 # ----------------------------------------------------------------------------------------------
 def run_note_job(
     state: State, job_id: str, url: str, provider: str, api_key: str, model: str | None, groq_key: str | None
-):
+) -> None:
+    """Turn one lecture into notes; runs in a background thread started by ``POST /api/jobs``.
+
+    Writes ``notes.json``, ``notes.html`` and ``notes.pdf`` to ``<output>/<job_id>/`` and records
+    progress, links and errors on ``state.jobs[job_id]``. Never raises: every failure becomes a
+    user-safe ``error`` message (the engine's own error classes keep their text, anything else is
+    reported as ``GENERIC_ERROR`` and logged with secrets redacted).
+
+    Args:
+        state: the shared app state.
+        job_id: id of a job already registered in ``state.jobs``.
+        url: the YouTube link (already validated).
+        provider: provider id, e.g. "groq".
+        api_key: provider key, or None for keyless providers.
+        model: model name, or None for the provider default.
+        groq_key: key for Groq Whisper speech-to-text on videos without captions.
+    """
     job = state.jobs[job_id]
     secrets = [api_key, groq_key]
     job_dir = state.output_dir / job_id
@@ -202,7 +222,22 @@ def run_smart_job(
     api_key: str,
     model: str | None,
     groq_key: str | None = None,
-):
+) -> None:
+    """Run a smart-playlist analysis; runs in a background thread started by ``POST /api/smart``.
+
+    Stores ``result`` and ``usage`` on ``state.smart_jobs[job_id]`` when done. Never raises; failures
+    become user-safe ``error`` messages, as in ``run_note_job``.
+
+    Args:
+        state: the shared app state.
+        job_id: id of a job already registered in ``state.smart_jobs``.
+        goal: the learning goal (the playlist name).
+        videos: validated ``{id, title, channel, duration_sec}`` dicts.
+        provider: provider id; ``api_key`` is its server-side key.
+        api_key: provider key from the server environment.
+        model: model name, or None for the provider default.
+        groq_key: key for Groq Whisper speech-to-text on videos without captions.
+    """
     job = state.smart_jobs[job_id]
     secrets = [api_key, groq_key]
 
@@ -225,8 +260,9 @@ def run_smart_job(
             log.error("module import failed: %s", redact(e, secrets))
             state.update(job, status="error", error=_missing_module_error(e))
             return
-        # same transcript path as a notes job: Whisper fallback key and the shared speech-to-text cache
-        # (keyword-only args; passed only when this smart_playlist accepts them)
+        # Same transcript path as a notes job: Whisper fallback key and the shared speech-to-text
+        # cache. They are keyword-only and passed only when ``analyze`` accepts them, because tests
+        # substitute simpler fakes for the smart_playlist module.
         extra = {"groq_key": groq_key, "work_dir": str(state.output_dir / "_cache")}
         try:
             accepted = inspect.signature(smart.analyze).parameters

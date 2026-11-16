@@ -1,9 +1,9 @@
-"""AI provider list and server-side keys.
+"""AI provider list and server-side keys, used by ``routes.py``.
 
 ``provider_table()`` merges the engine's ``llm.PROVIDERS`` (if it can be imported) with
-``FALLBACK_PROVIDERS``, so the UI always gets the full, ordered list.
-``server_key(pid)`` reads the key from the environment (backend/.env). Keys are never returned
-to the browser; the API only reports *whether* a server key exists.
+``FALLBACK_PROVIDERS``, so callers always get the full, ordered list even when the engine is broken.
+``server_key(pid)`` reads the key from the environment (backend/.env). Keys are never returned to the
+caller; ``GET /api/providers`` only reports *whether* a server key exists.
 
 Read next: ``routes.py``.
 """
@@ -16,7 +16,7 @@ from .settings import ENV_KEYS, FALLBACK_PROVIDERS, KEYLESS, PROVIDER_ORDER
 
 
 def provider_table() -> dict:
-    """provider id -> {label, default_model, key_hint}, for every id in PROVIDER_ORDER."""
+    """Return ``{provider id: {label, default_model, key_hint}}`` for every id in PROVIDER_ORDER."""
     table = {}
     try:
         from notes_engine import llm  # lazy: the server must start even if llm is broken
@@ -37,12 +37,12 @@ def provider_table() -> dict:
 
 
 def server_key(pid: str) -> str:
-    """The server-side API key for a provider ("" if none is configured)."""
+    """Return the server-side API key for a provider ("" if none is configured)."""
     return (os.environ.get(ENV_KEYS[pid]) or "").strip() if pid in ENV_KEYS else ""
 
 
 def local_online() -> bool:
-    """True when the local llama-server answers (1 s probe; False on any error)."""
+    """Return True when the local llama-server answers (1 s probe; False on any error)."""
     try:
         from notes_engine import llm
 
@@ -52,7 +52,12 @@ def local_online() -> bool:
 
 
 def provider_rows() -> list[dict]:
-    """The /api/providers list: label, default model, key hint, needs_key, server_key (+ online for local)."""
+    """Build the ``GET /api/providers`` list.
+
+    Returns:
+        One dict per provider, in PROVIDER_ORDER: ``id``, ``label``, ``default_model``, ``key_hint``,
+        ``needs_key``, ``server_key`` (a boolean) and, for keyless providers, ``online``.
+    """
     table = provider_table()
     rows = []
     for pid in PROVIDER_ORDER:

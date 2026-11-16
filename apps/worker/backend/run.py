@@ -1,4 +1,11 @@
-"""Start the Lecture Notes AI server:  python run.py  ->  http://127.0.0.1:5055"""
+"""Entry point of the notes worker: ``python backend/run.py`` serves http://127.0.0.1:5055.
+
+Called by the Docker image (``CMD ["python", "run.py"]``) and by developers running the worker by hand.
+It prepares the process (cache folder, repo-local temp folder, key check) and then starts the Flask app
+built by ``app.server.create_app``.
+
+Read next: ``app/server.py``.
+"""
 
 import os
 import shutil
@@ -37,12 +44,13 @@ PORT = int(os.environ.get("LNA_PORT", "5055"))
 
 
 def main() -> None:
-    # transcripts + accepted LLM answers are kept here (git-ignored, size-capped) so a retry or a second
-    # request for the same video skips the slow steps; set LNA_CACHE_DIR yourself to move it
+    """Configure the process and run the Flask server until Ctrl+C."""
+    # Transcripts and accepted LLM answers are cached here (git-ignored, size-capped) so a retry or a
+    # second request for the same video skips the slow steps. Set LNA_CACHE_DIR to move it.
     os.environ.setdefault("LNA_CACHE_DIR", os.path.join(_HERE, "output", "cache"))  # = cache.DEFAULT_DIR
     _use_local_temp()
     app = create_app()  # loads backend/.env
-    from app.keycheck import check_keys  # #81: warn about malformed provider keys (never logs values)
+    from app.keycheck import check_keys  # warns about malformed provider keys (never logs values)
 
     check_keys()
     print(f"Lecture Notes AI running at http://{HOST}:{PORT}  (Ctrl+C to stop)")

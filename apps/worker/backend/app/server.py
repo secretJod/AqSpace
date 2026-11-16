@@ -1,4 +1,4 @@
-"""Flask worker for Lecture Notes AI (http://127.0.0.1:5055) - the entry point.
+"""Flask app factory of the notes worker (http://127.0.0.1:5055).
 
 What this file does
     ``create_app(config)`` builds the Flask app: loads backend/.env, prepares the output
@@ -13,6 +13,7 @@ How the worker is organised (read in this order)
     security.py   local-only guard, security headers, JSON error pages
     providers.py  provider list + server-side keys
     routes.py     every HTTP route (the full list is at the top of that file)
+    keycheck.py   startup check of the provider keys (called by backend/run.py)
 
 The heavy modules (ingest / llm / pdf) are imported lazily inside the worker so
 the server starts even when one of them is missing or broken.
@@ -51,6 +52,15 @@ DEFAULT_CONFIG = {
 
 
 def create_app(config: dict | None = None) -> Flask:
+    """Build the Flask app.
+
+    Args:
+        config: overrides for ``DEFAULT_CONFIG`` (tests use it for a temporary output folder,
+            lower limits and no ``.env`` loading).
+
+    Returns:
+        The configured app; its ``State`` is stored on ``app.extensions["lna"]``.
+    """
     # 1. Settings
     cfg = dict(DEFAULT_CONFIG)
     cfg.update(config or {})

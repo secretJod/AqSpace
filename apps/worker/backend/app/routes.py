@@ -26,6 +26,7 @@ import re
 import threading
 import time
 import uuid
+from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_file
 
@@ -41,13 +42,21 @@ log = logging.getLogger("lna")
 # ----------------------------------------------------------------------------------------------
 # 1. Small validation helpers (shared by the routes below)
 # ----------------------------------------------------------------------------------------------
-def bad(msg: str, code: int = 400):
+def bad(msg: str, code: int = 400) -> tuple[Response, int]:
     """A JSON error response: {"error": msg} with status ``code``."""
     return jsonify(error=msg), code
 
 
-def clean_key(value, label):
-    """Validate an optional key from the request. Returns (key or None, error message or None)."""
+def clean_key(value: object, label: str) -> tuple[str | None, str | None]:
+    """Validate an optional key from the request body.
+
+    Args:
+        value: the raw JSON value.
+        label: how the key is named in the error message ("API key", "Groq key").
+
+    Returns:
+        ``(key or None, error message or None)``.
+    """
     if value is None or value == "":
         return None, None
     if not isinstance(value, str):
@@ -60,8 +69,12 @@ def clean_key(value, label):
     return value, None
 
 
-def clean_model(value):
-    """Validate an optional model name. Returns (model or None, ok)."""
+def clean_model(value: object) -> tuple[str | None, bool]:
+    """Validate an optional model name.
+
+    Returns:
+        ``(model or None, ok)``; ``ok`` is False when a value was given but is not a valid name.
+    """
     if value in (None, ""):
         return None, True
     if not isinstance(value, str) or not MODEL_RE.match(value.strip()):
@@ -69,11 +82,13 @@ def clean_model(value):
     return value.strip(), True
 
 
-def unknown_provider_error():
+def unknown_provider_error() -> tuple[Response, int]:
+    """Return the 400 response for a provider id that is not in PROVIDER_ORDER."""
     return bad("Unknown provider. Choose one of: " + ", ".join(PROVIDER_ORDER) + ".")
 
 
 def valid_job_id(job_id: str) -> bool:
+    """Return True when ``job_id`` has the shape of a job id (32 hex characters)."""
     return bool(JOB_ID_RE.match(job_id or ""))
 
 
@@ -94,18 +109,26 @@ def notes_page_csp(html: str) -> str:
 
 
 def register_routes(app: Flask, state: State) -> None:
+    """Attach every route listed at the top of this file to ``app``; handlers share ``state``."""
+
     # ------------------------------------------------------------------------------------------
     # 3. Providers
     # ------------------------------------------------------------------------------------------
     @app.get("/api/providers")
-    def providers():
+    def providers() -> Response:
+        """GET /api/providers -> {providers: [...]} (see ``providers.provider_rows``)."""
         return jsonify(providers=provider_rows())
 
     # ------------------------------------------------------------------------------------------
     # 4. Note jobs
     # ------------------------------------------------------------------------------------------
     @app.post("/api/jobs")
-    def create_job():
+    def create_job() -> tuple[Response, int]:
+        """POST /api/jobs {url, provider, api_key?, model?, groq_key?} -> 202 {job_id}.
+
+        Errors: 400 for invalid input or a missing key, 429 when busy or rate-limited, 503 when the
+        engine cannot be imported.
+        """
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return bad("Send a JSON body with at least a YouTube url and a provider.")
@@ -184,7 +207,8 @@ def register_routes(app: Flask, state: State) -> None:
         return jsonify(job_id=job_id), 202
 
     @app.get("/api/jobs/<job_id>")
-    def job_status(job_id):
+    def job_status(job_id: str) -> Response | tuple[Response, int]:
+        """GET /api/jobs/<id> -> the job's public fields (status, stage, pct, message, ...); 404 if unknown."""
         if not valid_job_id(job_id):
             return bad("Job not found.", 404)
         job = state.jobs.get(job_id)
@@ -195,7 +219,7 @@ def register_routes(app: Flask, state: State) -> None:
     # ------------------------------------------------------------------------------------------
     # 5. Job files (notes.json / notes.pdf / notes.html)
     # ------------------------------------------------------------------------------------------
-    def job_file(job_id: str, name: str):
+    def job_file(job_id: str, name: str) -> Path | None:
         """Path of a finished job's file, or None. Refuses anything outside the output folder."""
         if not valid_job_id(job_id):
             return None
@@ -212,7 +236,8 @@ def register_routes(app: Flask, state: State) -> None:
         return path
 
     @app.get("/api/jobs/<job_id>/notes.json")
-    def notes_json(job_id):
+    def notes_json(job_id: str) -> Response | tuple[Response, int]:
+        """GET /api/jobs/<id>/notes.json -> the structured notes of a finished job."""
         path = job_file(job_id, "notes.json")
         if path is None:
             return bad("File not found.", 404)
@@ -221,7 +246,8 @@ def register_routes(app: Flask, state: State) -> None:
         return resp
 
     @app.get("/api/jobs/<job_id>/notes.pdf")
-    def notes_pdf(job_id):
+    def notes_pdf(job_id: str) -> Response | tuple[Response, int]:
+        """GET /api/jobs/<id>/notes.pdf -> the PDF as a download named after the lecture title."""
         path = job_file(job_id, "notes.pdf")
         if path is None:
             return bad("File not found.", 404)
@@ -235,7 +261,8 @@ def register_routes(app: Flask, state: State) -> None:
         )
 
     @app.get("/api/jobs/<job_id>/notes.html")
-    def notes_html(job_id):
+    def notes_html(job_id: str) -> Response | tuple[Response, int]:
+        """GET /api/jobs/<id>/notes.html -> the notebook preview, with a CSP that allows only its own scripts."""
         path = job_file(job_id, "notes.html")
         if path is None:
             return bad("File not found.", 404)
@@ -252,7 +279,7 @@ def register_routes(app: Flask, state: State) -> None:
     # 6. Smart playlist
     # ------------------------------------------------------------------------------------------
     @app.post("/api/smart")
-    def create_smart():
+    def create_smart() -> tuple[Response, int]:
         """POST /api/smart {goal, videos:[{id,title,channel,duration_sec}], provider, model?} -> 202 {job_id}."""
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
@@ -351,7 +378,8 @@ def register_routes(app: Flask, state: State) -> None:
         return jsonify(job_id=job_id), 202
 
     @app.get("/api/smart/<job_id>")
-    def smart_status(job_id):
+    def smart_status(job_id: str) -> Response | tuple[Response, int]:
+        """GET /api/smart/<id> -> the analysis' public fields (status, pct, result, usage, ...); 404 if unknown."""
         job = state.smart_jobs.get(job_id) if JOB_ID_RE.match(job_id or "") else None
         if job is None:
             return bad("Job not found (the server may have been restarted).", 404)
@@ -361,7 +389,7 @@ def register_routes(app: Flask, state: State) -> None:
     # 7. Playlist lookup
     # ------------------------------------------------------------------------------------------
     @app.get("/api/playlist")
-    def playlist():
+    def playlist() -> Response | tuple[Response, int]:
         """GET /api/playlist?url=<YouTube playlist link> -> {id,title,channel,count,videos,truncated,skipped}."""
         url = request.args.get("url", "")
         if not isinstance(url, str) or not url.strip():

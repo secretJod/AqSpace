@@ -1,4 +1,4 @@
-"""Constants for the Flask worker: folders, input-validation patterns, providers and security policies.
+"""Constants for the Flask app: folders, input-validation patterns, providers and security policies.
 
 How it fits
     Imported by every other module of the worker. Nothing here does any work; it is just the
@@ -99,7 +99,7 @@ GENERIC_ERROR = (
 # ----------------------------------------------------------------------------------------------
 # 5. Content-Security-Policy headers
 # ----------------------------------------------------------------------------------------------
-# The web app itself (frontend/).
+# Every non-API response (static fonts, error pages). The value is kept stable on purpose.
 CSP_APP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
     "font-src 'self'; connect-src 'self'; frame-src 'self' "

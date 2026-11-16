@@ -7,6 +7,8 @@ What this file does
       2. an after-request hook adding security headers (CSP, X-Frame-Options, no-store, ...)
       3. JSON error handlers for 404 / 405 / 413 / 500
 
+Called by ``server.create_app``.
+
 Read next
     ``providers.py``.
 """
@@ -19,6 +21,8 @@ from .settings import CSP_APP, CSP_FILE, CSP_NOTES, GENERIC_ERROR, LOCAL_HOST_RE
 
 
 def register_security(app: Flask) -> None:
+    """Install the request guard, the security headers and the JSON error pages on ``app``."""
+
     # ---- 1. Request guard ------------------------------------------------------------------
     @app.before_request
     def _guard():
