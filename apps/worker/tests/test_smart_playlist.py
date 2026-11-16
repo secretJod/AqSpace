@@ -253,7 +253,9 @@ def test_search_youtube_filters(monkeypatch):
 
 
 def test_add_candidates_never_offers_a_video_twice(monkeypatch):
-    c = lambda i: {"id": i * 11, "title": "t", "channel": "c", "duration_sec": 300, "url": "u"}
+    def c(i):
+        return {"id": i * 11, "title": "t", "channel": "c", "duration_sec": 300, "url": "u"}
+
     monkeypatch.setattr(sp, "_search_youtube", lambda q, ex, limit=2: [c("a" if q == "q1" else "b"), c("m")])
     res = {
         "suggestions": [{"search_query": "q1", "candidates": []}, {"search_query": "q2", "candidates": []}],

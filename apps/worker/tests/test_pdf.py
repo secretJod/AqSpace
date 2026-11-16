@@ -121,7 +121,12 @@ def test_mindmap_tree_is_always_valid():
     nodes = [{"id": c, "label": c} for c in "abcdefg"]
     # cycle, missing parent, deep chain, self parent
     for parents in (["", "a", "b", "c", "d", "e", "f"], ["b", "a", "zz", "c", "d", "e", "e"], ["a"] * 7):
-        d = {"type": "mindmap", "title": "", "nodes": [{**n, "parent": p} for n, p in zip(nodes, parents)], "edges": []}
+        d = {
+            "type": "mindmap",
+            "title": "",
+            "nodes": [{**n, "parent": p} for n, p in zip(nodes, parents, strict=True)],
+            "edges": [],
+        }
         dg = pdf._clean_diagram(d)
         root, par, depth = pdf._mindmap_tree(dg)
         assert len(par) == 6 and root not in par and max(depth.values()) <= 2
@@ -250,7 +255,7 @@ def _check_pdf(path):
     doc = pymupdf.open(path)
     n = len(doc)
     pages = []
-    for i, pg in enumerate(doc):
+    for pg in doc:
         txt = pg.get_text()
         m = re.findall(r"pg\.\s*(\d+)\s*/\s*(\d+)", txt)
         pages.append((txt, m, pg))
@@ -270,7 +275,7 @@ def sample_pdf(tmp_path_factory, notes):
 def test_pdf_multi_page_and_numbering(sample_pdf):
     doc, n, pages = _check_pdf(str(sample_pdf))
     assert n > 8
-    for i, (txt, m, pg) in enumerate(pages, 1):
+    for i, (_txt, m, pg) in enumerate(pages, 1):
         assert m, "page %d has no 'pg. N / M'" % i
         assert (int(m[-1][0]), int(m[-1][1])) == (i, n)
         assert abs(pg.rect.width - 595) < 2 and abs(pg.rect.height - 842) < 2  # A4
@@ -289,8 +294,8 @@ def test_pdf_overflowing_section_continues_without_clipping(sample_pdf):
     assert "Fine-tuning adapts a pre-trained model" in full
     assert "optimizer.zero_grad(set_to_none=True)" in full
     assert "serving" in full and "latency" in full
-    for i, (t, m, pg) in enumerate(pages, 1):
-        for x0, y0, x1, y1, word, *_ in pg.get_text("words"):
+    for i, (_t, _m, pg) in enumerate(pages, 1):
+        for _x0, _y0, x1, y1, *_ in pg.get_text("words"):
             assert y1 <= pg.rect.height + 0.5 and x1 <= pg.rect.width + 0.5
         # below the content area (1064px = 798pt) only footer lines may exist
         for blk in pg.get_text("dict")["blocks"]:
@@ -321,7 +326,7 @@ def test_pdf_deterministic_text(sample_pdf, notes, tmp_path):
     pdf.render_pdf(notes, str(out2))
     a, b = pymupdf.open(str(sample_pdf)), pymupdf.open(str(out2))
     assert len(a) == len(b)
-    for pa, pb in zip(a, b):
+    for pa, pb in zip(a, b, strict=True):
         assert pa.get_text("words") == pb.get_text("words")
     a.close()
     b.close()

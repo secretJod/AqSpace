@@ -91,8 +91,8 @@ def definition_block(block) -> str:
     if not (term or text):
         return ""
     return (
-        '<div class="item blk b-def"><div class="box"><span class="tag">def.</span><span class="term">%s</span> — %s</div></div>'
-        % (escape_html(term), rich(text))
+        '<div class="item blk b-def"><div class="box"><span '
+        'class="tag">def.</span><span class="term">%s</span> — %s</div></div>' % (escape_html(term), rich(text))
     )
 
 
@@ -116,7 +116,8 @@ def callout_block(block, callout_number: int) -> str:
     if style not in CALLOUT_LABELS:
         style = "note"
     return (
-        '<div class="item blk b-call %s t%d"><div class="box"><span class="lbl">%s</span><span class="tx">%s</span></div></div>'
+        '<div class="item blk b-call %s t%d"><div class="box"><span '
+        'class="lbl">%s</span><span class="tx">%s</span></div></div>'
         % (style, 1 + callout_number % 2, escape_html(CALLOUT_LABELS[style]), rich(text))
     )
 
@@ -143,8 +144,8 @@ def code_block(block) -> str:
     body = "".join('<div class="ln">%s</div>' % (escape_html(line) if line.strip() else "&nbsp;") for line in lines)
     tag = '<span class="lang">%s</span>' % escape_html(language) if language else ""
     return (
-        '<div class="item blk b-code" data-split="1" data-minkeep="4" data-minmove="3"><div class="box">%s<div class="sb">%s</div></div></div>'
-        % (tag, body)
+        '<div class="item blk b-code" data-split="1" data-minkeep="4" '
+        'data-minmove="3"><div class="box">%s<div class="sb">%s</div></div></div>' % (tag, body)
     )
 
 
@@ -162,8 +163,8 @@ def table_block(block) -> str:
         cells = ([clean_text(c) for c in row] + [""] * ncol)[:ncol]
         trs += "<tr>%s</tr>" % "".join("<td>%s</td>" % rich(c) for c in cells)
     return (
-        '<div class="item blk b-table" data-split="1" data-minkeep="3" data-minmove="2"><table>%s<tbody class="sb">%s</tbody></table></div>'
-        % (thead, trs)
+        '<div class="item blk b-table" data-split="1" data-minkeep="3" '
+        'data-minmove="2"><table>%s<tbody class="sb">%s</tbody></table></div>' % (thead, trs)
     )
 
 

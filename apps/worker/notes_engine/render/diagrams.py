@@ -229,7 +229,7 @@ def _layout_flow(dg: dict, W: float):
         worst = 0
         for r in range(rows):
             ls = list(range(r * k, min((r + 1) * k, nl)))
-            worst = max(worst, sum(gaps[l] for l in ls[:-1]))
+            worst = max(worst, sum(gaps[li] for li in ls[:-1]))
         bw = min(196, (W - 2 * side - worst) / k)
         if bw >= 118 or k == 1:
             best = (k, rows, side, bw)
@@ -245,7 +245,7 @@ def _layout_flow(dg: dict, W: float):
     row_stack = []
     for r in range(rows):
         ls = range(r * k, min((r + 1) * k, nl))
-        row_stack.append(max(len(groups[l]) for l in ls))
+        row_stack.append(max(len(groups[li]) for li in ls))
 
     # "skip" edges jump over a layer in the same row and are routed above the row
     def is_skip(ed):
@@ -267,15 +267,15 @@ def _layout_flow(dg: dict, W: float):
     layer_x = {}
     for r in range(rows):
         ls = list(range(r * k, min((r + 1) * k, nl)))
-        total = len(ls) * bw + sum(gaps[l] for l in ls[:-1])
+        total = len(ls) * bw + sum(gaps[li] for li in ls[:-1])
         x0 = side + (W - 2 * side - total) / 2
         xs, x = {}, x0
-        for l in ls:
-            xs[l] = x
-            x += bw + (gaps[l] if l < nl - 1 else 0)
+        for li in ls:
+            xs[li] = x
+            x += bw + (gaps[li] if li < nl - 1 else 0)
         if r % 2 == 1:  # snake: odd rows run right-to-left
-            for l in ls:
-                xs[l] = W - xs[l] - bw
+            for li in ls:
+                xs[li] = W - xs[li] - bw
         layer_x.update(xs)
     geo = {}
     for li in range(nl):
@@ -420,7 +420,7 @@ def _svg_stack(dg: dict, W: float) -> tuple[str, float, float]:
     if dg["title"]:
         sk.text(inner_x + 4, y + 30, dg["title"], 20, "kb", "start", INK)
     yy = y0
-    for i, nd in enumerate(nodes):
+    for i in range(len(nodes)):
         h = heights[i]
         _fill, _stroke, highlight = TINTS[(4, 2, 3)[i % 3]]
         sk.rect(inner_x, yy, inner_w, h, fill=CARD, stroke=INK, sw=2.2, hl=highlight)
@@ -974,7 +974,7 @@ def _svg_sequence(dg: dict, W: float) -> tuple[str, float, float]:
             cursor = ay + 18
     life_end = cursor + 2
     H = life_end + 10
-    for i, a in enumerate(actors):  # actors + lifelines (under the messages)
+    for i in range(len(actors)):  # actors + lifelines (under the messages)
         tf, ts_, thl = TINTS[(4, 2, 3, 1)[i % 4]]
         x = cx[i] - bw / 2
         sk.line(cx[i], y0 + ah + 2, cx[i], life_end, stroke="#7d7466", sw=1.7, dash="7 6", amp=0.8)
@@ -1037,7 +1037,8 @@ def build_diagram_svg(diagram, width: float = 690.0, css_class: str = "d") -> tu
         except Exception:
             return None
     svg = (
-        '<svg class="%s" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s" preserveAspectRatio="xMidYMid meet" role="img" aria-label="%s">%s</svg>'
+        '<svg class="%s" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s" '
+        'preserveAspectRatio="xMidYMid meet" role="img" aria-label="%s">%s</svg>'
         % (css_class, fmt_num(vw), fmt_num(vh), escape_html(dg["title"] or "diagram"), inner)
     )
     return svg, vw, vh

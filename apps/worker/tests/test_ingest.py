@@ -489,12 +489,6 @@ def test_unexpected_exception_does_not_leak(patched):
 
 
 def _fake_transcript(lang, generated, snippets):
-    fetched = SimpleNamespace(
-        language_code=lang,
-        is_generated=generated,
-        __iter__=None,
-    )
-
     class F(list):
         language_code = lang
         is_generated = generated

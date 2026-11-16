@@ -221,7 +221,8 @@ def main(argv: list[str] | None = None) -> dict:
                     rec = generate(cid, vid, n, ts[vid])
                     C.write_json(p, rec)
                     log(
-                        f"  -> {rec['status']} {rec['latency_sec']}s {rec.get('error_type', '')} {rec.get('error', '')[:120]}"
+                        f"  -> {rec['status']} {rec['latency_sec']}s "
+                        f"{rec.get('error_type', '')} {rec.get('error', '')[:120]}"
                     )
                     if rec.get("error_type") == "quota_daily":
                         quota_dead.add(cid)
@@ -229,7 +230,8 @@ def main(argv: list[str] | None = None) -> dict:
 
     key = blind.write_sheet(videos, contestants, sheet, C.OUT / "blind-key.json")
     log(
-        f"blind sheet: {sheet} ({len(key['videos'])} videos); key: {C.OUT / 'blind-key.json'} (do not open before scoring)"
+        f"blind sheet: {sheet} ({len(key['videos'])} videos); "
+        f"key: {C.OUT / 'blind-key.json'} (do not open before scoring)"
     )
     if a.no_judge:
         return {"contestants": contestants, "sheet": str(sheet)}

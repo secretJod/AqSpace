@@ -562,7 +562,7 @@ def test_batch_truncation_splits_input(monkeypatch):
             return FakeResp(200, ok_payload("groq", '{"sections":[{"title":"a"', finish="length"))
         return pipeline_script("groq", 2)(call, i)
 
-    rec = install(monkeypatch, script)
+    install(monkeypatch, script)
     notes = llm.generate_notes(tr, provider="groq", api_key=KEYS["groq"])
     assert notes["sections"]
 

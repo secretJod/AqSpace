@@ -172,7 +172,8 @@ class Sketch:
                 d += self.line_d(a[0], a[1], b[0], b[1], amp=0.9, over=4.0 if pass_no == 0 else 3.0)
             extra = ' stroke-dasharray="%s"' % dash if dash else ""
             markup.append(
-                '<path d="%s" fill="none" stroke="%s" stroke-width="%s" stroke-linecap="round" stroke-linejoin="round"%s%s/>'
+                '<path d="%s" fill="none" stroke="%s" stroke-width="%s" '
+                'stroke-linecap="round" stroke-linejoin="round"%s%s/>'
                 % (d, stroke, fmt_num(sw if pass_no == 0 else sw * 0.55), ' opacity=".8"' if pass_no else "", extra)
             )
         self.parts.append("".join(markup))
@@ -221,7 +222,8 @@ class Sketch:
             if pass_no == 0 and fill and fill != "none":
                 self.parts.append('<path d="%sZ" fill="%s" stroke="none"/>' % (d, fill))
             self.parts.append(
-                '<path d="%s" fill="none" stroke="%s" stroke-width="%s" stroke-linecap="round" stroke-linejoin="round"%s/>'
+                '<path d="%s" fill="none" stroke="%s" stroke-width="%s" '
+                'stroke-linecap="round" stroke-linejoin="round"%s/>'
                 % (d, stroke, fmt_num(sw if pass_no == 0 else sw * 0.55), ' opacity=".8"' if pass_no else "")
             )
         box = [cx, cy, w, h]
@@ -248,8 +250,8 @@ class Sketch:
         extra = ' stroke-dasharray="%s"' % dash if dash else ""
         op = ' opacity="%s"' % opacity if opacity else ""
         return (
-            '<path d="%s" fill="none" stroke="%s" stroke-width="%s" stroke-linecap="round" stroke-linejoin="round"%s%s/>'
-            % (d, stroke, fmt_num(sw), extra, op)
+            '<path d="%s" fill="none" stroke="%s" stroke-width="%s" '
+            'stroke-linecap="round" stroke-linejoin="round"%s%s/>' % (d, stroke, fmt_num(sw), extra, op)
         )
 
     @staticmethod

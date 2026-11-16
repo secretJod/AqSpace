@@ -196,7 +196,7 @@ def parse_vtt(text: str) -> list[RawCue]:
             h1, m1, s1, ms1, h2, m2, s2, ms2 = m.groups()
             start = int(h1 or 0) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000
             end = int(h2 or 0) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000
-            body = [l for l in lines[i + 1 :] if l.strip()]
+            body = [ln for ln in lines[i + 1 :] if ln.strip()]
             if body:
                 cues.append((start, max(0.0, end - start), body))
             break

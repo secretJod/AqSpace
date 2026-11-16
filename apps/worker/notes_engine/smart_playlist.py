@@ -441,7 +441,7 @@ def _add_candidates(result: dict, known: set[str]) -> None:
     with ThreadPoolExecutor(max_workers=3) as pool:
         hits = list(pool.map(lambda s: _search_youtube(s["search_query"], known), sugg))
     used = set(known)
-    for s, cands in zip(sugg, hits):  # one video is offered for one topic only
+    for s, cands in zip(sugg, hits, strict=True):  # one video is offered for one topic only
         s["candidates"] = [c for c in cands if c["id"] not in used]
         used.update(c["id"] for c in s["candidates"])
     n_real = sum(len(s["candidates"]) for s in sugg)

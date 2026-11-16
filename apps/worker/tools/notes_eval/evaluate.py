@@ -340,7 +340,7 @@ def _bool(v: Any) -> bool:
 def aggregate() -> dict:
     from notes_engine.llm import PROVIDERS
 
-    runs_out, per = [], {}
+    runs_out = []
     for cid in C.SELECTED or list(C.CONTESTANTS):
         for vid in C.VIDEOS:
             t = C.read_json(C.TRANSCRIPTS / f"{vid}.json")
@@ -399,7 +399,7 @@ def aggregate() -> dict:
                             ][:8]
                         if isinstance(rub, dict):
 
-                            def num(k):
+                            def num(k, rub=rub):
                                 try:
                                     return float(rub.get(k))
                                 except (TypeError, ValueError):

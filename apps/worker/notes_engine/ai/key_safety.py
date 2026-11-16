@@ -43,7 +43,8 @@ def clean_api_key(api_key: str | None) -> str:
         key = key[7:].strip()
     if not key:
         raise LLMError(
-            "No API key was provided. Paste your key in the app or set it in the environment (e.g. GROQ_API_KEY) or backend/.env."
+            "No API key was provided. Paste your key in the app or set "
+            "it in the environment (e.g. GROQ_API_KEY) or backend/.env."
         )
     if not key.isascii() or re.search(r"\s", key):
         raise LLMError("The API key contains spaces or unusual characters. Re-copy it without quotes or line breaks.")

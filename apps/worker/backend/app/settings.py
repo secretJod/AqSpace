@@ -102,7 +102,8 @@ GENERIC_ERROR = (
 # The web app itself (frontend/).
 CSP_APP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-    "font-src 'self'; connect-src 'self'; frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com; object-src 'none'; "
+    "font-src 'self'; connect-src 'self'; frame-src 'self' "
+    "https://www.youtube-nocookie.com https://www.youtube.com; object-src 'none'; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'self'"
 )
 # The generated notebook page is self-contained (inline CSS, data: fonts/images) but must never run script.

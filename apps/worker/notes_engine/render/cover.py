@@ -112,7 +112,8 @@ def cover_unit(notes: dict, title: str) -> str:
     sticky = '<div class="cv-idea">%s</div>' % escape_html(truncate(idea, 90)) if idea else ""
     howto = (
         '<div class="cv-how"><div class="rt">★ recall question</div><div class="q">Q: How do I use this book?</div>'
-        "A: After each page, close it and explain it out loud in 30 seconds. Every section ends with one recall question.</div>"
+        "A: After each page, close it and explain it out loud in 30 "
+        "seconds. Every section ends with one recall question.</div>"
     )
     summary = (
         '<div class="cv-sum">%s</div>' % escape_html(truncate_sentences(summary_text, 200)) if summary_text else ""

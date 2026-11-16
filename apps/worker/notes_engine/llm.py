@@ -350,7 +350,8 @@ class _Client:
                     if local:
                         raise _TransientError(
                             "The local model server is not reachable at LNAI_LOCAL_URL "
-                            f"({scrub_secrets(self.base_url or local_base_url(), self.key, 80)}). Start llama-server and try again."
+                            f"({scrub_secrets(self.base_url or local_base_url(), self.key, 80)}). "
+                            "Start llama-server and try again."
                         ) from None
                     raise _TransientError(
                         f"Could not reach {self.label} (network error or timeout) after "

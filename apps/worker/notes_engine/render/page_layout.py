@@ -48,7 +48,8 @@ HTML_SKELETON = (
     '<!DOCTYPE html>\n<html lang="%s" data-print="%s" data-doc-title="%s">\n<head>\n<meta charset="utf-8">\n'
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>%s — notebook</title>\n'
     "<style>%s</style>\n<style>%s</style>\n</head>\n<body>\n"
-    '<template id="rings-tpl">%s</template>\n<div id="source">%s</div>\n<div id="pages"></div>\n%s<script>%s</script>\n</body>\n</html>\n'
+    '<template id="rings-tpl">%s</template>\n<div id="source">%s</div>\n<div id="pages"></div>\n'
+    "%s<script>%s</script>\n</body>\n</html>\n"
 )
 
 
