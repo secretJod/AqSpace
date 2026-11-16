@@ -19,7 +19,9 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23fff'/%3E%3Ctext x='16' y='22' font-size='16' font-family='serif' font-weight='bold' text-anchor='middle' fill='%23000'%3EAQ%3C/text%3E%3C/svg%3E"
     />
-    <!-- Styles. Order matters: later files may override earlier ones. styles.css is the base for the whole app. -->
+    <!-- Styles. Order matters: a later file may override an earlier one.
+         styles.css is the base for the whole app; feature styles follow; mirror.css re-skins the dashboard
+         panels, so it comes after the other dashboard files; profile.css is last so the sign-in screen wins. -->
     <link rel="stylesheet" href="css/styles.css" />
     <link rel="stylesheet" href="css/smart-magic.css" />
     <link rel="stylesheet" href="css/streak.css" />
@@ -33,7 +35,7 @@
     <link rel="stylesheet" href="css/expand.css" />
     <link rel="stylesheet" href="css/achievements.css" />
     <link rel="stylesheet" href="css/mirror.css" />
-    <!-- AQspace: profile button + menu, sign-in and expired-session screens -->
+    <!-- Profile button and menu, sign-in and expired-session screens -->
     <link rel="stylesheet" href="css/profile.css" />
   </head>
   <body>
@@ -86,13 +88,14 @@
       Browser storage is unavailable, so your changes will be lost when you close this tab.
     </div>
 
-    <!-- ===== SCREEN (rendered by app.js: #/ playlists, #/playlist/<id> detail) ===== -->
+    <!-- ===== SCREEN: app.js renders the current route (#/, #/playlist/<id>, #/dashboard, ...) in here ===== -->
     <main class="wrap" id="view" tabindex="-1"></main>
 
+    <!-- Screen-reader announcements ("Video moved to position 3") and toasts; both are live regions. -->
     <p class="sr" id="live" aria-live="polite"></p>
     <div class="toasts" id="toasts" aria-live="polite"></div>
 
-    <!-- ===== MODAL (player / notes / forms / confirm) ===== -->
+    <!-- ===== MODAL: the one dialog of the app (player, forms, confirm boxes); driven by js/ui/dialog.js ===== -->
     <div class="modal" id="modal" hidden>
       <div class="modal__backdrop" data-close></div>
       <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
@@ -103,17 +106,21 @@
       </div>
     </div>
 
-    <!-- Scripts. Every file adds one piece to the global `AQ` object, so the ORDER below matters:
-       a file may only use pieces from files listed above it. See README.md, "Load order". -->
+    <!-- Scripts. These are classic scripts, not modules: each file adds one piece to the global `AQ` object.
+         A file may only use pieces from files listed ABOVE it while it loads, so the order below matters.
+         The CSP allows scripts from this origin only (script-src 'self'): no inline scripts, no CDNs.
+         See README.md, "Load order". -->
 
-    <!-- 1. Core: helpers, data store, server sync (no screens) -->
+    <!-- 1. Core: no screens, only data and helpers.
+         demo-cleanup.js runs first because store.js and the dashboard files read localStorage as they load.
+         profile.js comes right after api.js: it hides the app until the API says who is signed in. -->
     <script src="js/core/demo-cleanup.js"></script>
     <script src="js/core/util.js"></script>
     <script src="js/core/store.js"></script>
     <script src="js/core/api.js"></script>
     <script src="js/features/profile/profile.js"></script>
 
-    <!-- 2. Shared UI pieces and features -->
+    <!-- 2. Shared widgets and the playlist features (notes, player, split view, import, smart arrange) -->
     <script src="js/ui/dialog.js"></script>
     <script src="js/features/notes/notes-jobs.js"></script>
     <script src="js/features/notes/note-button.js"></script>
@@ -125,7 +132,8 @@
     <script src="js/features/playlists/split-view.js"></script>
     <script src="js/features/playlists/import-playlist.js"></script>
     <script src="js/features/smart/smart-arrange.js"></script>
-    <!-- motion effects + the card -> panel expand (used by the streak card and the dashboard) -->
+    <!-- 3. Dashboard effects and the card-to-panel expand, then streak, achievements and the bottom navbar.
+         achievements.js must follow streak.js (it reads AQ.streak) and neural.js (it wraps AQ.neural.mount). -->
     <script src="js/features/dashboard/motion.js"></script>
     <script src="js/features/dashboard/neural.js"></script>
     <script src="js/features/dashboard/hud.js"></script>
@@ -134,8 +142,8 @@
     <script src="js/features/achievements/achievements.js"></script>
     <script src="js/features/navbar/navbar.js"></script>
 
-    <!-- 2b. Dashboard: the vendored chart library first (no CDNs: the CSP only allows our own scripts),
-       then activity data + hooks, goals, chart helpers and finally the dashboard screen that uses them all. -->
+    <!-- 4. Dashboard: the vendored Chart.js first (the CSP forbids CDNs), then the activity data and its hooks,
+         goals, chart helpers, HUD metrics and widgets, the sticky board and finally the dashboard screen. -->
     <script src="js/vendor/chart.umd.js"></script>
     <script src="js/features/dashboard/activity-log.js"></script>
     <script src="js/features/dashboard/activity-hooks.js"></script>
@@ -146,7 +154,8 @@
     <script src="js/features/dashboard/sticky-board.js"></script>
     <script src="js/features/dashboard/dashboard.js"></script>
 
-    <!-- 3. The app: routing + screens. Loaded last because it uses everything above. -->
+    <!-- 5. The app: router and screens. Loaded last because it uses everything above.
+         navbar.js mounts the bottom bar into #navbar-root. -->
     <div id="navbar-root"></div>
     <script src="js/app.js"></script>
   </body>
