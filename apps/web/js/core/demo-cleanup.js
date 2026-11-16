@@ -1,13 +1,15 @@
 /* =====================================================================================================
+   demo-cleanup.js - one-time removal of sample data from this browser
+
    What this file does:
-     Removes the sample ("demo") data that the old `?demo=dashboard` / `?demo=streak` switches wrote into
-     this browser, so the dashboard only shows real usage. The demo switches themselves are gone from the
-     code; this file only cleans up what they left behind. It runs once per browser.
+     Earlier builds had `?demo=dashboard` / `?demo=streak` switches that wrote sample ("demo") data into
+     localStorage. This file removes what they left behind, so the dashboard only shows real usage.
+     It runs once per browser (the `aq.demo-cleanup.v1` key records that it ran) and is cheap afterwards.
 
    How it fits:
-     Loaded FIRST, before store.js and the dashboard scripts, because those read localStorage when they
-     load. It only edits localStorage (no DOM, no network). The server copy of the demo watch progress
-     was deleted separately; removing it here too stops this browser from uploading it again on sync.
+     Loaded first, before util.js, store.js and the dashboard scripts, because those read localStorage
+     when they load. It only edits localStorage (no DOM, no network, no AQ.* dependency). Removing demo
+     watch progress here also stops this browser from uploading it to the server on the next sync.
 
    How demo data is recognised (real data is never matched):
      - activity log  : demo session ids are the 13-char id plus a suffix ("…3", "…n3"), real ids are 13 chars
@@ -19,7 +21,7 @@
      - badges seen   : reset when demo data was found (the demo streak "unlocked" them)
 
    Start reading at:
-     run() at the bottom.
+     run() at the bottom. Next file: core/util.js.
    ===================================================================================================== */
 (function () {
   "use strict";
@@ -34,17 +36,36 @@
     seen: "aq.achievements.seen.v1"
   };
 
-  function read(key) { try { var s = localStorage.getItem(key); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-  function write(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* storage blocked: nothing to clean */ } }
+  function read(key) {
+    try {
+      var s = localStorage.getItem(key);
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
+  }
+  function write(key, v) {
+    try {
+      localStorage.setItem(key, JSON.stringify(v));
+    } catch {
+      /* storage blocked: nothing to clean */
+    }
+  }
 
-  function pad(n) { return n < 10 ? "0" + n : String(n); }
-  function dayKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function pad(n) {
+    return n < 10 ? "0" + n : String(n);
+  }
+  function dayKey(d) {
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
 
   // ===== 1. activity log: keep only real sessions =====
   function cleanActivity() {
     var arr = read(K.activity);
     if (!Array.isArray(arr)) return { real: [], removed: 0 };
-    var real = arr.filter(function (s) { return s && typeof s.id === "string" && s.id.length <= 13; });
+    var real = arr.filter(function (s) {
+      return s && typeof s.id === "string" && s.id.length <= 13;
+    });
     if (real.length !== arr.length) write(K.activity, real);
     return { real: real, removed: arr.length - real.length };
   }
@@ -55,8 +76,10 @@
     if (!st || +st.freezes !== 2) return false;
     var days = {};
     realSessions.forEach(function (s) {
-      var d = new Date(s.start); if (isNaN(d.getTime())) return;
-      var k = dayKey(d), row = days[k] || (days[k] = { count: 0, kinds: {}, minutes: 0 });
+      var d = new Date(s.start);
+      if (isNaN(d.getTime())) return;
+      var k = dayKey(d),
+        row = days[k] || (days[k] = { count: 0, kinds: {}, minutes: 0 });
       row.count += 1;
       row.kinds[s.kind] = (row.kinds[s.kind] || 0) + 1;
       row.minutes += +s.minutes || 0;
@@ -69,7 +92,9 @@
   function cleanGoals() {
     var arr = read(K.goals);
     if (!Array.isArray(arr)) return 0;
-    var keep = arr.filter(function (g) { return !(g && /^demo-(playlist|minutes|notes)$/.test(g.id)); });
+    var keep = arr.filter(function (g) {
+      return !(g && /^demo-(playlist|minutes|notes)$/.test(g.id));
+    });
     if (keep.length !== arr.length) write(K.goals, keep);
     return arr.length - keep.length;
   }
@@ -82,7 +107,9 @@
   function cleanSticky() {
     var arr = read(K.sticky);
     if (!Array.isArray(arr)) return 0;
-    var keep = arr.filter(function (n) { return !(n && DEMO_NOTES.indexOf(n.title + "|" + n.text) >= 0); });
+    var keep = arr.filter(function (n) {
+      return !(n && DEMO_NOTES.indexOf(n.title + "|" + n.text) >= 0);
+    });
     if (keep.length !== arr.length) write(K.sticky, keep);
     return arr.length - keep.length;
   }
@@ -91,26 +118,65 @@
   var DEMO_SHARES = [0.62, 0.35, 0.48, 0.7, 0.3, 0.55];
   function isDemoWatch(w) {
     if (!w || w.done || !Number.isInteger(w.pos) || !Number.isInteger(w.dur) || w.dur < 1) return false;
-    return DEMO_SHARES.some(function (sh) { return w.pos === Math.round(w.dur * sh); });
+    return DEMO_SHARES.some(function (sh) {
+      return w.pos === Math.round(w.dur * sh);
+    });
   }
   function cleanWatch() {
     var map = read(K.watch);
     if (!map || typeof map !== "object") return 0;
     var n = 0;
-    Object.keys(map).forEach(function (id) { if (isDemoWatch(map[id])) { delete map[id]; n++; } });
+    Object.keys(map).forEach(function (id) {
+      if (isDemoWatch(map[id])) {
+        delete map[id];
+        n++;
+      }
+    });
     if (n) write(K.watch, map);
     return n;
   }
 
   function run() {
-    try { if (localStorage.getItem(DONE_KEY)) return; } catch (e) { return; }
+    try {
+      if (localStorage.getItem(DONE_KEY)) return;
+    } catch {
+      return;
+    }
     var act = cleanActivity();
     var streak = cleanStreak(act.real);
-    var goals = cleanGoals(), notes = cleanSticky(), watch = cleanWatch();
-    if (act.removed || streak || goals || notes) { try { localStorage.removeItem(K.seen); } catch (e) { /* ignore */ } }
-    try { localStorage.setItem(DONE_KEY, new Date().toISOString()); } catch (e) { /* ignore */ }
+    var goals = cleanGoals(),
+      notes = cleanSticky(),
+      watch = cleanWatch();
+    if (act.removed || streak || goals || notes) {
+      try {
+        localStorage.removeItem(K.seen);
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      localStorage.setItem(DONE_KEY, new Date().toISOString());
+    } catch {
+      /* ignore */
+    }
     if (act.removed || streak || goals || notes || watch) {
-      try { console.info("[AQ] removed demo data: " + act.removed + " sessions, streak " + (streak ? "rebuilt" : "kept") + ", " + goals + " goals, " + notes + " notes, " + watch + " watch entries"); } catch (e) { /* no console */ }
+      try {
+        console.info(
+          "[AQ] removed demo data: " +
+            act.removed +
+            " sessions, streak " +
+            (streak ? "rebuilt" : "kept") +
+            ", " +
+            goals +
+            " goals, " +
+            notes +
+            " notes, " +
+            watch +
+            " watch entries"
+        );
+      } catch {
+        /* no console */
+      }
     }
   }
   run();

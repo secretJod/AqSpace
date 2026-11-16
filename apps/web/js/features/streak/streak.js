@@ -1,44 +1,56 @@
 /* =====================================================================================================
    What this file does:
-     The daily learning streak: records activity per day (`AQ.streak`) and draws the streak card
-     (`AQ.streakView`) in two modes: a compact hero card (flame inside a daily-goal ring, week dots)
-     that expands into the full view (stats, heatmap, milestone timeline, badges). Styles: css/streak.css.
+     The daily learning streak, in two parts:
+       - data: `AQ.streak` records activity per LOCAL calendar day and computes the streak numbers.
+         No DOM code. Saved in localStorage under `aq.activity.v1`:
+         { days: { "YYYY-MM-DD": { count, kinds: { watch, notes, ... }, minutes } }, freezes }
+       - view: `AQ.streakView` draws the streak card (classes start with `stk-`, styles in css/streak.css)
+         in two modes: a compact hero card (flame inside a daily-goal ring, week dots) that expands into
+         the full view (stats, year heatmap / month calendar, milestone timeline, badges).
 
    How it fits:
-     app.js calls `AQ.streak.record(...)` when you watch or take notes; dashboard.js mounts the card
-     with `AQ.streakView.mount(slot, { mode: "compact" })`. The compact -> full morph uses AQ.expand
-     (expand.js) and the spotlight uses AQ.motion (motion.js); both are optional and load before this file.
+     Uses AQ.util (`el()`), AQ.expand (expand.js) for the compact -> full morph and AQ.motion (motion.js)
+     for the spotlight; all three are optional and load before this file. activity-log.js calls
+     `AQ.streak.record(...)` for every logged session; achievements.js and hud-metrics.js read `stats()` /
+     `days()`; dashboard.js mounts the compact card with `AQ.streakView.mount(slot, { mode: "compact" })`.
 
    Start reading at:
-     The data part (`record()`, `stats()`), then `mount()` in the view part.
+     The data part (`record()`, `stats()`), then `mount()` in the view part. Next: achievements.js.
    ===================================================================================================== */
-
-/* AQspace - daily streak tracker.
-   AQ.streak      : activity data + stats (no DOM). localStorage key `aq.activity.v1`:
-                    { days: { "YYYY-MM-DD": { count, kinds: {watch, notes, ...}, minutes } }, freezes }
-                    Dates are LOCAL calendar days. Works in memory if storage is unavailable.
-   AQ.streakView  : mount(container, { mode: "compact" | "full" }) -> { destroy(), open()?, close()? }
-                    renders the streak card (classes prefixed `stk-`). "compact" is the small hero card
-                    that expands (via AQ.expand) into the "full" view; "full" (default) is the whole card. */
 window.AQ = window.AQ || {};
 (function (AQ) {
   "use strict";
 
   // ===== PART 1: the data (AQ.streak) - no DOM code until PART 2 =====
 
+  // localStorage keeps the streak across reloads. When storage is blocked (private mode, quota) the
+  // streak still works in memory for this tab and stats().storageOk turns false.
   var KEY = "aq.activity.v1";
-  var DAY = 86400000;
   var data = { days: {}, freezes: 0 };
   var storageOk = true;
   var listeners = [];
 
   // ===== 1. local-date helpers =====
-  function pad(n) { return n < 10 ? "0" + n : String(n); }
-  function keyOf(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
-  function dateOf(k) { var p = k.split("-"); return new Date(+p[0], p[1] - 1, +p[2]); }
-  function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
-  function today() { var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
-  function dayIdx(d) { return (d.getDay() + 6) % 7; } /* Mon = 0 */
+  function pad(n) {
+    return n < 10 ? "0" + n : String(n);
+  }
+  function keyOf(d) {
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+  function dateOf(k) {
+    var p = k.split("-");
+    return new Date(+p[0], p[1] - 1, +p[2]);
+  }
+  function addDays(d, n) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  }
+  function today() {
+    var n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  }
+  function dayIdx(d) {
+    return (d.getDay() + 6) % 7;
+  } /* Mon = 0 */
   var KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
   // ===== 2. persistence =====
@@ -53,28 +65,49 @@ window.AQ = window.AQ || {};
       var c = Math.floor(+v.count || 0);
       if (c < 1) return;
       var kinds = {};
-      if (v.kinds && typeof v.kinds === "object") Object.keys(v.kinds).forEach(function (n) {
-        var x = Math.floor(+v.kinds[n] || 0); if (x > 0) kinds[String(n).slice(0, 24)] = x;
-      });
+      if (v.kinds && typeof v.kinds === "object")
+        Object.keys(v.kinds).forEach(function (n) {
+          var x = Math.floor(+v.kinds[n] || 0);
+          if (x > 0) kinds[String(n).slice(0, 24)] = x;
+        });
       out.days[k] = { count: c, kinds: kinds, minutes: Math.max(0, +v.minutes || 0) };
     });
     return out;
   }
   function load() {
-    try { var s = localStorage.getItem(KEY); if (s) data = sanitize(JSON.parse(s)); }
-    catch (e) { storageOk = false; }
+    try {
+      var s = localStorage.getItem(KEY);
+      if (s) data = sanitize(JSON.parse(s));
+    } catch {
+      storageOk = false;
+    }
   }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); storageOk = true; }
-    catch (e) { storageOk = false; }
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+      storageOk = true;
+    } catch {
+      storageOk = false;
+    }
   }
   function emit(evt) {
-    listeners.slice().forEach(function (fn) { try { fn(evt || {}); } catch (e) { /* isolate listeners */ } });
+    listeners.slice().forEach(function (fn) {
+      try {
+        fn(evt || {});
+      } catch {
+        /* isolate listeners */
+      }
+    });
   }
 
   // ===== 3. API =====
-  /** Log activity for today. kind: "watch" | "notes" | "playlist" | ...; amount defaults to 1.
-      opts.minutes adds study minutes. Returns today's entry. */
+  /**
+   * Logs activity for today (local date) and notifies subscribers.
+   * @param {string} kind "watch" | "notes" | "playlist" | ... (cut to 24 characters)
+   * @param {number} [amount=1] how many activities to add
+   * @param {{minutes?: number}} [opts] study minutes to add to today
+   * @returns {{date: string, count: number, kinds: Object<string, number>, minutes: number}} today's entry
+   */
   function record(kind, amount, opts) {
     var n = Math.max(1, Math.floor(+amount || 1));
     var k = keyOf(today());
@@ -90,67 +123,123 @@ window.AQ = window.AQ || {};
     return { date: k, count: d.count, kinds: d.kinds, minutes: d.minutes };
   }
 
-  function count(k) { var d = data.days[k]; return d ? d.count : 0; }
-  function runEnding(d) { var n = 0; while (count(keyOf(d)) > 0) { n++; d = addDays(d, -1); } return n; }
+  function count(k) {
+    var d = data.days[k];
+    return d ? d.count : 0;
+  }
+  function runEnding(d) {
+    var n = 0;
+    while (count(keyOf(d)) > 0) {
+      n++;
+      d = addDays(d, -1);
+    }
+    return n;
+  }
 
+  /**
+   * Computes the streak numbers from the stored days.
+   * @returns {Object} { current, longest, total, activeDays, minutes, today, todayKey, bestDay,
+   *   state: "done" | "at-risk" | "idle", hoursLeft, week: [{ date, count, future }], weekTotal,
+   *   lastWeekTotal, weekActive, freezes, storageOk }
+   */
   function stats() {
-    var t = today(), tk = keyOf(t);
+    var t = today(),
+      tk = keyOf(t);
     var keys = Object.keys(data.days).sort();
-    var longest = 0, run = 0, prev = null, total = 0, best = null, minutes = 0;
+    var longest = 0,
+      run = 0,
+      prev = null,
+      total = 0,
+      best = null,
+      minutes = 0;
     keys.forEach(function (k) {
-      var d = dateOf(k), c = data.days[k].count;
+      var d = dateOf(k),
+        c = data.days[k].count;
       run = prev && keyOf(addDays(prev, 1)) === k ? run + 1 : 1;
       if (run > longest) longest = run;
-      prev = d; total += c; minutes += data.days[k].minutes || 0;
+      prev = d;
+      total += c;
+      minutes += data.days[k].minutes || 0;
       if (!best || c > best.count) best = { date: k, count: c };
     });
     var todayCount = count(tk);
     var current = todayCount > 0 ? runEnding(t) : runEnding(addDays(t, -1));
     var monday = addDays(t, -dayIdx(t));
-    var week = [], weekTotal = 0, lastWeekTotal = 0;
+    var week = [],
+      weekTotal = 0,
+      lastWeekTotal = 0;
     for (var i = 0; i < 7; i++) {
-      var wk = keyOf(addDays(monday, i)), c = count(wk);
+      var wk = keyOf(addDays(monday, i)),
+        c = count(wk);
       week.push({ date: wk, count: c, future: addDays(monday, i) > t });
-      weekTotal += c; lastWeekTotal += count(keyOf(addDays(monday, i - 7)));
+      weekTotal += c;
+      lastWeekTotal += count(keyOf(addDays(monday, i - 7)));
     }
     var midnight = addDays(t, 1).getTime();
     return {
-      current: current, longest: longest, total: total, activeDays: keys.length, minutes: minutes,
-      today: todayCount, todayKey: tk, bestDay: best,
-      state: todayCount > 0 ? "done" : current > 0 ? "at-risk" : "idle", /* at-risk = keep it alive */
+      current: current,
+      longest: longest,
+      total: total,
+      activeDays: keys.length,
+      minutes: minutes,
+      today: todayCount,
+      todayKey: tk,
+      bestDay: best,
+      state: todayCount > 0 ? "done" : current > 0 ? "at-risk" : "idle" /* at-risk = keep it alive */,
       hoursLeft: Math.max(0, Math.ceil((midnight - Date.now()) / 3600000)),
-      week: week, weekTotal: weekTotal, lastWeekTotal: lastWeekTotal,
-      weekActive: week.filter(function (w) { return w.count > 0; }).length,
-      freezes: data.freezes, storageOk: storageOk
+      week: week,
+      weekTotal: weekTotal,
+      lastWeekTotal: lastWeekTotal,
+      weekActive: week.filter(function (w) {
+        return w.count > 0;
+      }).length,
+      freezes: data.freezes,
+      storageOk: storageOk
     };
   }
 
-  /** Copy of the day map: { "YYYY-MM-DD": { count, kinds, minutes } } */
-  function days() { return JSON.parse(JSON.stringify(data.days)); }
+  /**
+   * Returns a deep copy of the day map, so callers cannot change the stored data.
+   * @returns {Object<string, {count: number, kinds: Object<string, number>, minutes: number}>} keyed by "YYYY-MM-DD"
+   */
+  function days() {
+    return JSON.parse(JSON.stringify(data.days));
+  }
 
+  /**
+   * Calls `fn(event)` after every change: { type: "record", kind, first, date } or { type: "sync" }.
+   * @param {function(Object): void} fn
+   * @returns {function(): void} unsubscribe
+   */
   function subscribe(fn) {
     if (typeof fn !== "function") return function () {};
     listeners.push(fn);
-    return function () { listeners = listeners.filter(function (f) { return f !== fn; }); };
+    return function () {
+      listeners = listeners.filter(function (f) {
+        return f !== fn;
+      });
+    };
   }
 
-  // the streak only counts real days (the old ?demo=streak sample history is gone; see js/core/demo-cleanup.js)
   load();
-  window.addEventListener("storage", function (e) { if (e.key === KEY) { load(); emit({ type: "sync" }); } });
+  // another tab changed the streak: reload it so every open tab shows the same numbers
+  window.addEventListener("storage", function (e) {
+    if (e.key === KEY) {
+      load();
+      emit({ type: "sync" });
+    }
+  });
 
   AQ.streak = {
-    KEY: KEY, record: record, stats: stats, days: days, subscribe: subscribe,
-    keyOf: keyOf, storageOk: function () { return storageOk; }
+    record: record,
+    stats: stats,
+    days: days,
+    subscribe: subscribe
   };
 
   // =====================================================================================
   // ===== PART 2: the view (AQ.streakView) - everything below draws the streak card =====
   // =====================================================================================
-  /* AQ.streakView.mount(container, opts) -> { destroy(), open()?, close()? }
-       opts.mode        "compact" (small hero card: flame + ring + week dots; click opens the full view)
-                        or "full" (hero, stats, week, heatmap/month, milestone timeline, badges). Default "full".
-       opts.expandable  compact only, default true: wires the card to AQ.expand so a click opens the full view.
-       opts.dailyTarget activities that "close the ring" for the day (default 3). */
   var SVG_NS = "http://www.w3.org/2000/svg";
   var MILESTONES = [
     { n: 7, name: "Spark", sub: "1 week" },
@@ -158,51 +247,102 @@ window.AQ = window.AQ || {};
     { n: 100, name: "Inferno", sub: "100 days" },
     { n: 365, name: "Supernova", sub: "1 year" }
   ];
-  var WEEKS = 52, MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var WEEKS = 52,
+    MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   var WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   var DEFAULT_TARGET = 3;
-  var RING_R = 60, RING_C = 2 * Math.PI * RING_R;          // ring geometry (viewBox 132 x 132)
+  var RING_R = 60,
+    RING_C = 2 * Math.PI * RING_R; // ring geometry (viewBox 132 x 132)
 
   // ===== 7. small view helpers =====
-  function el(tag, cls, text) { return AQ.util && AQ.util.el ? AQ.util.el(tag, cls, text) : (function () {
-    var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; })(); }
-  function svg(tag, attrs) { var n = document.createElementNS(SVG_NS, tag); for (var a in attrs) n.setAttribute(a, attrs[a]); return n; }
-  function level(c) { return c <= 0 ? 0 : c === 1 ? 1 : c <= 3 ? 2 : c <= 6 ? 3 : 4; }
-  function tier(n) { return n >= 100 ? 4 : n >= 30 ? 3 : n >= 7 ? 2 : n >= 1 ? 1 : 0; }
-  function plural(n, w) { return n + " " + w + (n === 1 ? "" : "s"); }
-  function activities(n) { return plural(n, "activity").replace("activitys", "activities"); }
-  function fmtDate(d) {
-    try { return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); }
-    catch (e) { return WD[dayIdx(d)] + ", " + MON[d.getMonth()] + " " + d.getDate(); }
+  function el(tag, cls, text) {
+    return AQ.util && AQ.util.el
+      ? AQ.util.el(tag, cls, text)
+      : (function () {
+          var n = document.createElement(tag);
+          if (cls) n.className = cls;
+          if (text != null) n.textContent = text;
+          return n;
+        })();
   }
-  function reducedMotion() { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } }
-  function uid() { return Math.random().toString(36).slice(2, 8); }
+  function svg(tag, attrs) {
+    var n = document.createElementNS(SVG_NS, tag);
+    for (var a in attrs) n.setAttribute(a, attrs[a]);
+    return n;
+  }
+  function level(c) {
+    return c <= 0 ? 0 : c === 1 ? 1 : c <= 3 ? 2 : c <= 6 ? 3 : 4;
+  }
+  function tier(n) {
+    return n >= 100 ? 4 : n >= 30 ? 3 : n >= 7 ? 2 : n >= 1 ? 1 : 0;
+  }
+  function plural(n, w) {
+    return n + " " + w + (n === 1 ? "" : "s");
+  }
+  function activities(n) {
+    return plural(n, "activity").replace("activitys", "activities");
+  }
+  function fmtDate(d) {
+    try {
+      return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    } catch {
+      return WD[dayIdx(d)] + ", " + MON[d.getMonth()] + " " + d.getDate();
+    }
+  }
+  // The particle burst and ring snap are decorative: with reduced motion a short static highlight replaces them.
+  function reducedMotion() {
+    try {
+      return matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch {
+      return false;
+    }
+  }
+  function uid() {
+    return Math.random().toString(36).slice(2, 8);
+  }
 
   // The one-line status under the number ("Keep it alive - 8 h left", "Best ever" ...).
   function statusLine(st, short) {
     if (st.state === "done") {
-      if (st.current >= st.longest && st.current > 1) return short ? "Best ever - you're on fire." : "Personal best - you're on fire.";
+      if (st.current >= st.longest && st.current > 1)
+        return short ? "Best ever - you're on fire." : "Personal best - you're on fire.";
       return short ? "Done for today." : "Done for today. See you tomorrow.";
     }
-    if (st.state === "at-risk") return "Keep it alive - " + (short ? st.hoursLeft + " h left" : plural(st.hoursLeft, "hour") + " left today.");
+    if (st.state === "at-risk")
+      return "Keep it alive - " + (short ? st.hoursLeft + " h left" : plural(st.hoursLeft, "hour") + " left today.");
     if (st.longest) return "Start a new streak today.";
     return short ? "Watch something to light your flame." : "Watch or take notes to light your first flame.";
   }
 
   function flame(t) {
-    var id = "stk-fg-" + t + "-" + uid();                   // unique gradient id: several flames can be on the page
-    var s = svg("svg", { viewBox: "0 0 64 80", "aria-hidden": "true", focusable: "false", "class": "stk-flame stk-tier-" + t });
+    var id = "stk-fg-" + t + "-" + uid(); // unique gradient id: several flames can be on the page
+    var s = svg("svg", {
+      viewBox: "0 0 64 80",
+      "aria-hidden": "true",
+      focusable: "false",
+      class: "stk-flame stk-tier-" + t
+    });
     var defs = svg("defs", {});
     var g = svg("linearGradient", { id: id, x1: "0", y1: "1", x2: "0", y2: "0" });
-    g.appendChild(svg("stop", { offset: "0", "class": "stk-flame__s0" }));
-    g.appendChild(svg("stop", { offset: "1", "class": "stk-flame__s1" }));
-    defs.appendChild(g); s.appendChild(defs);
-    s.appendChild(svg("ellipse", { cx: "32", cy: "74", rx: "18", ry: "4", "class": "stk-flame__glow" }));
-    s.appendChild(svg("path", { "class": "stk-flame__outer", fill: "url(#" + id + ")",
-      d: "M32 4C36 18 52 26 52 48a20 20 0 01-40 0c0-9 4-15 9-20 0 7 3 11 7 12-3-12 2-26 4-36z" }));
-    s.appendChild(svg("path", { "class": "stk-flame__inner",
-      d: "M32 34c3 7 11 10 11 19a11 11 0 01-22 0c0-5 3-8 6-10 0 4 2 6 4 6-1-6 0-11 1-15z" }));
-    s.appendChild(svg("path", { "class": "stk-flame__core", d: "M32 50c2 3 5 5 5 9a5 5 0 01-10 0c0-3 3-5 5-9z" }));
+    g.appendChild(svg("stop", { offset: "0", class: "stk-flame__s0" }));
+    g.appendChild(svg("stop", { offset: "1", class: "stk-flame__s1" }));
+    defs.appendChild(g);
+    s.appendChild(defs);
+    s.appendChild(svg("ellipse", { cx: "32", cy: "74", rx: "18", ry: "4", class: "stk-flame__glow" }));
+    s.appendChild(
+      svg("path", {
+        class: "stk-flame__outer",
+        fill: "url(#" + id + ")",
+        d: "M32 4C36 18 52 26 52 48a20 20 0 01-40 0c0-9 4-15 9-20 0 7 3 11 7 12-3-12 2-26 4-36z"
+      })
+    );
+    s.appendChild(
+      svg("path", {
+        class: "stk-flame__inner",
+        d: "M32 34c3 7 11 10 11 19a11 11 0 01-22 0c0-5 3-8 6-10 0 4 2 6 4 6-1-6 0-11 1-15z"
+      })
+    );
+    s.appendChild(svg("path", { class: "stk-flame__core", d: "M32 50c2 3 5 5 5 9a5 5 0 01-10 0c0-3 3-5 5-9z" }));
     return s;
   }
 
@@ -210,18 +350,32 @@ window.AQ = window.AQ || {};
   // Returns the <svg>; the progress is a stroke-dashoffset, so CSS animates it.
   function ring(progress, complete) {
     var id = "stk-rg-" + uid();
-    var s = svg("svg", { viewBox: "0 0 132 132", "aria-hidden": "true", focusable: "false", "class": "stk-ring" + (complete ? " is-complete" : "") });
+    var s = svg("svg", {
+      viewBox: "0 0 132 132",
+      "aria-hidden": "true",
+      focusable: "false",
+      class: "stk-ring" + (complete ? " is-complete" : "")
+    });
     var defs = svg("defs", {});
     var g = svg("linearGradient", { id: id, x1: "0", y1: "0", x2: "1", y2: "1" });
-    g.appendChild(svg("stop", { offset: "0", "class": "stk-ring__s0" }));
-    g.appendChild(svg("stop", { offset: "1", "class": "stk-ring__s1" }));
-    defs.appendChild(g); s.appendChild(defs);
-    s.appendChild(svg("circle", { cx: "66", cy: "66", r: String(RING_R), "class": "stk-ring__track" }));
-    var bar = svg("circle", { cx: "66", cy: "66", r: String(RING_R), "class": "stk-ring__bar", stroke: "url(#" + id + ")" });
+    g.appendChild(svg("stop", { offset: "0", class: "stk-ring__s0" }));
+    g.appendChild(svg("stop", { offset: "1", class: "stk-ring__s1" }));
+    defs.appendChild(g);
+    s.appendChild(defs);
+    s.appendChild(svg("circle", { cx: "66", cy: "66", r: String(RING_R), class: "stk-ring__track" }));
+    var bar = svg("circle", {
+      cx: "66",
+      cy: "66",
+      r: String(RING_R),
+      class: "stk-ring__bar",
+      stroke: "url(#" + id + ")"
+    });
     bar.style.strokeDasharray = RING_C + "px";
-    bar.style.strokeDashoffset = RING_C + "px";                  // start empty, CSS transitions to the real value
+    bar.style.strokeDashoffset = RING_C + "px"; // start empty, CSS transitions to the real value
     s.appendChild(bar);
-    requestAnimationFrame(function () { bar.style.strokeDashoffset = (RING_C * (1 - progress)) + "px"; });
+    requestAnimationFrame(function () {
+      bar.style.strokeDashoffset = RING_C * (1 - progress) + "px";
+    });
     return s;
   }
 
@@ -231,7 +385,8 @@ window.AQ = window.AQ || {};
     var progress = Math.min(1, st.today / target);
     wrap.appendChild(el("span", "stk-breath"));
     wrap.appendChild(ring(progress, st.today >= target));
-    var fl = el("div", "stk-flamewrap"); fl.appendChild(flame(tier(st.current)));
+    var fl = el("div", "stk-flamewrap");
+    fl.appendChild(flame(tier(st.current)));
     wrap.appendChild(fl);
     wrap.setAttribute("role", "img");
     wrap.setAttribute("aria-label", "Today: " + st.today + " of " + target + " activities");
@@ -246,14 +401,23 @@ window.AQ = window.AQ || {};
     big.appendChild(el("span", "stk-big__u", "day streak"));
     num.appendChild(big);
     num.appendChild(el("p", "stk-msg", statusLine(st, compact)));
-    if (st.current > 0 && st.current >= st.longest && st.current > 1) num.appendChild(el("span", "stk-pb", "Best ever"));
+    if (st.current > 0 && st.current >= st.longest && st.current > 1)
+      num.appendChild(el("span", "stk-pb", "Best ever"));
     return num;
   }
   function weekRow(st) {
-    var wk = el("div", "stk-week"); wk.setAttribute("aria-label", "This week: " + st.weekActive + " of 7 days active");
+    var wk = el("div", "stk-week");
+    wk.setAttribute("aria-label", "This week: " + st.weekActive + " of 7 days active");
     st.week.forEach(function (w, i) {
-      var c = el("div", "stk-dot" + (w.count ? " is-on" : "") + (w.future ? " is-future" : "") + (w.date === st.todayKey ? " is-today" : ""));
-      c.appendChild(el("span", "stk-dot__b")); c.appendChild(el("span", "stk-dot__l", WD[i].charAt(0)));
+      var c = el(
+        "div",
+        "stk-dot" +
+          (w.count ? " is-on" : "") +
+          (w.future ? " is-future" : "") +
+          (w.date === st.todayKey ? " is-today" : "")
+      );
+      c.appendChild(el("span", "stk-dot__b"));
+      c.appendChild(el("span", "stk-dot__l", WD[i].charAt(0)));
       c.title = WD[i] + ": " + activities(w.count);
       wk.appendChild(c);
     });
@@ -261,13 +425,22 @@ window.AQ = window.AQ || {};
   }
   function statRow(st) {
     var row = el("dl", "stk-stats");
-    [["Longest", plural(st.longest, "day")], ["Active days", String(st.activeDays)],
-     ["Activities", String(st.total)], ["This week", st.weekTotal + (st.lastWeekTotal ? " " + (st.weekTotal >= st.lastWeekTotal ? "↑" : "↓") : "")]
-    ].forEach(function (p) { var d = el("div", "stk-stat"); d.appendChild(el("dt", null, p[0])); d.appendChild(el("dd", null, p[1])); row.appendChild(d); });
+    [
+      ["Longest", plural(st.longest, "day")],
+      ["Active days", String(st.activeDays)],
+      ["Activities", String(st.total)],
+      ["This week", st.weekTotal + (st.lastWeekTotal ? " " + (st.weekTotal >= st.lastWeekTotal ? "↑" : "↓") : "")]
+    ].forEach(function (p) {
+      var d = el("div", "stk-stat");
+      d.appendChild(el("dt", null, p[0]));
+      d.appendChild(el("dd", null, p[1]));
+      row.appendChild(d);
+    });
     return row;
   }
   function badges(st) {
-    var bs = el("ul", "stk-badges"); bs.setAttribute("aria-label", "Milestones");
+    var bs = el("ul", "stk-badges");
+    bs.setAttribute("aria-label", "Milestones");
     var next = null;
     MILESTONES.forEach(function (m) {
       var on = st.longest >= m.n;
@@ -278,9 +451,11 @@ window.AQ = window.AQ || {};
       li.appendChild(el("span", "stk-badge__s", on ? "Unlocked" : m.sub));
       li.setAttribute("aria-label", m.name + ", " + m.n + "-day streak, " + (on ? "unlocked" : "locked"));
       if (!on && m === next) {
-        var bar = el("span", "stk-badge__bar"), fill = el("i");
+        var bar = el("span", "stk-badge__bar"),
+          fill = el("i");
         fill.style.width = Math.round(Math.min(1, st.current / m.n) * 100) + "%";
-        bar.appendChild(fill); li.appendChild(bar);
+        bar.appendChild(fill);
+        li.appendChild(bar);
       }
       bs.appendChild(li);
     });
@@ -288,31 +463,51 @@ window.AQ = window.AQ || {};
   }
   // The milestone timeline: Start -> 7 -> 30 -> 100 -> 365, filled up to where the CURRENT streak is.
   function timeline(st) {
-    var nodes = [{ n: 0, label: "Start" }].concat(MILESTONES.map(function (m) { return { n: m.n, label: String(m.n) + " days" }; }));
+    var nodes = [{ n: 0, label: "Start" }].concat(
+      MILESTONES.map(function (m) {
+        return { n: m.n, label: String(m.n) + " days" };
+      })
+    );
     var reached = 0;
-    MILESTONES.forEach(function (m) { if (st.current >= m.n) reached++; });
+    MILESTONES.forEach(function (m) {
+      if (st.current >= m.n) reached++;
+    });
     var frac = 0;
     if (reached < MILESTONES.length) {
-      var lo = reached ? MILESTONES[reached - 1].n : 0, hi = MILESTONES[reached].n;
+      var lo = reached ? MILESTONES[reached - 1].n : 0,
+        hi = MILESTONES[reached].n;
       frac = Math.max(0, Math.min(1, (st.current - lo) / (hi - lo)));
     }
     var pct = Math.min(100, ((reached + frac) / MILESTONES.length) * 100);
     var nextM = MILESTONES[reached];
 
     var box = el("div", "stk-tl");
-    box.setAttribute("aria-label", nextM ? (nextM.n - st.current) + " days to " + nextM.name : "All milestones reached");
+    box.setAttribute("aria-label", nextM ? nextM.n - st.current + " days to " + nextM.name : "All milestones reached");
     var head = el("div", "stk-tl__head");
     head.appendChild(el("span", "stk-tl__title", "Milestone timeline"));
-    head.appendChild(el("span", "stk-tl__next", nextM ? plural(nextM.n - st.current, "day") + " to " + nextM.name : "Every milestone reached"));
+    head.appendChild(
+      el(
+        "span",
+        "stk-tl__next",
+        nextM ? plural(nextM.n - st.current, "day") + " to " + nextM.name : "Every milestone reached"
+      )
+    );
     box.appendChild(head);
     var track = el("div", "stk-tl__track");
-    var fill = el("i", "stk-tl__fill"); fill.style.width = "0%"; track.appendChild(fill);
-    requestAnimationFrame(function () { fill.style.width = pct + "%"; });
-    var me = el("i", "stk-tl__me"); me.style.left = pct + "%"; me.title = "You: " + plural(st.current, "day"); track.appendChild(me);
+    var fill = el("i", "stk-tl__fill");
+    fill.style.width = "0%";
+    track.appendChild(fill);
+    requestAnimationFrame(function () {
+      fill.style.width = pct + "%";
+    });
+    var me = el("i", "stk-tl__me");
+    me.style.left = pct + "%";
+    me.title = "You: " + plural(st.current, "day");
+    track.appendChild(me);
     nodes.forEach(function (nd, i) {
       var on = st.current >= nd.n;
       var node = el("span", "stk-tl__node" + (on ? " is-on" : ""));
-      node.style.left = (i / (nodes.length - 1) * 100) + "%";
+      node.style.left = (i / (nodes.length - 1)) * 100 + "%";
       node.appendChild(el("b"));
       node.appendChild(el("span", "stk-tl__lbl", nd.label));
       track.appendChild(node);
@@ -322,6 +517,16 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 10. mount =====
+  /**
+   * Draws the streak card into `container` and keeps it live (re-renders on every record and after midnight).
+   * All text goes in with textContent, so nothing is ever parsed as HTML.
+   * @param {HTMLElement} container
+   * @param {Object} [opts]
+   * @param {"compact"|"full"} [opts.mode="full"] compact = small hero card that opens the full view on click
+   * @param {boolean} [opts.expandable=true] compact only: wire the card to AQ.expand
+   * @param {number} [opts.dailyTarget=3] activities that "close the ring" for the day
+   * @returns {{destroy: function(): void, open?: function(): void, close?: function(): void}}
+   */
   function mount(container, opts) {
     opts = opts || {};
     var mode = opts.mode === "compact" ? "compact" : "full";
@@ -329,19 +534,26 @@ window.AQ = window.AQ || {};
     var ui = { tab: "year", monthOff: 0, focusKey: null };
     var root = el("section", "stk stk--" + mode);
     root.setAttribute("aria-label", "Daily streak");
-    var inner = el("div", "stk__in");                    // rebuilt on every render; `root` itself stays
+    var inner = el("div", "stk__in"); // rebuilt on every render; `root` itself stays
     root.appendChild(inner);
-    var tip = el("div", "stk-tip"); tip.setAttribute("role", "tooltip"); tip.id = "stk-tip-" + uid();
+    var tip = el("div", "stk-tip");
+    tip.setAttribute("role", "tooltip");
+    tip.id = "stk-tip-" + uid();
     container.appendChild(root);
-    var lastToday = stats().today;                         // to notice when today's ring closes
+    var lastToday = stats().today; // to notice when today's ring closes
 
     function render() {
-      var st = stats(), dm = data.days;
+      var st = stats(),
+        dm = data.days;
       var hadFocus = root.contains(document.activeElement) && document.activeElement.dataset.key;
       inner.textContent = "";
       root.className = "stk stk--" + mode + " stk--" + st.state + " stk-tier-" + tier(st.current);
-      if (mode === "compact") renderCompact(st); else renderFull(st, dm);
-      if (hadFocus) { var f = root.querySelector('[data-key="' + hadFocus + '"]'); if (f) f.focus(); }
+      if (mode === "compact") renderCompact(st);
+      else renderFull(st, dm);
+      if (hadFocus) {
+        var f = root.querySelector('[data-key="' + hadFocus + '"]');
+        if (f) f.focus();
+      }
     }
 
     // --- 10a. compact: ring + number, week dots, one line, "tap to expand" ---
@@ -366,9 +578,10 @@ window.AQ = window.AQ || {};
     // A mini heatmap of the last 8 weeks (one column per week, Mon at the top). It also lets the
     // compact card grow to fill a tall grid cell (the strip stretches; see .stk-mini in CSS).
     function miniStrip() {
-      var t = today(), start = addDays(t, -dayIdx(t) - 7 * 7);
+      var t = today(),
+        start = addDays(t, -dayIdx(t) - 7 * 7);
       var strip = el("div", "stk-mini");
-      strip.setAttribute("aria-hidden", "true");             // the full view has the accessible heatmap
+      strip.setAttribute("aria-hidden", "true"); // the full view has the accessible heatmap
       for (var w = 0; w < 8; w++) {
         for (var i = 0; i < 7; i++) {
           var d = addDays(start, w * 7 + i);
@@ -387,15 +600,26 @@ window.AQ = window.AQ || {};
       inner.appendChild(hero);
       inner.appendChild(weekRow(st));
 
-      var tabs = el("div", "stk-tabs"); tabs.setAttribute("role", "tablist");
-      [["year", "Year"], ["month", "Month"]].forEach(function (t) {
-        var b = el("button", "stk-tab", t[1]); b.type = "button"; b.setAttribute("role", "tab");
+      var tabs = el("div", "stk-tabs");
+      tabs.setAttribute("role", "tablist");
+      [
+        ["year", "Year"],
+        ["month", "Month"]
+      ].forEach(function (t) {
+        var b = el("button", "stk-tab", t[1]);
+        b.type = "button";
+        b.setAttribute("role", "tab");
         b.setAttribute("aria-selected", String(ui.tab === t[0]));
-        b.addEventListener("click", function () { ui.tab = t[0]; render(); root.querySelector(".stk-tab[aria-selected=true]").focus(); });
+        b.addEventListener("click", function () {
+          ui.tab = t[0];
+          render();
+          root.querySelector(".stk-tab[aria-selected=true]").focus();
+        });
         tabs.appendChild(b);
       });
       inner.appendChild(tabs);
-      var panel = el("div", "stk-panel"); panel.setAttribute("role", "tabpanel");
+      var panel = el("div", "stk-panel");
+      panel.setAttribute("role", "tabpanel");
       panel.appendChild(ui.tab === "year" ? heatmap(dm, st) : monthView(dm, st));
       inner.appendChild(panel);
 
@@ -406,80 +630,131 @@ window.AQ = window.AQ || {};
 
     // ===== 11. heatmap =====
     function heatmap(dm, st) {
-      var t = today(), start = addDays(t, -dayIdx(t) - (WEEKS - 1) * 7);
+      var t = today(),
+        start = addDays(t, -dayIdx(t) - (WEEKS - 1) * 7);
       var wrap = el("div", "stk-heat");
       var labels = el("div", "stk-heat__days");
-      WD.forEach(function (w, i) { labels.appendChild(el("span", null, i % 2 === 0 && i < 6 ? w : "")); });
+      WD.forEach(function (w, i) {
+        labels.appendChild(el("span", null, i % 2 === 0 && i < 6 ? w : ""));
+      });
       var scroll = el("div", "stk-heat__scroll");
       var months = el("div", "stk-heat__months");
       var grid = el("div", "stk-heat__grid");
-      grid.setAttribute("role", "grid"); grid.setAttribute("aria-label", "Activity over the last year. Use arrow keys to move between days.");
-      var cells = [], lastMonth = -1, focusKey = ui.focusKey || st.todayKey;
+      // Keyboard access: an ARIA grid with one roving tab stop; arrows move by day / week, Home / End jump.
+      grid.setAttribute("role", "grid");
+      grid.setAttribute("aria-label", "Activity over the last year. Use arrow keys to move between days.");
+      var cells = [],
+        lastMonth = -1,
+        focusKey = ui.focusKey || st.todayKey;
       for (var w = 0; w < WEEKS; w++) {
         for (var i = 0; i < 7; i++) {
-          var d = addDays(start, w * 7 + i), k = keyOf(d);
-          if (i === 0 && d.getMonth() !== lastMonth && (w < WEEKS - 2)) {
+          var d = addDays(start, w * 7 + i),
+            k = keyOf(d);
+          if (i === 0 && d.getMonth() !== lastMonth && w < WEEKS - 2) {
             // month labels are placed per column: left = column * (cell + gap), see --stk-step in CSS
-            var ml = el("span", null, MON[d.getMonth()]); ml.style.left = "calc(" + w + " * var(--stk-step))"; months.appendChild(ml);
+            var ml = el("span", null, MON[d.getMonth()]);
+            ml.style.left = "calc(" + w + " * var(--stk-step))";
+            months.appendChild(ml);
             lastMonth = d.getMonth();
           } else if (i === 0) lastMonth = d.getMonth();
           var c = el("span", "stk-cell");
-          if (d > t) { c.className += " is-future"; grid.appendChild(c); continue; }
+          if (d > t) {
+            c.className += " is-future";
+            grid.appendChild(c);
+            continue;
+          }
           var n = dm[k] ? dm[k].count : 0;
           c.className += " l" + level(n) + (k === st.todayKey ? " is-today" : "");
-          c.dataset.key = k; c.dataset.idx = String(cells.length);
+          c.dataset.key = k;
+          c.dataset.idx = String(cells.length);
           c.setAttribute("role", "gridcell");
           c.setAttribute("aria-label", (n ? activities(n) : "No activity") + " on " + fmtDate(d));
           c.tabIndex = k === focusKey ? 0 : -1;
-          cells.push(c); grid.appendChild(c);
+          cells.push(c);
+          grid.appendChild(c);
         }
       }
       if (!grid.querySelector('[tabindex="0"]') && cells.length) cells[cells.length - 1].tabIndex = 0;
       function show(c) {
         if (!c || !c.dataset.key) return;
         tip.textContent = c.getAttribute("aria-label");
-        var r = c.getBoundingClientRect(), R = root.getBoundingClientRect();
+        var r = c.getBoundingClientRect(),
+          R = root.getBoundingClientRect();
         tip.classList.add("is-on");
-        var x = r.left - R.left + r.width / 2, tw = tip.offsetWidth;
+        var x = r.left - R.left + r.width / 2,
+          tw = tip.offsetWidth;
         tip.style.left = Math.max(tw / 2 + 4, Math.min(R.width - tw / 2 - 4, x)) + "px";
-        tip.style.top = (r.top - R.top - 8) + "px";
+        tip.style.top = r.top - R.top - 8 + "px";
         c.setAttribute("aria-describedby", tip.id);
       }
-      function hide() { tip.classList.remove("is-on"); }
-      grid.addEventListener("mouseover", function (e) { show(e.target.closest(".stk-cell")); });
+      function hide() {
+        tip.classList.remove("is-on");
+      }
+      grid.addEventListener("mouseover", function (e) {
+        show(e.target.closest(".stk-cell"));
+      });
       grid.addEventListener("mouseleave", hide);
-      grid.addEventListener("focusin", function (e) { ui.focusKey = e.target.dataset.key; show(e.target); });
+      grid.addEventListener("focusin", function (e) {
+        ui.focusKey = e.target.dataset.key;
+        show(e.target);
+      });
       grid.addEventListener("focusout", hide);
       scroll.addEventListener("scroll", hide, { passive: true });
       grid.addEventListener("keydown", function (e) {
-        var cur = e.target.dataset.idx; if (cur == null) return;
+        var cur = e.target.dataset.idx;
+        if (cur == null) return;
         var step = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7, Home: -1e9, End: 1e9 }[e.key];
         if (step == null) return;
         e.preventDefault();
         var j = Math.max(0, Math.min(cells.length - 1, +cur + step));
-        e.target.tabIndex = -1; cells[j].tabIndex = 0; cells[j].focus();
+        e.target.tabIndex = -1;
+        cells[j].tabIndex = 0;
+        cells[j].focus();
       });
-      scroll.appendChild(months); scroll.appendChild(grid);
-      wrap.appendChild(labels); wrap.appendChild(scroll);
+      scroll.appendChild(months);
+      scroll.appendChild(grid);
+      wrap.appendChild(labels);
+      wrap.appendChild(scroll);
       var legend = el("div", "stk-legend");
-      legend.appendChild(el("span", "stk-legend__best", st.bestDay ? "Best day: " + st.bestDay.count + " on " + fmtDate(dateOf(st.bestDay.date)) : ""));
-      var lv = el("span", "stk-legend__lv"); lv.appendChild(el("span", null, "Less"));
+      legend.appendChild(
+        el(
+          "span",
+          "stk-legend__best",
+          st.bestDay ? "Best day: " + st.bestDay.count + " on " + fmtDate(dateOf(st.bestDay.date)) : ""
+        )
+      );
+      var lv = el("span", "stk-legend__lv");
+      lv.appendChild(el("span", null, "Less"));
       for (var l = 0; l < 5; l++) lv.appendChild(el("i", "stk-cell l" + l));
-      lv.appendChild(el("span", null, "More")); legend.appendChild(lv);
-      var box = el("div"); box.appendChild(wrap); box.appendChild(legend);
-      requestAnimationFrame(function () { scroll.scrollLeft = scroll.scrollWidth; });
+      lv.appendChild(el("span", null, "More"));
+      legend.appendChild(lv);
+      var box = el("div");
+      box.appendChild(wrap);
+      box.appendChild(legend);
+      requestAnimationFrame(function () {
+        scroll.scrollLeft = scroll.scrollWidth;
+      });
       return box;
     }
 
     // ===== 12. month calendar =====
     function monthView(dm, st) {
-      var t = today(), first = new Date(t.getFullYear(), t.getMonth() + ui.monthOff, 1);
+      var t = today(),
+        first = new Date(t.getFullYear(), t.getMonth() + ui.monthOff, 1);
       var dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
       var box = el("div", "stk-month");
       var head = el("div", "stk-month__head");
       function nav(dir, label, glyph, disabled) {
-        var b = el("button", "stk-nav", glyph); b.type = "button"; b.setAttribute("aria-label", label); b.disabled = disabled;
-        b.addEventListener("click", function () { ui.monthOff += dir; render(); var nb = root.querySelectorAll(".stk-nav")[dir < 0 ? 0 : 1]; if (nb && !nb.disabled) nb.focus(); });
+        var b = el("button", "stk-nav", glyph);
+        b.type = "button";
+        b.setAttribute("aria-label", label);
+        b.disabled = disabled;
+        b.addEventListener("click", function () {
+          ui.monthOff += dir;
+          render();
+          var nb = root.querySelectorAll(".stk-nav")[dir < 0 ? 0 : 1];
+          if (nb && !nb.disabled) nb.focus();
+        });
         return b;
       }
       var active = 0;
@@ -493,14 +768,26 @@ window.AQ = window.AQ || {};
       head.appendChild(nav(1, "Next month", "›", ui.monthOff >= 0));
       box.appendChild(head);
       var cal = el("div", "stk-cal");
-      WD.forEach(function (w) { cal.appendChild(el("span", "stk-cal__wd", w.charAt(0))); });
+      WD.forEach(function (w) {
+        cal.appendChild(el("span", "stk-cal__wd", w.charAt(0)));
+      });
       for (var p = 0; p < dayIdx(first); p++) cal.appendChild(el("span", "stk-cal__pad"));
       for (var i = 1; i <= dim; i++) {
-        var d = new Date(first.getFullYear(), first.getMonth(), i), k = keyOf(d), n = dm[k] ? dm[k].count : 0;
+        var d = new Date(first.getFullYear(), first.getMonth(), i),
+          k = keyOf(d),
+          n = dm[k] ? dm[k].count : 0;
         var prevOn = i > 1 && dm[keyOf(addDays(d, -1))] && dayIdx(d) !== 0;
         var nextOn = i < dim && dm[keyOf(addDays(d, 1))] && dayIdx(d) !== 6;
-        var c = el("span", "stk-cal__d" + (n ? " is-on" : "") + (prevOn && n ? " join-l" : "") + (nextOn && n ? " join-r" : "") +
-          (k === st.todayKey ? " is-today" : "") + (d > t ? " is-future" : ""), String(i));
+        var c = el(
+          "span",
+          "stk-cal__d" +
+            (n ? " is-on" : "") +
+            (prevOn && n ? " join-l" : "") +
+            (nextOn && n ? " join-r" : "") +
+            (k === st.todayKey ? " is-today" : "") +
+            (d > t ? " is-future" : ""),
+          String(i)
+        );
         c.title = (n ? activities(n) : "No activity") + " on " + fmtDate(d);
         cal.appendChild(c);
       }
@@ -510,27 +797,39 @@ window.AQ = window.AQ || {};
 
     // ===== 13. celebration: particle burst (first activity) and ring snap (ring closed) =====
     function burst() {
-      if (reducedMotion()) { root.classList.add("stk-pop-static"); setTimeout(function () { root.classList.remove("stk-pop-static"); }, 1200); return; }
-      var host = root.querySelector(".stk-flamewrap"); if (!host) return;
+      if (reducedMotion()) {
+        root.classList.add("stk-pop-static");
+        setTimeout(function () {
+          root.classList.remove("stk-pop-static");
+        }, 1200);
+        return;
+      }
+      var host = root.querySelector(".stk-flamewrap");
+      if (!host) return;
       var b = el("div", "stk-burst");
       for (var i = 0; i < 16; i++) {
         var p = el("i");
-        p.style.setProperty("--a", (i * 22.5 + Math.random() * 10) + "deg");
-        p.style.setProperty("--r", (38 + Math.random() * 30) + "px");
-        p.style.setProperty("--d", (Math.random() * 120) + "ms");
+        p.style.setProperty("--a", i * 22.5 + Math.random() * 10 + "deg");
+        p.style.setProperty("--r", 38 + Math.random() * 30 + "px");
+        p.style.setProperty("--d", Math.random() * 120 + "ms");
         b.appendChild(p);
       }
       host.appendChild(b);
       root.classList.add("stk-pop");
-      setTimeout(function () { b.remove(); root.classList.remove("stk-pop"); }, 1100);
+      setTimeout(function () {
+        b.remove();
+        root.classList.remove("stk-pop");
+      }, 1100);
     }
     // The ring just reached the target: a pulse on the ring, then the burst.
     function ringClosed() {
       var r = root.querySelector(".stk-ring");
       if (r && !reducedMotion()) {
         r.classList.add("is-snap");
-        setTimeout(function () { r.classList.remove("is-snap"); }, 900);
-        setTimeout(burst, 350);                            // after the stroke has caught up
+        setTimeout(function () {
+          r.classList.remove("is-snap");
+        }, 900);
+        setTimeout(burst, 350); // after the stroke has caught up
       } else burst();
     }
 
@@ -545,28 +844,41 @@ window.AQ = window.AQ || {};
       lastToday = now;
     });
     /* re-render after midnight so "today" rolls over */
-    var dayTimer = setInterval(function () { if (root.dataset.day !== keyOf(today())) { root.dataset.day = keyOf(today()); lastToday = stats().today; render(); } }, 60000);
+    var dayTimer = setInterval(function () {
+      if (root.dataset.day !== keyOf(today())) {
+        root.dataset.day = keyOf(today());
+        lastToday = stats().today;
+        render();
+      }
+    }, 60000);
     root.dataset.day = keyOf(today());
 
     // ===== 14. compact -> full: the card is an expanding card (expand.js), the full view fills the panel =====
-    var expander = null, spot = null;
+    var expander = null,
+      spot = null;
     if (mode === "compact" && opts.expandable !== false && AQ.expand && typeof AQ.expand.attach === "function") {
       expander = AQ.expand.attach(root, {
         title: "Your streak",
-        renderFull: function (c) { return mount(c, { mode: "full", expandable: false, dailyTarget: target }); }
+        renderFull: function (c) {
+          return mount(c, { mode: "full", expandable: false, dailyTarget: target });
+        }
       });
     }
     if (mode === "compact" && AQ.motion && typeof AQ.motion.spotlight === "function") spot = AQ.motion.spotlight(root);
 
     var api = {
       destroy: function () {
-        unsub(); clearInterval(dayTimer);
+        unsub();
+        clearInterval(dayTimer);
         if (expander) expander.destroy();
         if (spot) spot.destroy();
         root.remove();
       }
     };
-    if (expander) { api.open = expander.open; api.close = expander.close; }
+    if (expander) {
+      api.open = expander.open;
+      api.close = expander.close;
+    }
     return api;
   }
 

@@ -1,20 +1,20 @@
 {
-  "name": "lecture-notes-ui",
+  "name": "aqspace-web",
   "version": "1.0.0",
-  "description": "The in-app **Playlists** screen: an all-black app UI where you group YouTube lectures into playlists, watch them in order and request hand-drawn notes. Plain HTML/CSS/JS, no build step, no npm.",
-  "main": "api.js",
-  "scripts": {
-    "lint" : "eslint .",
-    "lint-fix" : "eslint . --fix",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
+  "private": true,
+  "description": "AQspace browser app: plain HTML, CSS and JavaScript with no build step. Served by apps/api.",
   "license": "ISC",
   "type": "commonjs",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.13.0",
-    "globals": "^17.13.0"
+    "globals": "^17.13.0",
+    "prettier": "^3.10.1"
   }
 }

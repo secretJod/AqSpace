@@ -1,0 +1,4 @@
+# Third-party code is kept byte-for-byte as shipped.
+js/vendor/
+node_modules/
+package-lock.json

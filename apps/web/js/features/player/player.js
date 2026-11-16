@@ -1,103 +1,182 @@
 /* =====================================================================================================
+   player.js - the video player dialog (AQ.player)
+
    What this file does:
-     The video player dialog (YouTube embed with previous / next) that also saves how far you watched.
+     Plays a queue of lectures in the app dialog: a youtube-nocookie.com embed with previous / next.
+     The YouTube IFrame Player API (loaded once, on first use) reports the real playback position, which
+     is saved per video through AQ.store (localStorage `aq.watch.v1`), so a video left half-way resumes there.
 
-   How it fits:
-     `AQ.player.open({queue, index, ...})` is called from app.js. It saves progress with `AQ.store.watchSave()`.
+   Depends on:
+     AQ.util (el, icon, ID_RE), AQ.store (watchSave, watchInfo, learnDuration, notify) and AQ.dialog.
+     app.js opens it from the playlist screens.
 
-   Start reading at:
-     `open()`, then the "tracking" part inside it.
+   Read next:
+     `open()`, then the tracking part inside it (`sample()` and the `directTrack()` fallback).
    ===================================================================================================== */
-
-/* AQspace - player dialog: a youtube-nocookie embed (validated 11-char id) with previous/next through a queue.
-   The YouTube IFrame Player API (loaded once) reports the real playback position, which is saved per video in
-   AQ.store (`aq.watch.v1`); opening a video that was left half-way resumes there.
-
-   AQ.player.open({ queue: [video, ...], index: 0, opener, restore })
-     opener  = element to refocus on close; restore = function returning the element to refocus when the opener was
-     re-rendered meanwhile (the watch state change re-renders the page behind the dialog when the player closes). */
 (function () {
   "use strict";
-  var u = AQ.util, S = AQ.store, el = u.el;
+  var u = AQ.util,
+    S = AQ.store,
+    el = u.el;
 
   // ===== 1. IFrame API loader (once; retried on the next open if it failed) =====
-  var apiState = 0, apiWaiters = [];      // 0 idle, 1 loading, 2 ready
+  var apiState = 0,
+    apiWaiters = []; // 0 idle, 1 loading, 2 ready
   function flushApi(ok) {
-    var w = apiWaiters; apiWaiters = [];
-    w.forEach(function (x) { try { (ok ? x.ok : x.fail)(); } catch (e) { /* ignore */ } });
+    var w = apiWaiters;
+    apiWaiters = [];
+    w.forEach(function (x) {
+      try {
+        (ok ? x.ok : x.fail)();
+      } catch {
+        /* ignore */
+      }
+    });
   }
   function loadApi(ok, fail) {
-    if (window.YT && window.YT.Player) { ok(); return; }
+    if (window.YT && window.YT.Player) {
+      ok();
+      return;
+    }
     apiWaiters.push({ ok: ok, fail: fail });
     if (apiState === 1) return;
     apiState = 1;
     var prev = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = function () {
       apiState = 2;
-      if (typeof prev === "function") { try { prev(); } catch (e) { /* ignore */ } }
+      if (typeof prev === "function") {
+        try {
+          prev();
+        } catch {
+          /* ignore */
+        }
+      }
       flushApi(true);
     };
     var s = document.createElement("script");
-    s.src = "https://www.youtube.com/iframe_api"; s.async = true;
-    function failed() { if (apiState === 1) { apiState = 0; if (s.parentNode) s.parentNode.removeChild(s); flushApi(false); } }
+    s.src = "https://www.youtube.com/iframe_api";
+    s.async = true;
+    function failed() {
+      if (apiState === 1) {
+        apiState = 0;
+        if (s.parentNode) s.parentNode.removeChild(s);
+        flushApi(false);
+      }
+    }
     s.onerror = failed;
     setTimeout(failed, 12000);
     document.head.appendChild(s);
   }
 
+  // Security and privacy: the id has already passed AQ.util.ID_RE (exactly 11 YouTube id characters) and is
+  // URL-encoded anyway; youtube-nocookie.com does not set tracking cookies until the video plays.
   function embedSrc(id, start) {
-    return "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(id) + "?rel=0&autoplay=1&playsinline=1&enablejsapi=1" +
-      "&origin=" + encodeURIComponent(location.origin) + (start > 0 ? "&start=" + start : "");
+    return (
+      "https://www.youtube-nocookie.com/embed/" +
+      encodeURIComponent(id) +
+      "?rel=0&autoplay=1&playsinline=1&enablejsapi=1" +
+      "&origin=" +
+      encodeURIComponent(location.origin) +
+      (start > 0 ? "&start=" + start : "")
+    );
   }
 
+  /**
+   * Open the player dialog on one video of a queue.
+   * @param {object} opts
+   * @param {Array<{id: string, title: string}>} opts.queue Videos to step through; entries with an invalid id are dropped.
+   * @param {number} [opts.index=0] Position in the queue to start at.
+   * @param {HTMLElement} [opts.opener] Element that gets focus back when the dialog closes.
+   * @param {function(): HTMLElement} [opts.restore] Returns the element to focus when the opener was re-rendered
+   *   meanwhile (closing the player saves progress, which re-renders the page behind it).
+   * @returns {object|null} The dialog handle from AQ.dialog.open, or null when the queue has no valid video.
+   */
   function open(opts) {
-    var queue = (opts.queue || []).filter(function (v) { return v && u.ID_RE.test(v.id); });
+    var queue = (opts.queue || []).filter(function (v) {
+      return v && u.ID_RE.test(v.id);
+    });
     if (!queue.length) return null;
     var i = Math.max(0, Math.min(opts.index || 0, queue.length - 1));
-    var cur = null;                       // {id, yt, timer, ended, sawPlay, learned, gen}
+    var cur = null; // {id, yt, timer, ended, sawPlay, learned, gen}
     var gen = 0;
 
     /* ----- tracking ----- */
     function sample(c) {
       if (!c || !c.yt || typeof c.yt.getCurrentTime !== "function") return;
       var state, t, dur;
-      try { state = c.yt.getPlayerState(); t = c.yt.getCurrentTime(); dur = c.yt.getDuration(); } catch (e) { return; }
-      if (dur > 0 && !c.learned) { c.learned = true; S.learnDuration(c.id, dur); }
+      try {
+        state = c.yt.getPlayerState();
+        t = c.yt.getCurrentTime();
+        dur = c.yt.getDuration();
+      } catch {
+        return;
+      }
+      if (dur > 0 && !c.learned) {
+        c.learned = true;
+        S.learnDuration(c.id, dur);
+      }
       if (state === 1) c.sawPlay = true;
-      if (state === 0) {                                   // ended
-        if (!c.ended) { c.ended = true; S.watchSave(c.id, { ended: true, dur: dur > 0 ? dur : null }); S.notify(); }
+      if (state === 0) {
+        // ended
+        if (!c.ended) {
+          c.ended = true;
+          S.watchSave(c.id, { ended: true, dur: dur > 0 ? dur : null });
+          S.notify();
+        }
       } else if (state === 1 || state === 2 || (state === 3 && c.sawPlay)) {
         c.ended = false;
         S.watchSave(c.id, { pos: t, dur: dur > 0 ? dur : null });
       }
     }
-    function tick() { sample(cur); }
+    function tick() {
+      sample(cur);
+    }
 
     /* Backup tracking without the IFrame API wrapper: ask the embed to "listen" and read the infoDelivery
        messages it posts back (currentTime / duration / playerState). Works even when YT.Player never
        becomes ready (e.g. API blocked, or host mismatch), so resume positions are always saved. */
     function directTrack(frame, c, myGen) {
-      var tries = 0, heard = false;
+      var tries = 0,
+        heard = false;
       function hello() {
         if (cur !== c || myGen !== gen || heard || tries++ > 20) return;
-        try { frame.contentWindow.postMessage(JSON.stringify({ event: "listening", id: c.id, channel: "widget" }), "*"); } catch (e) { /* ignore */ }
+        try {
+          frame.contentWindow.postMessage(JSON.stringify({ event: "listening", id: c.id, channel: "widget" }), "*");
+        } catch {
+          /* ignore */
+        }
         setTimeout(hello, 1000);
       }
       function onMsg(e) {
         if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin) || e.source !== frame.contentWindow) return;
-        if (cur !== c) { window.removeEventListener("message", onMsg); return; }
-        var data; try { data = typeof e.data === "string" ? JSON.parse(e.data) : e.data; } catch (x) { return; }
+        if (cur !== c) {
+          window.removeEventListener("message", onMsg);
+          return;
+        }
+        var data;
+        try {
+          data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        } catch {
+          return;
+        }
         if (!data || !data.info) return;
         heard = true;
         var info = data.info;
         if (typeof info.duration === "number" && info.duration > 0) {
           c.dur = info.duration;
-          if (!c.learned) { c.learned = true; S.learnDuration(c.id, info.duration); }
+          if (!c.learned) {
+            c.learned = true;
+            S.learnDuration(c.id, info.duration);
+          }
         }
         if (typeof info.playerState === "number") {
           c.state = info.playerState;
           if (info.playerState === 1) c.sawPlay = true;
-          if (info.playerState === 0 && !c.ended) { c.ended = true; S.watchSave(c.id, { ended: true, dur: c.dur || null }); S.notify(); }
+          if (info.playerState === 0 && !c.ended) {
+            c.ended = true;
+            S.watchSave(c.id, { ended: true, dur: c.dur || null });
+            S.notify();
+          }
         }
         if (typeof info.currentTime === "number" && info.currentTime > 0 && !c.ended && (c.sawPlay || c.state === 2)) {
           S.watchSave(c.id, { pos: info.currentTime, dur: c.dur || null });
@@ -108,11 +187,20 @@
     }
     function teardown() {
       gen++;
-      var c = cur; cur = null;
+      var c = cur;
+      cur = null;
       if (!c) return;
       clearInterval(c.timer);
-      try { sample(c); } catch (e) { /* ignore */ }
-      try { if (c.yt && c.yt.destroy) c.yt.destroy(); } catch (e) { /* ignore */ }
+      try {
+        sample(c);
+      } catch {
+        /* ignore */
+      }
+      try {
+        if (c.yt && c.yt.destroy) c.yt.destroy();
+      } catch {
+        /* ignore */
+      }
     }
     // dialog.js clears the iframe before calling onClose, so save in capture phase on Esc / backdrop / close button
     function early(e) {
@@ -126,21 +214,27 @@
     window.addEventListener("pagehide", tick);
 
     var d = AQ.dialog.open({
-      kind: "Watch", title: "", opener: opts.opener, restore: opts.restore, wide: true,
+      kind: "Watch",
+      title: "",
+      opener: opts.opener,
+      restore: opts.restore,
+      wide: true,
       onClose: function () {
         document.removeEventListener("keydown", early, true);
         if (modalEl) modalEl.removeEventListener("click", early, true);
         window.removeEventListener("pagehide", tick);
         teardown();
-        S.notify();                       // progress changed: refresh cards / rows (before focus is restored)
+        S.notify(); // progress changed: refresh cards / rows (before focus is restored)
       }
     });
 
     function go(delta, role) {
       var next = Math.max(0, Math.min(i + delta, queue.length - 1));
       if (next === i) return;
-      teardown(); S.notify();
-      i = next; render(role);
+      teardown();
+      S.notify();
+      i = next;
+      render(role);
     }
 
     function render(focusRole) {
@@ -148,7 +242,7 @@
       var info = S.watchInfo(v.id, u.parseDuration(v.duration));
       var start = info.state === "partial" ? Math.floor(info.pos) : 0;
       d.body.textContent = "";
-      d.setTitle(v.title || ("YouTube video " + v.id));
+      d.setTitle(v.title || "YouTube video " + v.id);
       d.setKind("Watch");
 
       var myGen = ++gen;
@@ -159,33 +253,57 @@
       f.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
       f.allowFullscreen = true;
       f.referrerPolicy = "strict-origin-when-cross-origin";
-      wrap.appendChild(f); d.body.appendChild(wrap);
+      wrap.appendChild(f);
+      d.body.appendChild(wrap);
 
       var c = { id: v.id, yt: null, timer: 0, ended: false, sawPlay: false, learned: false };
       cur = c;
       directTrack(f, c, myGen);
-      loadApi(function () {
-        if (cur !== c || myGen !== gen) return;
-        try {
-          // the embed is served from youtube-nocookie.com: without `host` the API ignores its messages,
-          // so onReady / getCurrentTime never work and no position is saved
-          c.yt = new window.YT.Player(f, { host: "https://www.youtube-nocookie.com", events: {
-            onReady: function () { if (cur === c) { tick(); c.timer = setInterval(tick, 1000); } },
-            onStateChange: function () { if (cur === c) tick(); }
-          } });
-        } catch (e) { c.yt = null; }
-      }, function () { /* API unavailable (offline / blocked): the plain embed still plays, just without saved progress */ });
+      loadApi(
+        function () {
+          if (cur !== c || myGen !== gen) return;
+          try {
+            // the embed is served from youtube-nocookie.com: without `host` the API ignores its messages,
+            // so onReady / getCurrentTime never work and no position is saved
+            c.yt = new window.YT.Player(f, {
+              host: "https://www.youtube-nocookie.com",
+              events: {
+                onReady: function () {
+                  if (cur === c) {
+                    tick();
+                    c.timer = setInterval(tick, 1000);
+                  }
+                },
+                onStateChange: function () {
+                  if (cur === c) tick();
+                }
+              }
+            });
+          } catch {
+            c.yt = null;
+          }
+        },
+        function () {
+          /* API unavailable (offline / blocked): the plain embed still plays, just without saved progress */
+        }
+      );
 
       var row = el("div", "modal__row modal__row--player");
       var prev = u.button("Previous", { cls: "btn btn--ghost btn--sm", icon: "prev" });
       var next = u.button("Next", { cls: "btn btn--ghost btn--sm", icon: "next" });
-      prev.dataset.role = "prev"; next.dataset.role = "next";
-      prev.disabled = i === 0; next.disabled = i === queue.length - 1;
-      prev.addEventListener("click", function () { go(-1, "prev"); });
-      next.addEventListener("click", function () { go(1, "next"); });
+      prev.dataset.role = "prev";
+      next.dataset.role = "next";
+      prev.disabled = i === 0;
+      next.disabled = i === queue.length - 1;
+      prev.addEventListener("click", function () {
+        go(-1, "prev");
+      });
+      next.addEventListener("click", function () {
+        go(1, "next");
+      });
       if (queue.length > 1) {
         row.appendChild(prev);
-        var pos = el("span", "modal__pos", (i + 1) + " of " + queue.length);
+        var pos = el("span", "modal__pos", i + 1 + " of " + queue.length);
         pos.setAttribute("aria-live", "polite");
         row.appendChild(pos);
         row.appendChild(next);
@@ -194,11 +312,16 @@
       row.appendChild(el("span", "modal__spacer"));
 
       var yt = el("a", "btn btn--ghost btn--sm");
-      yt.appendChild(u.icon("external")); yt.appendChild(el("span", null, "Open on YouTube"));
-      yt.href = u.watchUrl(v.id); yt.target = "_blank"; yt.rel = "noopener noreferrer";
+      yt.appendChild(u.icon("external"));
+      yt.appendChild(el("span", null, "Open on YouTube"));
+      yt.href = u.watchUrl(v.id);
+      yt.target = "_blank";
+      yt.rel = "noopener noreferrer";
       row.appendChild(yt);
       d.body.appendChild(row);
 
+      // The body is rebuilt on every step, so keyboard users get focus back on the Previous / Next button
+      // they pressed (or on the dialog when that button is now disabled) instead of losing it to <body>.
       var target = focusRole && d.body.querySelector('[data-role="' + focusRole + '"]:not([disabled])');
       (target || d.element).focus();
     }
