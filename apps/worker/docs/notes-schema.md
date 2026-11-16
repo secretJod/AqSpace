@@ -1,4 +1,4 @@
-﻿# Notes JSON schema
+# Notes JSON schema
 
 The structure `llm.py` produces, `notes_schema.validate_notes` enforces, and `pdf.py` renders. Each section is roughly one notebook page.
 

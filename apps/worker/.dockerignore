@@ -3,8 +3,9 @@
 **/*.pyc
 *.egg-info
 .pytest_cache
+.ruff_cache
+tools/notes_eval/out
 backend/output
 backend/.env
 **/.env
 .git
-start.ps1

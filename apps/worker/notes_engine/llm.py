@@ -1098,11 +1098,11 @@ def _final_messages_fit(client: _Client, meta: dict, outline: list[dict], terms:
     return msgs
 
 
-# provider id -> env var holding a SERVER-side key (mirrors backend/app/server.py ENV_KEYS)
 # --------------------------------------------------------------------------- #
 # 6. Public entry point: provider fallback chain + generate_notes
 # --------------------------------------------------------------------------- #
 
+# provider id -> env var holding a server-side key (same names as ENV_KEYS in backend/app/settings.py)
 SERVER_KEY_ENV = {
     "gemini": "GEMINI_API_KEY",
     "groq": "GROQ_API_KEY",

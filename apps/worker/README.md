@@ -1,216 +1,228 @@
-# Lecture Notes AI
+# Notes worker
 
-Paste a YouTube lecture link, pick an AI provider, and get **knowledge-only study notes** drawn as a hand-made "field notebook" PDF: cream ruled paper, spiral rings, sketchy diagrams, yellow sticky *recall question* boxes, a glossary and a one-page recap. No "welcome back / like and subscribe / sponsor" filler - just what the lecture actually teaches.
+The Python service that turns a YouTube lecture into **knowledge-only study notes**, drawn as a
+hand-made "field notebook": cream ruled paper, spiral rings, sketchy diagrams, sticky recall
+questions, a glossary and a one-page recap. It also analyses whole playlists ("smart playlist").
 
 | Flow diagram | Mind map | Sequence diagram |
 |---|---|---|
 | ![Notebook page with a hand-drawn flow diagram](docs/images/preview-flow.png) | ![Notebook page with a hand-drawn mind map](docs/images/preview-mindmap.png) | ![Notebook page with a hand-drawn sequence diagram](docs/images/preview-sequence.png) |
 
-Everything runs on your own computer. The only data that leaves it is the transcript text, sent to the AI provider *you* choose, using *your* key.
+The worker is internal. It listens on `127.0.0.1:5055` only, and the Node API (`apps/api`) is the
+only caller. The same engine can also be used from the command line or as a Python library.
 
-You can use it three ways, all backed by the same engine:
+## What it does
 
-- a **web UI** (`backend/` + `frontend/`, runs on localhost),
-- a **command line** (`python -m notes_engine URL ...`),
-- a **Python library** (`import notes_engine`).
+1. **Transcript** (`notes_engine/ingest.py`): captions from YouTube, else yt-dlp subtitles, else
+   speech-to-text (local faster-whisper, or Groq Whisper with a Groq key).
+2. **Notes** (`notes_engine/llm.py`): an AI provider writes the notes. Short lectures take one call;
+   long ones use map-reduce (digest each slice, compose sections, write cover / glossary / recap).
+   `notes_schema.validate_notes` turns whatever the model returns into valid Notes JSON.
+3. **Rendering** (`notes_engine/render/`): Notes JSON becomes one self-contained HTML page, and
+   headless Chrome/Chromium/Edge prints it as an A4 PDF.
 
-## Quick start
+Each request runs as a background job (two at a time). Its files are written to
+`backend/output/<job_id>/` (`notes.json`, `notes.html`, `notes.pdf`) and deleted after 24 hours.
+[docs/architecture.md](docs/architecture.md) explains the pipeline and every module.
 
-### Requirements
+## Run it
 
-The commands below start with `cd lecture-notes-ai`; skip that line if you are already inside the project folder.
-
-- Python 3.10 or newer.
-- Microsoft Edge or Google Chrome (Edge ships with Windows). It is only used headless, to print the PDF. Without it you still get the HTML preview and the JSON.
-- `ffmpeg` on your `PATH` - *only* needed for videos that have no captions (their audio is transcribed with Groq Whisper).
-
-### Web UI (Windows, one click)
-
-```powershell
-cd lecture-notes-ai
-powershell -ExecutionPolicy Bypass -File .\start.ps1
-```
-
-`start.ps1` creates `.venv`, installs the project (only when `pyproject.toml` changed), starts the server and opens <http://127.0.0.1:5055>. Paste a YouTube link (the video appears in an embedded player right away so you can check it is the right one), choose a provider, paste your API key, press **Generate notes**. When the notes are ready you can preview them and **Download PDF** or **Download JSON**.
-
-Manual start (any OS):
+Everything is run from `apps/worker/`. Requirements: Python 3.10+ (the image uses 3.12), and
+Chrome, Chromium or Edge for the PDF (without one you still get the HTML and JSON).
 
 ```bash
-cd lecture-notes-ai
 python -m venv .venv
-# Windows: .venv\Scripts\activate      macOS/Linux: source .venv/bin/activate
-pip install -e ".[web]"
-python backend/run.py        # http://127.0.0.1:5055
+.venv/bin/pip install -e ".[web,dev]"        # add ,whisper for local speech-to-text
+cp backend/.env.example backend/.env         # fill in the keys you have
+.venv/bin/python backend/run.py              # http://127.0.0.1:5055
 ```
 
-### Command line
+In the full stack, `docker compose up --build` (from the repo root) runs the worker as the
+`notes-ai` service. Its port is not published; the API container shares its network namespace.
+Generated notes, the cache and scratch files are bind-mounted under `apps/worker/backend/`, and the
+Whisper model under `.tools/whisper-models`.
+
+Command line and library use, without the web server:
 
 ```bash
-cd lecture-notes-ai
-pip install -e .
-export GROQ_API_KEY=...      # PowerShell: $env:GROQ_API_KEY = "..."
-python -m notes_engine "https://www.youtube.com/watch?v=VIDEO_ID" --provider groq --out notes.pdf --html --json
-# or, after installing:  lecture-notes URL --provider groq --out notes.pdf
+GROQ_API_KEY=... .venv/bin/python -m notes_engine "https://youtu.be/VIDEO_ID" --provider groq --out notes.pdf --html --json
+.venv/bin/python -m notes_engine --list-providers
 ```
-
-| Option | Meaning |
-|---|---|
-| `--provider` | `groq` (default), `gemini`, `xai`, `huggingface` |
-| `--model` | model name; default is the provider's default model |
-| `--out` | output PDF path (default `notes.pdf`) |
-| `--html`, `--json` | also write `<out>.html` / `<out>.json` next to the PDF |
-| `--api-key`, `--groq-key` | pass keys explicitly (the environment variable is safer: it stays out of shell history) |
-| `--list-providers` | show providers, default models and key links |
-| `-q` | no progress line |
-
-Exit codes: `0` ok, `2` bad usage or missing key, `3` transcript error, `4` AI provider error, `5` notes made but the PDF could not be drawn (JSON and HTML are saved instead), `1` anything else. Keys are never printed.
-
-### Python
 
 ```python
 import notes_engine
 
-result = notes_engine.generate(
-    "https://youtu.be/VIDEO_ID",
-    "groq",  # api_key falls back to $GROQ_API_KEY
-    out_dir="out",
-    progress=lambda stage, pct, msg: print(pct, msg),
-)
-result["pdf_path"], result["html_path"], result["notes"]  # notes = the Notes JSON dict
+result = notes_engine.generate("https://youtu.be/VIDEO_ID", "groq", out_dir="out")
+result["pdf_path"], result["html_path"], result["notes"]
 ```
 
-The building blocks are exported too: `parse_video_id`, `get_transcript`, `generate_notes`, `validate_notes`, `render_html`, `render_pdf`, the exceptions `IngestError`, `LLMError`, `PdfError`, and `PROVIDERS`.
+CLI exit codes: `0` ok, `1` unexpected error, `2` bad usage or missing key, `3` transcript error,
+`4` AI provider error, `5` notes written but no PDF (JSON and HTML saved), `130` interrupted.
 
-## Providers and free API keys
+## Test and lint
 
-| Provider | Get a key | Default model | Notes |
-|---|---|---|---|
-| Google Gemini | <https://aistudio.google.com/apikey> | `gemini-3.5-flash-lite` | Generous free tier; large context |
-| Groq | <https://console.groq.com/keys> | `openai/gpt-oss-120b` | Free tier, very fast. The same key transcribes audio (Whisper) for videos without captions |
-| Hugging Face | <https://huggingface.co/settings/tokens> | `meta-llama/Llama-3.3-70B-Instruct` | Token needs permission to call *Inference Providers* |
-| xAI Grok | <https://console.x.ai> | `grok-4` | Paid API |
-
-Keys are looked up in this order: the key you type in the page / `--api-key` / `api_key=`, then the environment (`GEMINI_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY`, `HF_TOKEN`). For the web UI you can keep them on the server instead: copy `backend/.env.example` to `backend/.env` and fill in the ones you have. The page then shows **"Key found on server"**. `.env` is git-ignored.
-
-## How it works
-
-```
-YouTube URL
-   |
-   v
-ingest   captions (youtube-transcript-api) -> auto-captions (yt-dlp)
-         -> audio + ffmpeg + Groq Whisper (only if no captions and a Groq key)     0-25 %
-   |
-   v
-llm      short lecture: one call -> Notes JSON
-         long lecture:  map-reduce (digest each slice -> compose sections
-         -> glossary/recap) -> validate_notes() coerces & clamps the JSON          25-85 %
-   |
-   v
-pdf      Notes -> self-contained HTML (inline fonts, hand-drawn SVG diagrams)
-         -> headless Edge/Chrome -> A4 PDF                                         85-100 %
+```bash
+LNA_OFFLINE=1 .venv/bin/python -m pytest     # all tests; network and providers are mocked
+.venv/bin/ruff check .                       # lint (rules in pyproject.toml)
+.venv/bin/ruff format .                      # format (CI runs: ruff format --check .)
 ```
 
-The web server (`backend/app/server.py`) runs each request as a background job (max 2 at a time), keeps its status in memory and writes `notes.json`, `notes.html` and `notes.pdf` to `backend/output/<job_id>/`. The page polls `/api/jobs/<id>` about once a second; job folders older than 24 hours are deleted at startup. If the PDF step fails (for example no Edge/Chrome) but the notes were written, you still get the preview and the JSON, plus a short warning.
+`LNA_OFFLINE=1` skips the one optional live-network test and the local server probe. PDF tests are
+skipped when no browser is installed. Tests never call a real API.
 
-### Notes format
+## Folder map
 
-The structured notes (sections, blocks, diagrams, recall questions, glossary, recap) are plain JSON, documented in [docs/notes-schema.md](docs/notes-schema.md). It is the contract between the LLM prompts, `validate_notes`, the renderer and the web UI.
+```
+backend/
+  run.py                   entry point: cache + temp folders, key check, starts Flask
+  .env.example             keys and settings (copy to .env; never commit it)
+  app/                     the Flask app (routes, jobs, security); see app/server.py
+  output/                  job files, cache, checkpoints (git-ignored)
+notes_engine/              the engine package (pip-installable)
+  __init__.py              generate(): the whole flow in one call
+  __main__.py              command line
+  ingest.py                YouTube -> transcript (helpers in transcripts/)
+  llm.py                   transcript -> notes via an AI provider (helpers in ai/)
+  prompts.py               prompt texts and JSON schemas sent to the model
+  notes_schema.py          validate / repair the model's JSON
+  smart_playlist.py        playlist analysis (profile, order, gaps)
+  cache.py                 optional disk cache
+  pdf.py                   render_html / render_pdf (code in render/)
+  render/                  the notebook renderer
+  templates/, static/      notebook CSS/JS, vendored Rough.js, fonts
+tools/notes_eval/          provider evaluation harness (developer tool, has its own README)
+tests/                     pytest suites
+docs/                      architecture, Notes JSON schema, smart-playlist contract, images
+```
 
-### HTTP API (web UI)
+## HTTP API
+
+All routes return JSON errors as `{"error": "..."}`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/providers` | `{providers:[{id,label,default_model,key_hint,server_key}]}` (`server_key` is a boolean) |
-| POST | `/api/jobs` | JSON `{url, provider, api_key?, model?, groq_key?}` -> `202 {job_id}` |
-| GET | `/api/jobs/<id>` | `{status: queued/running/done/error, stage, pct, message, error?, meta?, links?, warning?}` |
-| GET | `/api/jobs/<id>/notes.json` | the structured notes |
+| GET | `/api/providers` | `{providers: [{id, label, default_model, key_hint, needs_key, server_key, online?}]}` (`server_key` is a boolean) |
+| POST | `/api/jobs` | `{url, provider, api_key?, model?, groq_key?}` -> `202 {job_id}` |
+| GET | `/api/jobs/<id>` | `{job_id, status: queued/running/done/error, stage, pct, message, error?, meta?, links?, warning?, chunk?, chunks?}` |
+| GET | `/api/jobs/<id>/notes.json` | the structured notes ([docs/notes-schema.md](docs/notes-schema.md)) |
 | GET | `/api/jobs/<id>/notes.pdf` | the PDF (download) |
 | GET | `/api/jobs/<id>/notes.html` | the HTML preview |
+| GET | `/api/playlist?url=...` | the videos of a YouTube playlist (metadata only) |
+| POST | `/api/smart` | start a smart-playlist analysis -> `202 {job_id}` ([contract](docs/smart-playlist-contract.md)) |
+| GET | `/api/smart/<id>` | its progress and result |
 
-## Tech stack
+## Environment variables
 
-| Part | Used for |
+Keys go in `backend/.env` (loaded at start; a key typed in a request wins for `/api/jobs`).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GEMINI_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY`, `HF_TOKEN`, `NVIDIA_API_KEY` | | server-side provider keys |
+| `LNAI_LOCAL_URL` | `http://127.0.0.1:8081/v1` | local llama-server (http, or https for a remote GPU server) |
+| `LNAI_LOCAL_KEY` | | Bearer key for a remote local server |
+| `LNAI_LOCAL_CTX` | asked from the server | context size; 8192 or less selects the small profile |
+| `COLAB_LLM_URL`, `COLAB_LLM_KEY` | | deprecated `colab` provider (use `LNAI_LOCAL_URL` / `LNAI_LOCAL_KEY`) |
+| `LNA_PROVIDER_FALLBACK` | off | `1` turns the provider fallback on (see below) |
+| `LNAI_GROQ_FALLBACK_MAX_SEC` | `3600` | longest video sent to Groq as a fallback |
+| `LNAI_GEMINI_RPM` | `10` | Gemini requests per minute for the pacer; `0` turns it off |
+| `LNA_CACHE_DIR` | `backend/output/cache` (set by `run.py`) | disk cache of transcripts and accepted answers; unset = off |
+| `LNA_CACHE_MAX_MB` | `300` | cache size limit (least recently used files go first) |
+| `LNAI_CHECKPOINT_DIR` | | checkpoint folder for library / CLI use (the server passes its own) |
+| `LNAI_WHISPER` | `auto` | speech-to-text: `auto`, `local`, `groq` or `off` |
+| `LNAI_WHISPER_MODEL` | `small` | faster-whisper model |
+| `LNAI_WHISPER_DIR` | `<repo>/.tools/whisper-models` | where the Whisper model is downloaded |
+| `LNAI_WORK_DIR` | `backend/output/_cache` | speech-to-text checkpoints |
+| `FFMPEG_PATH` | `ffmpeg` on `PATH` | ffmpeg for splitting audio |
+| `LNAI_BROWSER` | first browser found | browser used to print the PDF |
+| `LNA_PORT` | `5055` | server port (always bound to 127.0.0.1) |
+| `LNA_TMP_DIR` | `backend/.tmp` | scratch files (audio, browser profiles) |
+| `LNA_OFFLINE` | | `1` in tests: no live network test, no local server probe |
+
+## Providers and fallback
+
+| Provider | Default model | Key | Notes |
+|---|---|---|---|
+| `local` | `qwen3-8b` | none | llama-server; "local" or "local-small" size profile by context size |
+| `gemini` | `gemini-3.5-flash-lite` | `GEMINI_API_KEY` | large context; parallel single pass; request pacer |
+| `groq` | `openai/gpt-oss-120b` | `GROQ_API_KEY` | free tier is tokens-per-minute limited, so calls are small and paced; the key also powers Whisper |
+| `xai` | `grok-4` | `XAI_API_KEY` | paid |
+| `huggingface` | `meta-llama/Llama-3.3-70B-Instruct` | `HF_TOKEN` | token needs *Inference Providers* permission |
+| `nvidia` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | `NVIDIA_API_KEY` | large context, no daily token cap |
+| `colab` | `qwen3-8b` | `COLAB_LLM_KEY` | deprecated alias of `local` |
+
+With `LNA_PROVIDER_FALLBACK=1`, a rate limit, 5xx, timeout or unreachable local server retries the
+**whole video** once with another provider, using server-side keys only:
+
+| Primary | Fallback order |
 |---|---|
-| Python 3.10+, `requests` | Engine, plain HTTP calls to the providers (no vendor SDKs) |
-| Flask, flask-cors, python-dotenv | Local web server and `.env` loading (`web` extra) |
-| youtube-transcript-api | Captions and auto-captions |
-| yt-dlp | Video metadata, caption fallback, audio download |
-| ffmpeg | Splitting audio for transcription (only without captions) |
-| Groq Whisper (`whisper-large-v3-turbo`) | Transcribing videos that have no captions |
-| Gemini / Groq / Hugging Face / xAI | The LLMs that write the notes |
-| Rough.js + hand-drawn SVG | Sketchy diagrams (flow, stack, compare, cycle, tree, timeline, mindmap, sequence) |
-| Headless Edge / Chrome | HTML -> A4 PDF (set `LNAI_BROWSER` to pick a browser) |
-| PyMuPDF | Text metrics for layout and PDF checks |
-| Vanilla JS / CSS | The web page - no build step, works offline |
-| pytest | Tests (all network and provider calls are mocked) |
+| `local` (or `colab`) | Groq for videos up to `LNAI_GROQ_FALLBACK_MAX_SEC` (1 h), otherwise NVIDIA |
+| any other | `local` if it is online, then Groq (videos up to 1 h), then NVIDIA |
 
-## Project layout
+Groq is capped at one hour because a longer lecture does not fit its free tokens-per-minute budget.
+Answers from a fallback provider are never written to the shared cache, and the notes record the
+provider used in `meta.provider` / `meta.fallback_from`. Size limits per provider and model are
+explained at the top of `notes_engine/ai/providers.py`.
 
-```
-notes_engine/              the self-contained engine package (pip-installable)
-  __init__.py              generate(), re-exports
-  __main__.py              command line
-  ingest.py                YouTube -> transcript
-  llm.py, prompts.py, notes_schema.py      providers, notes generation, validation
-  pdf.py, templates/ (+ vendor/rough.js), static/fonts/    notebook renderer
-backend/                   the web app: run.py, app/server.py, .env.example
-frontend/                  index.html, app.js, styles.css
-tests/                     pytest suites
-docs/                      notes-schema.md, images/
-start.ps1                  one-click launcher (Windows)
-pyproject.toml             package metadata and extras
-```
+## How to add a feature
 
-## Development
+Keep to three habits: put the change where the matching module already lives (the folder map
+above), add a test next to the existing ones in `tests/`, and run tests and ruff before you push.
 
-```bash
-cd lecture-notes-ai
-pip install -e ".[web,dev]"
-python -m pytest
-```
+### Example 1: add a new AI provider
 
-Set `LNA_OFFLINE=1` to skip the one live-network test. Set `FFMPEG_PATH` if `ffmpeg` is not on your `PATH`. The web server port can be changed with `LNA_PORT`.
+Say the provider is "Acme" with an OpenAI-compatible chat API.
 
-## Limitations
+1. `notes_engine/ai/providers.py`
+   - add `"acme"` to `PROVIDERS` (`label`, `default_model`, `needs_key: True`, `key_hint`);
+   - add its chat URL to `ENDPOINTS`;
+   - add a size profile to `BASE_PROFILES` (copy the closest provider and adjust `single_chars`,
+     `chunk_chars`, output tokens and `tpm`; the comments above it explain each key). Add a model
+     override in `_apply_model_overrides` only if one model needs different numbers.
+2. `notes_engine/ai/key_safety.py`: add the key's shape to `KEY_PATTERNS`, so it is scrubbed from
+   every error message.
+3. Key names, in three places: `ENV_KEYS` in `backend/app/settings.py` (server key), `SERVER_KEY_ENV`
+   in `notes_engine/llm.py`, and `ENV_KEYS` in `notes_engine/__init__.py` (CLI and library). Add the
+   variable to `backend/.env.example`, and to `KEY_VARS` in `backend/app/keycheck.py` if you want the
+   startup check.
+4. `backend/app/settings.py`: add the provider to `FALLBACK_PROVIDERS` and `PROVIDER_ORDER` (the
+   order of `GET /api/providers`).
+5. Only if the API is *not* OpenAI-compatible: add a branch to `_Client.build_request` and
+   `_Client._extract` in `notes_engine/llm.py` (Gemini is the example to follow).
+6. Tests: add the provider to the parametrised request-shape test in `tests/test_llm.py` and update
+   the provider list asserted in `tests/test_api.py`.
+7. Docs: the provider table above.
 
-- YouTube only. Private, age-restricted, members-only and live videos cannot be fetched without signing in.
-- Videos without captions need a Groq key and `ffmpeg`.
-- Very long lectures take several minutes and many provider calls; free tiers may hit rate limits (the engine waits and retries).
-- The PDF needs Microsoft Edge or Google Chrome installed; the HTML and JSON do not.
-- Notes are written by an AI model from the transcript. They can contain mistakes, and a video that is mostly visual (slides with little speech) yields thinner notes.
-- `start.ps1` is Windows-only; on other systems start the server by hand (see above).
+The web app lists providers from `GET /api/providers`, so it needs no change.
 
-## Troubleshooting
+### Example 2: add a new notes block type
 
-- **"Could not reach the server"** - `run.py` is not running, or something else uses port 5055 (set another with `LNA_PORT`).
-- **"No captions ... and no Groq key"** - the video has no subtitles. Add a free Groq key (under *Advanced options*, in `.env`, or `--groq-key`) so the audio can be transcribed; this also needs `ffmpeg`.
-- **"This video has nothing to teach"** - it is a trailer, music video or promo; use a lecture, tutorial or talk.
-- **Rate-limit / quota errors** - wait a minute, pick another provider, or use a smaller model.
-- **Invalid key** - check you picked the matching provider; keys are not interchangeable.
-- **No PDF, only the preview** - install Microsoft Edge or Google Chrome.
-- Details of unexpected failures are printed in the server console (keys are redacted there).
+Say the type is `quote` (`{"type": "quote", "text": str, "by": str}`).
+
+1. `notes_engine/notes_schema.py`: add `"quote"` to `BLOCK_TYPES`, any spellings models use to
+   `_BLOCK_ALIASES`, and a branch in `_coerce_block` that cleans the fields and returns `None` when
+   the block is empty.
+2. `notes_engine/prompts.py`: mention the type in `RULES` (when to use it), add it to the `type`
+   enum of `_BLOCK_SCHEMA` (plus any new field, such as `by`, to its properties), and bump
+   `PROMPT_VERSION` so cached answers and checkpoints made with the old prompt are not reused.
+3. `notes_engine/render/blocks.py`: write `quote_block(block: dict) -> str` (escape all text with
+   `escape_html` / `rich`) and register it in `BLOCK_RENDERERS`.
+4. `notes_engine/templates/notebook.css`: style `.b-quote` in section 4 ("blocks").
+5. Tests: a `validate_notes` case in `tests/test_llm.py` and a rendering case in `tests/test_pdf.py`;
+   add the block to `tests/sample_notes.json` so the PDF tests draw it.
+6. Docs: the block list in [docs/notes-schema.md](docs/notes-schema.md).
 
 ## Privacy and security
 
-- The web server binds to `127.0.0.1` only, answers only local host names, and allows cross-origin calls only from `localhost` / `127.0.0.1` pages.
-- Your API key lives in server memory for the duration of one job. It is never written to disk, logged, or returned by the API; error messages are scrubbed of it.
-- *Remember on this device* stores the key in your browser's `localStorage` **unencrypted**, per provider; untick it to forget. Do not use it on a shared computer.
-- The transcript is sent to the provider you picked; read their data policy (free tiers may use data to improve models).
-- The embedded player uses `youtube-nocookie.com`; its address is built only from the validated 11-character video id, and the page's Content-Security-Policy allows framing only `youtube-nocookie.com`, `youtube.com` and itself. The player is the one place the browser talks to YouTube directly (YouTube may set cookies once you press play).
-- Responses carry `nosniff`, frame and CSP headers; the notes preview is shown with scripts disabled.
-- Never commit a `.env` file or a key. `.env` is in `.gitignore`.
+- The server binds to 127.0.0.1, answers only local host names (DNS-rebinding guard) and accepts
+  POSTs only from local origins.
+- Keys live in memory for one job, go only into request headers, and are scrubbed from every error
+  message and log line. Responses never contain a key; `/api/providers` reports only whether one exists.
+- The transcript is sent to the provider that writes the notes; read their data policy.
+- The notes preview is served with a CSP that allows exactly the hashes of the scripts the
+  renderer wrote; every other response carries `nosniff`, framing and CSP headers.
 
 ## License
 
-MIT - see [LICENSE](LICENSE). Bundled fonts (Kalam, Patrick Hand, Caveat, JetBrains Mono) are under the SIL Open Font License and Rough.js under the MIT license; their licence files sit next to them in `notes_engine/static/fonts/` and `notes_engine/templates/vendor/`.
-
-## Docker (AQspace stack)
-
-From the repo root, `docker compose up --build` runs this worker as the `notes-ai` service (the container runs as root):
-
-- Port 5055 binds to 127.0.0.1 inside the container and is never published; only aq-api's `127.0.0.1:5180` is.
-- Local LLM: `LNAI_LOCAL_URL=http://host.docker.internal:8081/v1` (Qwen3-8B on llama-server, started natively on the Mac with `scripts/llm.sh`).
-- Fallback: `LNA_PROVIDER_FALLBACK=1` falls back to Groq (key in `backend/.env`) for videos up to 1 h when the local model is down.
-- Whisper cache: `LNAI_WHISPER_DIR=/app/.tools/whisper-models`, bind-mounted from `./.tools/whisper-models` (the same path as the non-Docker default). The model downloads once and survives image rebuilds. The path is gitignored and dockerignored, and `scripts/nuke.sh` deletes it.
-- Generated notes: `./lecture-notes-ai/backend/output` is bind-mounted to `/app/backend/output`.
+MIT, see [LICENSE](LICENSE). The bundled fonts (Kalam, Patrick Hand, Caveat, JetBrains Mono) are under
+the SIL Open Font License and Rough.js under the MIT license; their licence files sit next to them in
+`notes_engine/static/fonts/` and `notes_engine/templates/vendor/`.

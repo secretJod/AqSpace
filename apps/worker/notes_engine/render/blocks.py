@@ -44,7 +44,7 @@ def split_sentences(text: str) -> list[str]:
 
 
 def paragraph_block(block: dict) -> str:
-    """Return the HTML item for a paragraph of rich text. ("" when it is empty)."""
+    """Return the HTML item for a paragraph of rich text ("" when it is empty)."""
     text = clean_text(block.get("text"))
     if not text:
         return ""
@@ -60,7 +60,7 @@ def paragraph_block(block: dict) -> str:
 # 2. Lists
 # ----------------------------------------------------------------------------------------------
 def bullets_block(block: dict) -> str:
-    """Return the HTML item for a bullet list. ("" when it is empty)."""
+    """Return the HTML item for a bullet list ("" when it is empty)."""
     items = [clean_text(i) for i in as_list(block.get("items")) if clean_text(i)]
     if not items:
         return ""
@@ -75,7 +75,7 @@ def bullets_block(block: dict) -> str:
 
 
 def steps_block(block: dict) -> str:
-    """Return the HTML item for a numbered list of steps. ("" when it is empty)."""
+    """Return the HTML item for a numbered list of steps ("" when it is empty)."""
     items = [clean_text(i) for i in as_list(block.get("items")) if clean_text(i)]
     if not items:
         return ""
@@ -90,7 +90,7 @@ def steps_block(block: dict) -> str:
 # 3. Boxes: definition, example, callout, formula
 # ----------------------------------------------------------------------------------------------
 def definition_block(block: dict) -> str:
-    """Return the HTML item for a "def." line: term and meaning. ("" when it is empty)."""
+    """Return the HTML item for a "def." line: term and meaning ("" when it is empty)."""
     term, text = clean_text(block.get("term")), clean_text(block.get("text"))
     if not (term or text):
         return ""
@@ -101,7 +101,7 @@ def definition_block(block: dict) -> str:
 
 
 def example_block(block: dict) -> str:
-    """Return the HTML item for a worked example with an optional title. ("" when it is empty)."""
+    """Return the HTML item for a worked example with an optional title ("" when it is empty)."""
     title, text = clean_text(block.get("title")), clean_text(block.get("text"))
     if not (title or text):
         return ""
@@ -128,7 +128,7 @@ def callout_block(block: dict, callout_number: int) -> str:
 
 
 def formula_block(block: dict) -> str:
-    """Return the HTML item for a formula on its own line. ("" when it is empty)."""
+    """Return the HTML item for a formula on its own line ("" when it is empty)."""
     text = clean_text(block.get("text"))
     if not text:
         return ""
