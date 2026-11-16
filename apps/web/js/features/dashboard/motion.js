@@ -1,28 +1,23 @@
 /* =====================================================================================================
    What this file does:
-     Small "premium" motion effects for dashboard cards: a pointer-tracked spotlight, a subtle 3D tilt,
-     a staggered entrance reveal, a count-up for numbers and a slow aurora background.
+     Small motion effects for dashboard cards (`AQ.motion`): a pointer-tracked spotlight, a subtle 3D
+     tilt, a staggered entrance reveal, a count-up for numbers and a slow aurora background.
 
    How it fits:
-     dashboard.js applies these to its cards (`AQ.motion.spotlight(card)`, `AQ.motion.tilt(card)` ...),
-     streak.js uses spotlight on its compact card. Only CSS variables / classes are set here, the look
-     lives in css/motion.css. Needs nothing else; load before the files that use it.
+     Depends on nothing; load it before the files that use it. dashboard.js applies these to its cards,
+     streak.js uses spotlight on its compact card. Only CSS variables and classes are set here; the look
+     lives in css/motion.css. Every effect respects prefers-reduced-motion (tilt, reveal and count-up
+     turn themselves off; the CSS calms the rest).
 
    Start reading at:
-     `spotlight()` (section 2) - the other effects follow the same shape: attach listeners, return destroy().
+     `spotlight()` (section 2). The other effects follow the same shape: attach listeners, return destroy().
    ===================================================================================================== */
-
-/* AQspace - motion helpers.
-   AQ.motion.spotlight(el)              -> { destroy() }   sets --mx / --my (px) on the element
-   AQ.motion.tilt(el, { max: 4 })       -> { destroy() }   sets --mo-rx / --mo-ry (deg)
-   AQ.motion.reveal(container, { selector }) -> { destroy() }  staggered entrance of the children
-   AQ.motion.countUp(el, to, { duration, format }) -> { cancel() }
-   AQ.motion.aurora(container)          -> { destroy() }   adds a slow gradient layer behind the content */
 window.AQ = window.AQ || {};
 (function (AQ) {
   "use strict";
 
   // ===== 1. Shared helpers =====
+  // Users who ask the OS for less motion get the final state at once: no tilt, reveal or count-up.
   function reducedMotion() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -64,6 +59,12 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 2. Spotlight: a radial highlight that follows the pointer over the card =====
+  /**
+   * Adds a pointer-following highlight to a card (sets --mx / --my in px; css/motion.css draws it).
+   * The two layers are aria-hidden: they are decoration only.
+   * @param {HTMLElement} node the card (must be positioned)
+   * @returns {{destroy: function(): void}}
+   */
   function spotlight(node) {
     node.classList.add("mo-spot");
     var glow = el("i", "mo-spot__glow"),
@@ -104,6 +105,13 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 3. Tilt: the card leans a few degrees toward the pointer and springs back on leave =====
+  /**
+   * Leans the card a few degrees toward the pointer (sets --mo-rx / --mo-ry). Does nothing under
+   * reduced motion or on touch-only devices.
+   * @param {HTMLElement} node
+   * @param {{max?: number}} [opts] max tilt in degrees (default 4)
+   * @returns {{destroy: function(): void}}
+   */
   function tilt(node, opts) {
     opts = opts || {};
     var max = +opts.max || 4;
@@ -146,6 +154,12 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 4. Reveal: children fade/blur in one after another as they scroll into view =====
+  /**
+   * Staggered entrance of the children as they scroll into view. Does nothing under reduced motion.
+   * @param {HTMLElement} container
+   * @param {{selector?: string}} [opts] which children to animate (default ".dash__card")
+   * @returns {{destroy: function(): void}}
+   */
   function reveal(container, opts) {
     opts = opts || {};
     var items = Array.prototype.slice.call(container.querySelectorAll(opts.selector || ".dash__card"));
@@ -195,6 +209,14 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 5. Count-up: tween the number shown in an element =====
+  /**
+   * Tweens the number shown in `node` from its current value to `to` (writes textContent only).
+   * Under reduced motion the final value is written at once.
+   * @param {HTMLElement} node
+   * @param {number} to
+   * @param {{duration?: number, format?: function(number): string}} [opts] duration in ms (default 900)
+   * @returns {{cancel: function(): void}} cancel jumps to the final value
+   */
   function countUp(node, to, opts) {
     opts = opts || {};
     var duration = +opts.duration || 900;
@@ -232,6 +254,11 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 6. Aurora: a slow, blurred gradient layer behind the grid =====
+  /**
+   * Inserts a slow, blurred gradient layer behind the container's content (aria-hidden decoration).
+   * @param {HTMLElement} container
+   * @returns {{destroy: function(): void}}
+   */
   function aurora(container) {
     container.classList.add("mo-aurora-host");
     var layer = el("div", "mo-aurora");
@@ -252,7 +279,6 @@ window.AQ = window.AQ || {};
     tilt: tilt,
     reveal: reveal,
     countUp: countUp,
-    aurora: aurora,
-    reducedMotion: reducedMotion
+    aurora: aurora
   };
 })(window.AQ);

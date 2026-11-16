@@ -1,8 +1,16 @@
-/* What this file styles:
-   The motion helpers of js/features/dashboard/motion.js: the pointer spotlight (`mo-spot`), the 3D tilt
-   (`mo-tilt`), the staggered reveal (`mo-reveal`) and the aurora background (`mo-aurora`).
-   The JS only sets CSS variables (--mx, --my, --mo-rx, --mo-ry, --mo-i) and classes; the look is here.
-   Linked from index.html (order matters: see README.md). */
+/* =====================================================================================================
+   What this file styles:
+     The motion helpers of js/features/dashboard/motion.js: the pointer spotlight (`mo-spot`), the 3D
+     tilt (`mo-tilt`), the staggered reveal (`mo-reveal`) and the aurora background (`mo-aurora`).
+
+   How it fits:
+     The JS only sets CSS variables (--mx, --my, --mo-rx, --mo-ry, --mo-i) and classes; the look is
+     here. Linked from index.html after dashboard.css (order matters: see README.md). Section 5 calms
+     everything under prefers-reduced-motion.
+
+   Start reading at:
+     Section 1 (spotlight).
+   ===================================================================================================== */
 
 /* ===== 1. spotlight =====
    The host gets `isolation: isolate` so the two layers can sit at z-index -1: above the host's own

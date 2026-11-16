@@ -5,14 +5,13 @@
      `AQ.notesJobs.subscribe` (notes finished) and wraps `AQ.store.create` / `createWithVideos`.
 
    How it fits:
-     Loaded after store.js, notes-jobs.js and activity-log.js (any place after those works, before or
-     after app.js). Everything is guarded: if a piece is missing the hook is simply skipped.
+     Depends on AQ.store (store.js), AQ.notesJobs (notes-jobs.js) and AQ.activity (activity-log.js);
+     load it after those (before or after app.js both work). Everything is guarded: if a piece is
+     missing, that hook is simply skipped. It exports nothing.
 
-   Streak double counting (read this before changing STREAK_RECORDED_BY_APP_JS):
-     app.js has its own "activity hooks for the streak" section that calls `AQ.streak.record(kind)`
-     for watch / notes / playlist. `AQ.activity.log()` would call it too, so while that section exists we
-     log with `{streak: false}`. Plan: the integrator deletes the app.js section and flips the constant to
-     false; then the activity log is the single owner of the streak and also passes minutes to it.
+   Who records the streak:
+     Only this file, through `AQ.activity.log()`, which passes each session (with its minutes) on to
+     `AQ.streak.record()`. No other file calls the streak directly, so nothing is counted twice.
 
    Start reading at:
      `hookWatch()` (section 2), the only non-trivial part.
@@ -21,7 +20,6 @@ window.AQ = window.AQ || {};
 (function (AQ) {
   "use strict";
 
-  var STREAK_RECORDED_BY_APP_JS = false; // see the header; set to false once app.js no longer records the streak
   var SITTING_GAP_MS = 3 * 60000; // no position update for 3 min = a new sitting (new session)
   var CAP_PER_CALL_SEC = 10 * 60; // one position jump can count at most 10 min (seek protection)
   var NOTES_MINUTES = 2; // reading freshly made notes counts as ~2 min
@@ -29,10 +27,6 @@ window.AQ = window.AQ || {};
   var A = AQ.activity,
     S = AQ.store;
   if (!A || !S) return; // nothing to feed, nothing to hook
-
-  function streakFlag() {
-    return !STREAK_RECORDED_BY_APP_JS;
-  }
 
   // ===== 1. small lookups =====
   /* { title, playlistId } of a video id from any playlist (first match), or {} */
@@ -67,8 +61,7 @@ window.AQ = window.AQ || {};
             videoId: videoId,
             title: d.title,
             playlistId: d.playlistId,
-            minutes: minutes,
-            streak: streakFlag()
+            minutes: minutes
           });
           o.sessionId = s ? s.id : null;
         }
@@ -111,8 +104,7 @@ window.AQ = window.AQ || {};
           videoId: videoId,
           title: d.title,
           playlistId: d.playlistId,
-          minutes: NOTES_MINUTES,
-          streak: streakFlag()
+          minutes: NOTES_MINUTES
         });
       } catch {
         /* ignore */
@@ -130,9 +122,9 @@ window.AQ = window.AQ || {};
         if (res) {
           var p = res.playlist || res; // createWithVideos returns { playlist, added, skipped }
           try {
-            A.log("playlist", { playlistId: p.id, title: p.name, minutes: 0, streak: streakFlag() });
+            A.log("playlist", { playlistId: p.id, title: p.name, minutes: 0 });
           } catch {
-            /* ignore */
+            /* logging is a bonus: creating the playlist must still succeed */
           }
         }
         return res;
@@ -143,6 +135,4 @@ window.AQ = window.AQ || {};
   hookWatch();
   hookNotes();
   hookPlaylists();
-
-  AQ.activityHooks = { STREAK_RECORDED_BY_APP_JS: STREAK_RECORDED_BY_APP_JS }; // visible for debugging only
 })(window.AQ);

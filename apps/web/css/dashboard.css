@@ -1,16 +1,27 @@
-/* What this file styles:
-   The dashboard screen (js/features/dashboard/dashboard.js) in the "JARVIS HUD" language: deep navy
-   glass panels with 1px cyan line work, monospace numerals, small-caps module labels. Covers the
-   command bar (greeting, live clock, system log), the HUD grid (cards around the central core), the
-   core + orbiting satellites, every card's compact visual, the HUD widgets of hud-gauges.js (`hg-*`),
-   and the FULL views inside the expand panel (`dfull*`, `dstat`, `dtable`, `dgroup*`, `watched*`, `hm*`).
-   Linked from index.html after styles.css. Dev A's layers (hud.css, neural.css) sit on top/behind.
-   Sections: 1 tokens + page | 2 command bar | 3 grid | 4 panel shell | 5 card head | 6 core + orbit |
-             7 HUD widgets | 8-15 compact cards | 16 full views | 17 heatmap | 18 soon | 19 responsive |
-             20 reduced motion */
+/* =====================================================================================================
+   What this file styles:
+     The dashboard screen (js/features/dashboard/dashboard.js) in a HUD language: deep navy panels with
+     1px cyan line work, monospace numerals, small-caps module labels. Covers the command bar (greeting,
+     live clock, system log), the HUD grid (cards around the central core), the core + orbiting
+     satellites, every card's compact visual, the widgets of hud-gauges.js (`hg-*`), the FULL views
+     inside the expand panel (`dfull*`, `dstat`, `dtable`, `watched*`) and the heatmap of charts.js
+     (`hm*`).
+
+   How it fits:
+     Linked from index.html after styles.css. Uses the base tokens of styles.css and defines the
+     `--hud-*` tokens that goals.css, streak.css and sticky-board.css reuse. hud.css and neural.css add
+     the decorative layers on top of / behind these panels; mirror.css (loaded last) gives the panels
+     their glass finish.
+
+   Start reading at:
+     Section 1 (tokens), then 3 (grid) and 4 (panel).
+     Sections: 1 tokens + page | 2 command bar | 3 grid | 4 panel shell | 5 card head | 6 core + orbit |
+               7 HUD widgets | 8-15 compact cards | 16 full views | 17 heatmap | 18 soon |
+               19 responsive | 20 reduced motion | 21 panel finish, palette and type
+   ===================================================================================================== */
 
 /* ===== 1. tokens + page ===== */
-/* One disciplined instrument palette (shared with Dev B's files). Amber = streak/warnings only,
+/* One small instrument palette shared by every dashboard stylesheet. Amber = streak/warnings only,
    ok = positive deltas only, alert = negatives. Card identity comes from the module code, not colour. */
 :root {
   --hud-cyan: #5fd4ff;
@@ -222,7 +233,7 @@
     box-shadow 0.35s var(--ease);
   animation: dash-in 0.7s var(--ease) both;
 }
-/* corner brackets (Dev A's frame adds more; these are the quiet base) */
+/* corner brackets (the HUD frame of hud.js adds more; these are the quiet base) */
 .dash__card::before,
 .dash__card::after {
   content: "";
@@ -505,20 +516,6 @@
   display: grid;
   place-items: center;
 }
-.hg-orbit__path {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px dashed rgba(62, 230, 255, 0.25);
-  pointer-events: none;
-}
-.hg-orbit__path.is-outer {
-  inset: 0;
-}
-.hg-orbit__path.is-inner {
-  inset: 30px;
-  border-style: solid;
-  border-color: rgba(62, 230, 255, 0.1);
-}
 .hg-orbit__centre {
   position: relative;
   z-index: 1;
@@ -536,14 +533,6 @@
   z-index: 2;
   animation: hg-spin 60s linear infinite;
   pointer-events: none;
-}
-.hg-orbit__arm {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0;
-  height: 0;
-  transform: rotate(var(--a)) translateY(-170px);
 }
 .hg-sat {
   position: absolute;
@@ -563,10 +552,6 @@
   color: var(--hud-text);
   box-shadow: 0 0 14px color-mix(in srgb, var(--card-accent) 35%, transparent);
   animation: hg-spin-back 60s linear infinite;
-}
-/* the counter-spin keeps text upright: the arm's own angle is undone with the same --a */
-.hg-orbit__arm .hg-sat {
-  rotate: calc(-1 * var(--a));
 }
 .hg-sat__v {
   font: 600 15px/1 var(--mono);
@@ -700,45 +685,6 @@
 .hg-arc__tick.is-long {
   stroke: var(--card-accent);
   stroke-opacity: 0.8;
-}
-.hg-arc__seg {
-  fill: none;
-  stroke: rgba(62, 230, 255, 0.12);
-  stroke-width: 9;
-  transition:
-    stroke 0.4s,
-    filter 0.4s;
-  transition-delay: calc(var(--i) * 25ms);
-}
-.hg-arc__seg.is-on {
-  stroke: var(--card-accent);
-  filter: drop-shadow(0 0 3px var(--card-accent));
-}
-.hg-arc__seg.is-head {
-  stroke: #fff;
-}
-.hg-arc__guide {
-  fill: none;
-  stroke: rgba(62, 230, 255, 0.18);
-  stroke-dasharray: 1 3;
-}
-/* tick bar */
-.hg-ticks {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 2px;
-  height: 8px;
-}
-.hg-ticks__t {
-  display: block;
-  background: rgba(143, 176, 200, 0.16);
-  transition: background 0.3s;
-  transition-delay: calc(var(--i) * 18ms);
-}
-.hg-ticks__t.is-on {
-  background: var(--card-accent);
-  box-shadow: 0 0 4px var(--card-accent);
 }
 /* radar */
 .hg-radar {
@@ -1538,28 +1484,6 @@ a.session__title:hover {
   margin: 0;
   font-size: 12px;
 }
-.dgroups {
-  display: grid;
-  gap: 18px;
-}
-.dgroup__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid rgba(62, 230, 255, 0.3);
-}
-.dgroup__title {
-  margin: 0;
-  font: 600 11px var(--mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #3ee6ff;
-}
-.dgroup__sum {
-  font: 500 11px var(--mono);
-}
 .dfull--vitals {
   --card-accent: #3ee6ff;
 }
@@ -1703,9 +1627,6 @@ a.session__title:hover {
     width: 300px;
     height: 300px;
   }
-  .hg-orbit__arm {
-    transform: rotate(var(--a)) translateY(-150px);
-  }
   .hg-orbit__centre {
     width: 200px;
     height: 200px;
@@ -1739,7 +1660,9 @@ a.session__title:hover {
   }
 }
 
-/* ===== 20. reduced motion ===== */
+/* ===== 20. reduced motion =====
+   People who ask the OS for less motion get still panels: no spins, entrances or hover lifts. The
+   numbers and charts still update; only the movement goes. */
 @media (prefers-reduced-motion: reduce) {
   .dash__card,
   .dash__grid > *,
@@ -1756,8 +1679,6 @@ a.session__title:hover {
   .hm__cell,
   .course__fill,
   .hg-num__strip,
-  .hg-arc__seg,
-  .hg-ticks__t,
   .hg-radar__shape,
   .rings__bar,
   .cont__thumb img,
@@ -1769,7 +1690,8 @@ a.session__title:hover {
   }
 }
 
-/* ===== 21. realism pass: engineered panels, one palette, bold type ===== */
+/* ===== 21. panel finish: engineered panels, one palette, bold type =====
+   Overrides parts of sections 2-17 on purpose; keep it last in this file. */
 .dash__bg {
   background:
     radial-gradient(60% 40% at 50% 28%, rgba(95, 212, 255, 0.05), transparent 70%),
@@ -2151,8 +2073,7 @@ a.session__title:hover {
 .session__kind--notes {
   color: var(--hud-amber);
 }
-.dfull__h,
-.dgroup__title {
+.dfull__h {
   color: var(--hud-cyan);
   font-weight: 700;
 }

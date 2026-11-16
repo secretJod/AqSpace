@@ -1,30 +1,30 @@
 /* =====================================================================================================
    What this file does:
-     The dashboard screen as a "bento" of glass cards. Every card is COMPACT by default (one idea per
-     tile: a sparkline, a rings cluster, a clock arc, a thumbnail ...) and EXPANDS into a full,
-     detailed view (the stacked bar chart with ranges, the 7x24 heatmap, the whole goals list ...).
-     Also the generic "Coming soon" screen used by the AI route.
+     The dashboard screen (`AQ.dashboardView`) as a HUD grid of cards. Every card is COMPACT by default
+     (one idea per tile: a sparkline, a rings cluster, a clock arc, a thumbnail ...) and EXPANDS into a
+     full, detailed view (the stacked bar chart with ranges, the 7x24 heatmap, the whole goals list ...).
+     Also the generic "Coming soon" screen (`AQ.comingSoonView`) used by the AI route.
 
    How it fits:
      app.js mounts `AQ.dashboardView` for #/dashboard. Data comes from
        - AQ.activity   (activity-log.js: minutes per day / hour, sessions)  - optional, every call is guarded
        - AQ.store      (playlists + watch progress)
+       - AQ.hudMetrics (hud-metrics.js: the derived numbers)                 - optional
        - AQ.goals / AQ.goalsView (goals.js: data + the full goals list)      - optional
        - AQ.streakView (streak.js: compact hero card that expands itself)    - optional
-     The expand behaviour comes from expand.js (`AQ.expand.attach`) and the hover / reveal / count-up
-     effects from motion.js (`AQ.motion.*`). Both are optional: without them the cards are static.
-     Charts are drawn with AQ.charts (charts.js). Styles: css/dashboard.css (+ css/goals.css).
+       - AQ.stickyBoard (sticky-board.js: the board card)                    - optional
+     Drawing helpers: AQ.charts (charts.js), AQ.hudGauges (hud-gauges.js), AQ.hud (hud.js) and
+     AQ.neural (neural.js). The expand behaviour comes from expand.js (`AQ.expand.attach`) and the
+     hover / reveal / count-up effects from motion.js (`AQ.motion.*`). All optional: without them the
+     cards are static. Everything is built with DOM APIs and textContent (no innerHTML), so playlist
+     and video titles can never inject markup. Styles: css/dashboard.css, css/hud.css, css/mirror.css.
+
+     `?open=<cardId>` in the page query opens that card's full view right after the dashboard mounts.
 
    Start reading at:
      `mount()` in section 6, then `card()` + `attachExpand()` in section 4, then one builder in section 5.
      Each builder returns { id, node, title, refresh(tot), destroy(), renderFull(container) }.
    ===================================================================================================== */
-
-/* AQspace - dashboard + "coming soon" screens (vanilla JS, DOM APIs only, no innerHTML).
-   AQ.dashboardView.mount(container) -> {destroy()}
-   AQ.comingSoonView.mount(container, {title, text}) -> {destroy()}
-   `?open=<cardId>` in the page query opens that card's full view right after the dashboard mounts
-   (ids: today, goals, time, best, playlists, continue, split, sessions). */
 (function () {
   "use strict";
   var el = AQ.util.el;
@@ -32,10 +32,10 @@
   var RANGES = [7, 30, 90]; // the segmented control of the expanded "Time studied" card
   var SVG_NS = "http://www.w3.org/2000/svg";
 
-  // One accent colour per card (drives --card-accent: glow, chart colour, rings).
-  // HUD palette: cyan time, amber streak, green goals, violet best time, teal playlists, pink continue, gold split.
+  // One accent colour per card (drives --card-accent: glow, chart colour, rings). The palette is kept
+  // small on purpose: cyan for most cards, amber for the streak, green for goals, paper yellow for the
+  // board. A card's identity comes from its module code (below), not from its colour.
   var ACCENT = {
-    // Disciplined instrument palette: identity comes from the module code, not colour.
     streak: "#ffb020",
     today: "#5fd4ff",
     goals: "#3ddc84",
@@ -583,7 +583,7 @@
     return "Focus for today: about " + fmtMin(Math.max(15, avg)) + " keeps you on your weekly pace.";
   }
   // The "command bar": greeting + focus line on the left, a live hh:mm:ss clock + date on the right,
-  // and a one-line system log under it (AQ.hud.ticker from Dev A, or a small local rotation).
+  // and a one-line system log under it (AQ.hud.ticker from hud.js, or a small local rotation).
   // Returns { node, destroy() } because the clock and the log run timers.
   function hhmmss(d) {
     return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
@@ -601,6 +601,7 @@
 
     var right = el("div", "dash__clockbox");
     var clock = el("p", "dash__clock", hhmmss(new Date()));
+    // role=timer with aria-live off: a clock that ticks every second must not flood screen readers
     clock.setAttribute("role", "timer");
     clock.setAttribute("aria-live", "off");
     right.appendChild(clock);
@@ -608,6 +609,7 @@
     right.appendChild(date);
     head.appendChild(right);
 
+    // the system log repeats numbers shown on the cards, so it is decoration for screen readers
     var log = el("div", "dash__log");
     log.setAttribute("aria-hidden", "true");
     log.appendChild(el("span", "dash__log-tag", "SYS.LOG"));
@@ -620,7 +622,8 @@
       clock.textContent = hhmmss(d);
       if (d.getSeconds() === 0) date.textContent = longDate(d).toUpperCase();
     }, 1000);
-    // the system log: Dev A's ticker when it exists, otherwise rotate the lines every 4 s
+    // the system log: hud.js's typed ticker when it exists, otherwise rotate the lines every 4 s
+    // (and not at all under reduced motion)
     var hudTicker = null,
       logTimer = 0;
     if (window.AQ && AQ.hud && typeof AQ.hud.ticker === "function")
@@ -1712,7 +1715,7 @@
   }
 
   // --- 5k. The HUD hero: arc-reactor core (minutes this week) with orbiting satellites -------------------
-  // AQ.hud.core (Dev A) draws the reactor when it exists; otherwise the local fallback from hud-gauges.js.
+  // AQ.hud.core (hud.js) draws the reactor when it exists; otherwise the fallback from hud-gauges.js.
   // Each satellite is a button that opens its card through `openById(id)` (given by mount()).
   function coreSub(m) {
     return m ? "FCST " + fmtShort(m.projected).toUpperCase() : "";
@@ -2043,6 +2046,12 @@
     );
     return m ? m[1].toLowerCase() : null;
   }
+  /**
+   * Draws the dashboard into `container` and keeps it live (charts re-draw when activity, goals or
+   * playlists change).
+   * @param {HTMLElement} container the #view element
+   * @returns {{destroy: function(): void}} stops every timer, listener and effect and removes the screen
+   */
   function mount(container) {
     var alive = true;
     var tot = totals();
@@ -2129,11 +2138,11 @@
       if (rv) {
         effects.push(rv);
         grid.classList.add("is-motion");
-      } // motion.js owns the entrance now
+      } // with motion.js present it plays the entrance instead of the CSS one
     }
 
-    // ===== HUD + neural layer (Dev A) =====
-    // Backdrop (hex grid + retro floor), HUD frames on every card, and the neural canvas whose threads
+    // ----- HUD and neural layer -----
+    // Backdrop (hex grid + perspective floor), HUD frames on every card, and the neural canvas whose threads
     // join the cards. All handles go into `effects`, so destroy() below cleans them up.
     if (AQ.hud) {
       effects.push(
@@ -2160,7 +2169,6 @@
         }, null)
       );
     }
-    // ===== end HUD + neural layer (Dev A) =====
 
     // ?open=<id>: open that card once the reveal has settled
     var wanted = openParam(),
@@ -2218,6 +2226,12 @@
   }
 
   // ===== 7. The generic "Coming soon" screen (used by the AI route) =====
+  /**
+   * Draws a "Coming soon" placeholder with a link back to the dashboard.
+   * @param {HTMLElement} container
+   * @param {{title?: string, text?: string}} [opts]
+   * @returns {{destroy: function(): void}}
+   */
   function mountSoon(container, opts) {
     opts = opts || {};
     var box = el("div", "empty soon");
@@ -2239,6 +2253,6 @@
   }
 
   // ===== 8. Public API =====
-  AQ.dashboardView = { mount: mount, greeting: greeting, ACCENT: ACCENT };
+  AQ.dashboardView = { mount: mount };
   AQ.comingSoonView = { mount: mountSoon };
 })();

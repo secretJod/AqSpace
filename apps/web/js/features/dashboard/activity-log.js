@@ -1,26 +1,26 @@
 /* =====================================================================================================
    What this file does:
-     The activity log: a compact list of learning sessions (watched a video, notes finished, playlist
-     created, a review). Every dashboard chart and the goals card read their numbers from here.
-     No DOM code in this file.
+     The activity log (`AQ.activity`): a compact list of learning sessions (watched a video, notes
+     finished, playlist created, a review). Every dashboard chart and the goals card read their numbers
+     from here. No DOM code in this file.
 
    How it fits:
-     Loaded after streak.js and before activity-hooks.js / goals.js / dashboard.js.
-     activity-hooks.js writes sessions with `AQ.activity.log(...)` when the app is used.
-     Charts read with `minutesByDay`, `minutesByHour`, `weekdayHeat`, `totals`, `recent`, `sessions`
-     and re-draw themselves from `AQ.activity.subscribe(fn)`.
-     Each `log()` also calls `AQ.streak.record(kind, 1, {minutes})` so the streak card stays in sync
-     (unless the caller passes `{streak: false}`; see activity-hooks.js for why).
+     Loaded after streak.js and before activity-hooks.js / goals.js / hud-metrics.js / dashboard.js.
+     activity-hooks.js writes sessions with `log()` and `extend()` while the app is used. Readers call
+     `minutesByDay`, `minutesByHour`, `weekdayHeat`, `totals`, `count`, `recent` and re-draw from
+     `subscribe(fn)`. Each `log()` also calls `AQ.streak.record(kind, 1, {minutes})`, so the activity
+     log is the one place that feeds the streak.
+
+   Storage:
+     localStorage key `aq.activitylog.v1` = JSON array of sessions, oldest first:
+       Session = { id, kind: "watch"|"notes"|"playlist"|"review", videoId?, playlistId?, title?,
+                   start (ISO), minutes (number, may be 0), hour (0-23, local hour of `start`) }
+     Days are LOCAL calendar days. Every stored field is re-validated on load because localStorage can
+     be edited by hand or by another tab. If storage is blocked the log keeps working in memory.
 
    Start reading at:
-     The session shape below, then `log()` (section 3) and `minutesByDay()` (section 4).
+     `log()` (section 3), then `minutesByDay()` (section 4).
    ===================================================================================================== */
-
-/* AQspace - activity log (data only).
-   localStorage key `aq.activitylog.v1` = JSON array of sessions, oldest first:
-   Session = { id, kind: "watch"|"notes"|"playlist"|"review", videoId?, playlistId?, title?,
-               start (ISO), minutes (number, may be 0), hour (0-23, local hour of `start`) }
-   Dates/days are LOCAL calendar days. If storage is blocked the log keeps working in memory. */
 window.AQ = window.AQ || {};
 (function (AQ) {
   "use strict";
@@ -33,7 +33,6 @@ window.AQ = window.AQ || {};
   var PID_RE = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
   var sessions = [];
-  var storageOk = true;
   var listeners = [];
   var emitTimer = null;
 
@@ -100,7 +99,7 @@ window.AQ = window.AQ || {};
     try {
       raw = localStorage.getItem(KEY);
     } catch {
-      storageOk = false;
+      /* storage blocked: start empty and keep the log in memory */
     }
     if (!raw) return;
     var arr;
@@ -125,9 +124,8 @@ window.AQ = window.AQ || {};
     if (sessions.length > MAX_SESSIONS) sessions.splice(0, sessions.length - MAX_SESSIONS);
     try {
       localStorage.setItem(KEY, JSON.stringify(sessions));
-      storageOk = true;
     } catch {
-      storageOk = false;
+      /* storage blocked or full: the in-memory log stays correct for this tab */
     }
   }
   /* Subscribers are told at most a few times per second (watch sessions grow every second). */
@@ -149,9 +147,13 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 3. writing =====
-  /** Add a session for "now". kind: "watch" | "notes" | "playlist" | "review".
-      opts: { videoId, playlistId, title, minutes, streak }  (streak:false = do not tell AQ.streak)
-      Returns the stored session (or null for an unknown kind). */
+  /**
+   * Adds a session that starts now and tells AQ.streak about it.
+   * @param {"watch"|"notes"|"playlist"|"review"} kind
+   * @param {{videoId?: string, playlistId?: string, title?: string, minutes?: number, streak?: boolean}} [opts]
+   *   `streak: false` skips the AQ.streak.record call.
+   * @returns {object|null} the stored session, or null for an unknown kind
+   */
   function log(kind, opts) {
     opts = opts || {};
     var s = cleanSession({
@@ -170,7 +172,13 @@ window.AQ = window.AQ || {};
     emit({ type: "log", session: s });
     return s;
   }
-  /** Grow an open session (the player saves position every second; one session per sitting keeps the log small). */
+  /**
+   * Adds minutes to an open session. The player saves its position every second, so one session per
+   * sitting (grown here) keeps the log small.
+   * @param {string} id session id returned by log()
+   * @param {number} minutes minutes to add (ignored unless > 0)
+   * @returns {object|null} the updated session, or null when the id is unknown or nothing was added
+   */
   function extend(id, minutes) {
     var s = find(id),
       add = num(minutes);
@@ -192,12 +200,6 @@ window.AQ = window.AQ || {};
     } catch {
       /* the streak is a bonus, never a blocker */
     }
-  }
-  /** Wipe everything (used by tests). */
-  function clear() {
-    sessions = [];
-    save();
-    emit({ type: "clear" });
   }
 
   // ===== 4. reading =====
@@ -222,7 +224,11 @@ window.AQ = window.AQ || {};
     return round1(t);
   }
 
-  /** The last `days` days (today included): [{ date: "YYYY-MM-DD", minutes, byKind: {watch, notes, ...}, count }] */
+  /**
+   * Minutes per day for the last `days` days, today included, oldest first.
+   * @param {number} [days=7]
+   * @returns {{date: string, minutes: number, byKind: Object<string, number>, count: number}[]}
+   */
   function minutesByDay(days) {
     days = Math.max(1, Math.floor(+days || 7));
     var t = today(),
@@ -243,7 +249,10 @@ window.AQ = window.AQ || {};
     });
     return out;
   }
-  /** 24 numbers: minutes per local hour of day (all time). */
+  /**
+   * Minutes studied per local hour of day, over all time.
+   * @returns {number[]} 24 numbers, index = hour
+   */
   function minutesByHour() {
     var out = [];
     for (var h = 0; h < 24; h++) out.push(0);
@@ -252,7 +261,10 @@ window.AQ = window.AQ || {};
     });
     return out;
   }
-  /** 7 rows (Mon..Sun) x 24 hours: minutes. */
+  /**
+   * Minutes per weekday and hour, over all time (the heatmap data).
+   * @returns {number[][]} 7 rows (Mon..Sun) of 24 numbers
+   */
   function weekdayHeat() {
     var out = [];
     for (var d = 0; d < 7; d++) {
@@ -265,7 +277,11 @@ window.AQ = window.AQ || {};
     });
     return out;
   }
-  /** Minutes: { today, week (Mon..today), lastWeek (full), month (calendar month), allTime } */
+  /**
+   * Minute totals for the usual periods.
+   * @returns {{today: number, week: number, lastWeek: number, month: number, allTime: number}}
+   *   `week` runs Monday..today, `lastWeek` is the full previous week, `month` the calendar month.
+   */
   function totals() {
     var t = today(),
       monday = addDays(t, -weekdayIdx(t)),
@@ -278,17 +294,31 @@ window.AQ = window.AQ || {};
       allTime: sumMinutes(sessions)
     };
   }
-  /** How many sessions of a kind in a range (goals: "3 notes this week"). */
+  /**
+   * Counts sessions of one kind in a range (goals use it for "3 notes this week").
+   * @param {string} [kind] session kind; empty counts every kind
+   * @param {{from?: *, to?: *}} [range] see list()
+   * @returns {number}
+   */
   function count(kind, range) {
     return list(range).filter(function (s) {
       return !kind || s.kind === kind;
     }).length;
   }
-  /** Newest n sessions, newest first. */
+  /**
+   * The newest sessions.
+   * @param {number} [n=10]
+   * @returns {object[]} newest first
+   */
   function recent(n) {
     n = Math.max(1, Math.floor(+n || 10));
     return sessions.slice(-n).reverse();
   }
+  /**
+   * Calls `fn(event)` after the log changes (batched, at most every 250 ms).
+   * @param {function({type: string, session?: object}): void} fn
+   * @returns {function(): void} unsubscribe
+   */
   function subscribe(fn) {
     if (typeof fn !== "function") return function () {};
     listeners.push(fn);
@@ -300,8 +330,8 @@ window.AQ = window.AQ || {};
   }
 
   // ===== 5. start =====
-  // (no sample data: everything here comes from real use; js/core/demo-cleanup.js removed the old demo history)
   load();
+  // Another tab may write the log too: reload when it does so both tabs show the same numbers.
   try {
     window.addEventListener("storage", function (e) {
       if (e.key === KEY) {
@@ -314,22 +344,14 @@ window.AQ = window.AQ || {};
   }
 
   AQ.activity = {
-    KEY: KEY,
-    KINDS: KINDS,
     log: log,
     extend: extend,
-    clear: clear,
-    sessions: list,
     minutesByDay: minutesByDay,
     minutesByHour: minutesByHour,
     weekdayHeat: weekdayHeat,
     totals: totals,
     count: count,
     recent: recent,
-    subscribe: subscribe,
-    dayKey: dayKey,
-    storageOk: function () {
-      return storageOk;
-    }
+    subscribe: subscribe
   };
 })(window.AQ);

@@ -1,18 +1,19 @@
-/*
-What: JARVIS-style HUD chrome for the dashboard: an arc-reactor "core" widget, card frames
-      (corner brackets + hover scan line + Border Beam), a decode/scramble text effect, a typed
-      system-log ticker and a page backdrop (hex grid + retro grid floor + scan sweep).
-How it fits: pure decoration on top of dashboard.js. Every function returns a handle with destroy().
-      All animation is CSS (css/hud.css) except the scramble + ticker, which use a few timers.
-      prefers-reduced-motion: CSS stops the animations, scramble/ticker write the final text at once.
-Start reading at: section 6, the public API at the bottom.
+/* =====================================================================================================
+   What this file does:
+     HUD chrome for the dashboard (`AQ.hud`): an arc-reactor "core" widget, card frames (corner
+     brackets, hover scan line, border beam), a typed system-log ticker and a page backdrop (hex grid,
+     perspective floor, scan sweep). The core's numbers settle with a short "decode" text effect.
 
-AQ.hud.core(container, { label, value, sub }) -> { set(value, sub), destroy() }
-AQ.hud.frame(cardEl)                          -> { destroy() }
-AQ.hud.scramble(el, text, { duration })      -> { cancel() }
-AQ.hud.ticker(container, getLines)            -> { refresh(), destroy() }   getLines() -> ["SYNC ...", ...]
-AQ.hud.backdrop(container)                    -> { destroy() }
-*/
+   How it fits:
+     Depends on nothing; loaded before dashboard.js, which calls core(), frame(), ticker() and
+     backdrop(). Pure decoration: every function returns a handle with destroy(). All animation is CSS
+     (css/hud.css) except the decode effect and the ticker, which use a few timers. Under
+     prefers-reduced-motion the CSS stops the animations and the timers write the final text at once.
+     Text is always written with textContent; decorative layers are aria-hidden.
+
+   Start reading at:
+     `core()` (section 3), then `ticker()` (section 5).
+   ===================================================================================================== */
 (function () {
   "use strict";
   var AQ = (window.AQ = window.AQ || {});
@@ -38,6 +39,7 @@ AQ.hud.backdrop(container)                    -> { destroy() }
   }
 
   // ===== 2. scramble(): random glyphs settle to the final text, left -> right =====
+  // Returns { cancel() }; cancel writes the final text at once.
   function scramble(el, text, opts) {
     text = String(text);
     var duration = (opts && opts.duration) || 700;
@@ -112,6 +114,12 @@ AQ.hud.backdrop(container)                    -> { destroy() }
       "stroke-dasharray": (seg * 0.7).toFixed(1) + " " + (seg * 0.3).toFixed(1)
     });
   }
+  /**
+   * Draws the arc-reactor core (spinning tick rings around a label, value and sub line).
+   * @param {HTMLElement} container
+   * @param {{label?: string, value?: string|number, sub?: string}} [opts]
+   * @returns {{set: function(*, *=): void, destroy: function(): void}} set(value, sub) updates the text
+   */
   function core(container, opts) {
     opts = opts || {};
     var box = div("hud-core");
@@ -151,7 +159,12 @@ AQ.hud.backdrop(container)                    -> { destroy() }
     };
   }
 
-  // ===== 4. frame(): corner brackets + scan line + Border Beam on a card =====
+  // ===== 4. frame(): corner brackets + scan line + border beam on a card =====
+  /**
+   * Adds the HUD frame layer (corner brackets, scan line, border beam) to a card. aria-hidden.
+   * @param {HTMLElement} cardEl
+   * @returns {{destroy: function(): void}}
+   */
   function frame(cardEl) {
     var layer = div("hud-frame");
     layer.setAttribute("aria-hidden", "true");
@@ -171,8 +184,16 @@ AQ.hud.backdrop(container)                    -> { destroy() }
   }
 
   // ===== 5. ticker(): a typed, one-line system log =====
+  /**
+   * A one-line log that types out each line, holds it, then moves on. Under reduced motion each line
+   * is shown whole for 5 s.
+   * @param {HTMLElement} container
+   * @param {function(): string[]} getLines called again once per cycle, so the lines follow real data
+   * @returns {{refresh: function(): void, destroy: function(): void}}
+   */
   function ticker(container, getLines) {
     var box = div("hud-ticker");
+    // role=status so screen readers hear each finished line politely; the caret is decoration only
     box.setAttribute("role", "status");
     var prompt = document.createElement("span");
     prompt.className = "hud-ticker__prompt";
@@ -238,6 +259,11 @@ AQ.hud.backdrop(container)                    -> { destroy() }
   }
 
   // ===== 6. backdrop(): hex grid + perspective floor + scan sweep (all CSS) =====
+  /**
+   * Inserts the decorative page backdrop as the container's first child (aria-hidden).
+   * @param {HTMLElement} container
+   * @returns {{destroy: function(): void}}
+   */
   function backdrop(container) {
     var layer = div("hud-backdrop");
     layer.setAttribute("aria-hidden", "true");
@@ -256,5 +282,5 @@ AQ.hud.backdrop(container)                    -> { destroy() }
     };
   }
 
-  AQ.hud = { core: core, frame: frame, scramble: scramble, ticker: ticker, backdrop: backdrop };
+  AQ.hud = { core: core, frame: frame, ticker: ticker, backdrop: backdrop };
 })();

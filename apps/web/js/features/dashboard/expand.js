@@ -5,21 +5,19 @@
 
    How it fits:
      Any card calls `AQ.expand.attach(cardEl, { title, renderFull(container) })`. streak.js uses it so
-     the compact streak card opens the full streak view; dashboard.js can use it for every other card.
-     Styles: css/expand.css. Needs only AQ.util (optional) - load it before the cards that use it.
+     the compact streak card opens the full streak view; dashboard.js uses it for every other card.
+     neural.js asks `isOpen()` to pause while a panel covers the page. Styles: css/expand.css.
+     Uses AQ.util.el when present (optional); load it before the cards that use it.
+     The card may set the CSS variable `--card-accent`; the panel's glow uses it.
+
+   Accessibility:
+     The card becomes role="button" with aria-expanded; the panel is an aria-modal dialog with a focus
+     trap, Esc to close and focus returned to the card. Under prefers-reduced-motion the panel opens and
+     closes without the morph.
 
    Start reading at:
      `attach()` (section 6), then `open()` (section 4) and the two animation strategies (section 3).
    ===================================================================================================== */
-
-/* AQspace - expanding cards.
-   AQ.expand.attach(card, opts) -> { open(), close(), destroy() }
-     opts.title        heading of the full panel (string)
-     opts.renderFull   function (container) -> { destroy() } | undefined; fills the panel body
-     opts.onOpen       optional callback after the panel is open
-     opts.onClose      optional callback after the panel is closed
-   AQ.expand.closeAll(), AQ.expand.isOpen()
-   The card may set a CSS variable `--card-accent` (any colour); the panel's glow uses it. */
 window.AQ = window.AQ || {};
 (function (AQ) {
   "use strict";
@@ -319,6 +317,16 @@ window.AQ = window.AQ || {};
   // ===== 6. Attaching a card =====
   var INTERACTIVE = "a[href], button, input, select, textarea, [data-no-expand]";
 
+  /**
+   * Makes a card open a full-size panel on click, Enter or Space.
+   * @param {HTMLElement} card
+   * @param {object} [opts]
+   * @param {string} [opts.title] heading (and accessible name) of the panel
+   * @param {function(HTMLElement): ({destroy: function(): void}|void)} [opts.renderFull] fills the panel body
+   * @param {function(): void} [opts.onOpen] called after the panel is open
+   * @param {function(): void} [opts.onClose] called after the panel is closed
+   * @returns {{open: function(): void, close: function(): void, destroy: function(): void}}
+   */
   function attach(card, opts) {
     opts = opts || {};
     card.classList.add("xp-card");
@@ -409,12 +417,15 @@ window.AQ = window.AQ || {};
   // ===== 8. Public API =====
   AQ.expand = {
     attach: attach,
+    /** Closes the open panel, if any (animated unless reduced motion). */
     closeAll: function () {
       if (current) close();
     },
+    /**
+     * @returns {boolean} true while a panel is open
+     */
     isOpen: function () {
       return !!current;
-    },
-    DURATION: DURATION
+    }
   };
 })(window.AQ);

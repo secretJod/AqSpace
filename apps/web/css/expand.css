@@ -1,7 +1,16 @@
-/* What this file styles:
-   The expanding-card system (js/features/dashboard/expand.js): the clickable card state, the blurred
-   backdrop, the large dialog panel with its accent glow, and the view-transition morph.
-   Classes start with `xp`. Linked from index.html (order matters: see README.md). */
+/* =====================================================================================================
+   What this file styles:
+     The expanding-card system (js/features/dashboard/expand.js): the clickable card state, the blurred
+     backdrop, the large dialog panel with its accent glow, and the view-transition morph.
+
+   How it fits:
+     Classes start with `xp`. Linked from index.html after dashboard.css (order matters: see
+     README.md). The panel's glow reads the card's --card-accent through --xp-accent. Section 7 drops
+     the morph under prefers-reduced-motion.
+
+   Start reading at:
+     Section 4 (the panel).
+   ===================================================================================================== */
 
 /* ===== 1. the card while attached ===== */
 .xp-card {
@@ -17,7 +26,9 @@
   visibility: hidden;
 }
 
-/* ===== 2. page lock ===== */
+/* ===== 2. page lock =====
+   While a panel is open the page behind it must not scroll. The scrollbar's width is added back as
+   padding (expand.js measures it into --xp-sbw) so the page does not jump sideways. */
 body.xp-open {
   overflow: hidden;
   padding-right: var(--xp-sbw, 0px);

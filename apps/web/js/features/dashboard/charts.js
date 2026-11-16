@@ -1,28 +1,20 @@
 /* =====================================================================================================
    What this file does:
      Small chart helpers for the dashboard (`AQ.charts`). They wrap Chart.js (js/vendor/chart.umd.js)
-     with ONE shared dark "glass" theme (fonts, grid lines, tooltips, gradient fills, draw-in animation)
+     with ONE shared dark HUD theme (fonts, grid lines, tooltips, gradient fills, draw-in animation)
      so the dashboard cards never repeat that configuration. The heatmap is drawn with plain DOM.
 
    How it fits:
-     Loaded after js/vendor/chart.umd.js and before dashboard.js. dashboard.js calls
-     `AQ.charts.area(...)` (edge-to-edge sparkline / full line), `bar(...)`, `donut(...)`, `heatmap(...)`.
-     Every helper returns { update(data), destroy() }; `update` animates in place (chart.update),
-     it never rebuilds the chart. `line()` and `sparkline()` stay as thin aliases of `area()`.
+     Needs AQ.util.el (util.js) and the vendored Chart.js (js/vendor/chart.umd.js, served from our own
+     origin because the CSP only allows same-origin scripts). Loaded before dashboard.js, which calls
+     `area()`, `bar()`, `donut()` and `heatmap()`. Every helper returns { update(data), destroy() };
+     `update` animates in place (chart.update), it never rebuilds the chart. Without Chart.js the
+     helpers return a harmless no-op handle. Under prefers-reduced-motion all chart animation is off.
+     A series is `{ label, data: number[], color? }`; colours default to PALETTE in order.
 
    Start reading at:
      `THEME` (the colours), then `area()` in section 3.
    ===================================================================================================== */
-
-/* AQspace - chart wrappers.
-   AQ.charts.PALETTE                                        fixed colour order for categories (validated for colour blindness)
-   AQ.charts.area(canvas, {data|series, color, compact, labels, minutes, drawIn})
-                                                            -> {update({data|series, labels}), destroy(), chart}
-                                                            compact = no axes, no padding, no tooltip (a sparkline that bleeds to the edges)
-   AQ.charts.bar(canvas, {labels, series, stacked, onClick, compact}) -> {update({labels, series}), destroy(), chart}
-   AQ.charts.donut(canvas, {labels, values, legend, center: {value, label}}) -> {update({labels, values, center}), destroy(), chart}
-   AQ.charts.heatmap(container, matrix, opts)               -> {update(matrix), destroy()}   7 rows x 24 columns, DOM cells
-   series = [{ label, data: [numbers], color? }]            colours default to PALETTE in order. */
 (function () {
   "use strict";
   var el = AQ.util.el;
@@ -143,7 +135,11 @@
     return base;
   }
 
-  // "1 hr 5 min" for a number of minutes (tooltips and axis ticks).
+  /**
+   * Formats minutes for tooltips and axis ticks.
+   * @param {number} min
+   * @returns {string} "45 min", "1 hr 5 min", "2 hr"
+   */
   function fmtMinutes(min) {
     min = Math.round(+min || 0);
     if (min < 60) return min + " min";
@@ -285,6 +281,13 @@
       };
     });
   }
+  /**
+   * A bar chart (stacked by kind when asked, rounded tops).
+   * @param {HTMLCanvasElement} canvas
+   * @param {{labels?: string[], series?: object[], stacked?: boolean, onClick?: function(number): void, compact?: boolean}} [opts]
+   *   onClick receives the index of the clicked bar; compact hides axes and tooltips
+   * @returns {{chart: object|null, update: function({labels?: string[], series?: object[]}): void, destroy: function(): void}}
+   */
   function bar(canvas, opts) {
     opts = opts || {};
     applyDefaults();
@@ -377,6 +380,15 @@
     if (opts.series) return opts.series;
     return [{ label: opts.label || "Minutes", data: opts.data || [], color: opts.color }];
   }
+  /**
+   * A smooth line with a vertical gradient fill. `compact` gives an edge-to-edge sparkline with no
+   * axes, padding or tooltip.
+   * @param {HTMLCanvasElement} canvas
+   * @param {{data?: number[], series?: object[], label?: string, color?: string, compact?: boolean,
+   *   labels?: Array, minutes?: boolean, drawIn?: boolean, maxTicks?: number}} [opts] pass `data` for one
+   *   series or `series` for several; `minutes: false` shows raw numbers instead of "1 hr 5 min"
+   * @returns {{chart: object|null, update: function({data?: number[], series?: object[], labels?: Array}): void, destroy: function(): void}}
+   */
   function area(canvas, opts) {
     opts = opts || {};
     applyDefaults();
@@ -427,15 +439,6 @@
           return i;
         });
     });
-  }
-  // Older names, kept so nothing else breaks.
-  function line(canvas, opts) {
-    return area(canvas, opts);
-  }
-  function sparkline(canvas, opts) {
-    opts = opts || {};
-    opts.compact = true;
-    return area(canvas, opts);
   }
 
   // ===== 4. Donut (share of time per playlist) with an optional centre label =====
@@ -499,6 +502,13 @@
       ctx.restore();
     }
   };
+  /**
+   * A donut (share of time per playlist) with an optional centre label.
+   * @param {HTMLCanvasElement} canvas
+   * @param {{labels?: string[], values?: number[], colors?: string[], legend?: string|false,
+   *   center?: {value: string, label: string}}} [opts] legend is a position ("right" by default) or false
+   * @returns {{chart: object|null, update: function({labels?: string[], values?: number[], center?: object}): void, destroy: function(): void}}
+   */
   function donut(canvas, opts) {
     opts = opts || {};
     applyDefaults();
@@ -555,6 +565,10 @@
 
   // ===== 5. Heatmap (7 weekdays x 24 hours, plain DOM so hover/tooltip/focus are normal elements) =====
   var DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  /**
+   * @param {number} h hour 0..23
+   * @returns {string} "12 am", "3 pm", ...
+   */
   function hourLabel(h) {
     if (h === 0) return "12 am";
     if (h === 12) return "12 pm";
@@ -566,6 +580,14 @@
     var r = value / max;
     return r < 0.2 ? 1 : r < 0.45 ? 2 : r < 0.75 ? 3 : 4;
   }
+  /**
+   * A 7 x 24 heatmap of plain DOM cells. Plain elements (not a canvas) so hover, tooltip and focus work
+   * like any other element; the whole grid also has one role="img" label for screen readers.
+   * @param {HTMLElement} container
+   * @param {number[][]} matrix 7 rows (Mon..Sun) of 24 minute values
+   * @param {object} [opts] unused, accepted for symmetry with the other helpers
+   * @returns {{update: function(number[][]): void, destroy: function(): void}}
+   */
   function heatmap(container, matrix, opts) {
     var root = el("div", "hm");
     root.setAttribute("role", "img");
@@ -651,17 +673,13 @@
 
   // ===== 6. Public API =====
   AQ.charts = {
+    /** Fixed colour order for categories, checked for colour blindness on the dark panel. */
     PALETTE: PALETTE,
-    THEME: THEME,
-    available: hasChartJs,
     fmtMinutes: fmtMinutes,
     hourLabel: hourLabel,
-    rgba: rgba,
     area: area,
     bar: bar,
-    line: line,
     donut: donut,
-    sparkline: sparkline,
     heatmap: heatmap
   };
 })();

@@ -1,15 +1,19 @@
 /* =====================================================================================================
-   What this file does:  the "obsidian glass" finish for the dashboard. Every panel becomes a slab of
-                         polished black glass: a bevelled edge that catches light from above, a specular
-                         sheen on the top third, a soft diagonal reflection, a few pixels of visible
-                         thickness under it, a glare that follows the pointer and a faint mirror reflection
-                         on the floor below. Small readouts inside the cards become recessed glass wells.
-                         The core gets a glass lens and a tilted 3D orbit for its four satellites.
-   How it fits:          loaded LAST (after achievements.css) so it overrides the earlier "gunmetal" pass in
-                         dashboard.css section 21 and goals.css. Only CSS; the 3D orbit positions come from
-                         hud-gauges.js orbit(), which sets --orx/--ory and a per-chip --d (depth 0..1).
-                         The pointer glare uses --mx/--my from motion.js spotlight().
-   Start reading at:     section 1 (tokens), then 2 (the slab).
+   What this file styles:
+     The "obsidian glass" finish for the dashboard. Every panel becomes a slab of polished black glass:
+     a bevelled edge that catches light from above, a specular sheen on the top third, a soft diagonal
+     reflection, a few pixels of visible thickness under it, a glare that follows the pointer and a
+     faint mirror reflection on the floor below. Small readouts inside the cards become recessed glass
+     wells. The core gets a glass lens and a tilted 3D orbit for its four satellites.
+
+   How it fits:
+     Loaded LAST in index.html (after achievements.css) so it overrides the gunmetal panels of
+     dashboard.css section 21 and goals.css. Only CSS: the 3D orbit positions come from hud-gauges.js
+     orbit(), which sets --orx/--ory and a per-chip --d (depth 0..1); the pointer glare uses --mx/--my
+     from motion.js spotlight().
+
+   Start reading at:
+     Section 1 (tokens), then 2 (the slab).
    ===================================================================================================== */
 
 /* ===== 1. tokens ===== */
@@ -48,14 +52,15 @@
     var(--gl-streak) padding-box,
     var(--gl-base) padding-box,
     var(--gl-bevel) border-box;
+  /* top lip of the glass, edges that darken, three stacked edges for visible thickness, then the drop shadow */
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    /* top lip of the glass */ inset 0 -1px 0 rgba(0, 0, 0, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.9),
     inset 0 0 30px rgba(0, 0, 0, 0.55),
-    /* the glass gets darker towards its edges */ 0 1px 0 #15191e,
+    0 1px 0 #15191e,
     0 2px 0 #0a0c0f,
     0 3px 0 #030405,
-    /* visible thickness: three stacked edges */ 0 26px 50px -18px rgba(0, 0, 0, 0.95),
+    0 26px 50px -18px rgba(0, 0, 0, 0.95),
     0 10px 22px -10px rgba(0, 0, 0, 0.8);
   /* the polished floor: the lower part of the slab mirrored into the gap below it */
   -webkit-box-reflect: below 5px linear-gradient(transparent 0 86%, rgba(255, 255, 255, 0.09) 100%);
@@ -64,7 +69,7 @@
   --gl-radius: 22px;
 }
 
-/* the old inner rule: now a second, finer glass edge 1px inside the bevel */
+/* ::before (a plain inner rule in dashboard.css) becomes a second, finer glass edge 1px inside the bevel */
 .dash .dash__card:is(:not(.dash__card--bare), .dash__card--streak)::before,
 .dash .dash__head::before {
   inset: 1px;
@@ -78,7 +83,7 @@
   z-index: 0;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
 }
-/* the old chamfer line: now the pointer glare (motion.js spotlight sets --mx/--my) */
+/* ::after (a chamfer line in dashboard.css) becomes the pointer glare (motion.js spotlight sets --mx/--my) */
 .dash .dash__card:is(:not(.dash__card--bare), .dash__card--streak)::after,
 .dash .dash__head::after {
   display: block;
@@ -131,7 +136,7 @@
   --mo-lift: -4px;
 }
 
-/* the HUD bracket corners and the beam were made for square panels: retire the brackets, keep a quiet beam */
+/* the HUD bracket corners and the beam suit square panels: hide the brackets on the rounded glass, keep a quiet beam */
 .dash .dash__card .hud-frame__corner,
 .dash .dash__head .hud-frame__corner {
   display: none;
@@ -185,7 +190,6 @@
 .dash .readouts--full .readout,
 .dash .stk-stat,
 .dash .dash__core-strip,
-.dash .hg-tile,
 .dfull .dstat,
 .dfull .readouts--full .readout {
   border-radius: 11px;
@@ -234,10 +238,11 @@
   z-index: -1;
   border-radius: 50%;
   pointer-events: none;
+  /* top specular, the reactor glow inside the glass, then the dark glass itself */
   background:
     radial-gradient(60% 34% at 50% 14%, rgba(255, 255, 255, 0.13), transparent 70%),
-    /* top specular */ radial-gradient(circle at 50% 60%, rgba(95, 212, 255, 0.07), transparent 60%),
-    /* the reactor glow inside the glass */ radial-gradient(circle at 50% 40%, #12161b 0%, #06080a 58%, #000 100%);
+    radial-gradient(circle at 50% 60%, rgba(95, 212, 255, 0.07), transparent 60%),
+    radial-gradient(circle at 50% 40%, #12161b 0%, #06080a 58%, #000 100%);
   box-shadow:
     inset 0 2px 1px rgba(255, 255, 255, 0.18),
     inset 0 -14px 30px rgba(0, 0, 0, 0.9),
@@ -390,7 +395,8 @@
       border-box;
 }
 
-/* ===== 8. reduced motion: same glass, no movement ===== */
+/* ===== 8. reduced motion: same glass, no movement =====
+   The satellites stop gliding between orbit positions for people who ask the OS for less motion. */
 @media (prefers-reduced-motion: reduce) {
   .dash .hg-orbit.is-3d .hg-sat {
     transition: none;

@@ -1,8 +1,15 @@
-/*
-What: placement of the neural-network canvas drawn by js/features/dashboard/neural.js.
-How it fits: the canvas sits behind the dashboard content (z-index 0), content is lifted to z-index 1.
-Start reading at: .neural
-*/
+/* =====================================================================================================
+   What this file styles:
+     The placement of the neural-network canvas drawn by js/features/dashboard/neural.js.
+
+   How it fits:
+     Linked from index.html after dashboard.css. The canvas sits behind the dashboard content
+     (z-index 0) and the command bar and grid are lifted to z-index 1. The canvas never takes pointer
+     events, so every card stays clickable.
+
+   Start reading at:
+     `.neural`.
+   ===================================================================================================== */
 
 /* 1. The host (the .dash page) keeps its own stacking context */
 .neural-host {

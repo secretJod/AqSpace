@@ -1,6 +1,6 @@
 /* =====================================================================================================
    What this file does:
-     Computes the "more values on the table" numbers of the HUD dashboard in ONE place:
+     Computes the derived numbers of the HUD dashboard (`AQ.hudMetrics`) in ONE place:
      focus score, daily average, consistency, longest session, deep-work sessions, pace vs goal,
      projected minutes this week, momentum, best weekday, peak hour, lectures watched, completion %,
      notes per lecture, next streak milestone, estimated finish date, and the 5 habit scores of the
@@ -232,6 +232,13 @@
   }
 
   // ===== 4. Everything at once =====
+  /**
+   * Computes every HUD number from the current data. Never throws: a missing source gives zeros.
+   * @returns {object} flat record: focus, dailyAvg, consistency, activeDays, longest, deepWork,
+   *   sessions30, pace, paceAgainst, weeklyTarget, projected, momentum, last7, prev7, peakHour,
+   *   bestWeekday, hours, lecturesWatched, lecturesTotal, completion, notesTotal, notesPerLecture,
+   *   streak, milestone, finish, goalsOpen, goalsOnTrack, goalsTotal, habits, spark14
+   */
   function compute() {
     var tot = totals();
     var d30 = dayRows(30),
@@ -366,5 +373,5 @@
     };
   }
 
-  AQ.hudMetrics = { compute: compute, DEEP_WORK_MIN: DEEP_WORK_MIN };
+  AQ.hudMetrics = { compute: compute };
 })();

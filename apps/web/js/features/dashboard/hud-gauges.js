@@ -1,18 +1,20 @@
 /* =====================================================================================================
    What this file does:
-     The small HUD read-out widgets of the dashboard, drawn as SVG / plain DOM (no canvas, no innerHTML):
+     The small HUD read-out widgets of the dashboard (`AQ.hudGauges`), drawn as SVG / plain DOM. No
+     canvas and no innerHTML: every label is written with textContent, so data can never become markup.
        segArc      a segmented 270-degree arc gauge with tick marks (focus score, consistency ...)
        tickBar     a row of tick marks, the first N lit (a "level meter")
        radar       a 5-axis spider chart of habits
        clock24     a 24-hour radial clock: one bar per hour, length = minutes, plus a "now" hand
        ticker      Number Ticker: every digit rolls on its own reel to the new value
        orbit       Orbiting Circles: clickable satellite chips that circle a centre element
-       reactor     a fallback arc-reactor core, used only while Dev A's AQ.hud.core is not there
+       reactor     a fallback arc-reactor core, used only when AQ.hud.core (hud.js) is missing
 
    How it fits:
-     Loaded before dashboard.js, which is the only caller (`AQ.hudGauges.*`). Styles: css/dashboard.css
-     (section "HUD widgets"). Animations are CSS transitions; with reduced motion they are switched off
-     in the CSS, so this file never has to check.
+     Needs AQ.util.el (util.js). Loaded before dashboard.js, which is the only caller. Styles:
+     css/dashboard.css (section "HUD widgets"). Most animations are CSS transitions that the CSS turns
+     off under reduced motion; the two JS-driven ones (ticker reels, orbit ride) check `reduced()` and
+     jump straight to their final state.
 
    Start reading at:
      `segArc()` in section 2 (the pattern every widget follows: build SVG, return {node, set()}).
@@ -65,9 +67,13 @@
   }
 
   // ===== 2. Arc instrument gauge =====
-  // opts: { size, segments, value (0..1), caption } -> { node, set(value) }
-  // A real instrument face: a 270deg hairline scale (-135..+135) with minor/major ticks and numeric
-  // labels 0..100, a thin value arc and a needle. `segments` is ignored: the tick layout is fixed.
+  /**
+   * An instrument face: a 270deg hairline scale (-135..+135) with minor/major ticks and numeric labels
+   * 0..100, a thin value arc and a needle.
+   * @param {{size?: number, segments?: number, value?: number}} [opts] value is 0..1;
+   *   `segments` is ignored (the tick layout is fixed)
+   * @returns {{node: SVGElement, set: function(number): void}} set(value 0..1)
+   */
   function segArc(opts) {
     opts = opts || {};
     var size = opts.size || 140,
@@ -125,7 +131,11 @@
   }
 
   // ===== 3. Linear scale (level meter) =====
-  // -> { node, set(value 0..1) }   a hairline track with `count` tick marks, a thin solid fill and a marker.
+  /**
+   * A hairline track with `count` tick marks, a thin solid fill and a marker.
+   * @param {number} [count=20] number of intervals between tick marks
+   * @returns {{node: HTMLElement, set: function(number): void}} set(value 0..1)
+   */
   function tickBar(count) {
     count = count || 20;
     var row = el("span", "hg-scale");
@@ -151,7 +161,12 @@
   }
 
   // ===== 4. Radar / spider chart =====
-  // habits: [{label, value 0..1}] (5 expected) -> { node, set(habits) }
+  /**
+   * A spider chart of habit scores.
+   * @param {{label: string, value: number}[]} habits five entries expected, values 0..1
+   * @param {number} [size] edge length in px
+   * @returns {{node: SVGElement, set: function(object[]): void}} set(habits) redraws the shape
+   */
   function radar(habits, size) {
     size = size || 200;
     var c = size / 2,
@@ -222,7 +237,13 @@
   }
 
   // ===== 5. 24-hour radial clock =====
-  // hours: 24 numbers (minutes) -> { node, set(hours) }. Midnight at the top; bar length = minutes / max.
+  /**
+   * A 24-hour radial clock: one bar per hour (length = minutes / max), midnight at the top, plus a
+   * "now" hand.
+   * @param {number[]} hours 24 numbers, minutes per hour
+   * @param {number} [size] edge length in px
+   * @returns {{node: SVGElement, set: function(number[]): void}}
+   */
   function clock24(hours, size) {
     size = size || 170;
     var c = size / 2,
@@ -334,8 +355,13 @@
   }
 
   // ===== 6. Number Ticker (rolling digit reels) =====
-  // ticker(node) -> { set(text) }. Each digit is a reel of 0-9 moved with translateY; other characters
-  // (":", " ", "h") are plain spans. Screen readers get the text through aria-label on `node`.
+  /**
+   * Turns `node` into rolling digit reels. Each digit is a reel of 0-9 moved with translateY; other
+   * characters (":", " ", "h") are plain spans. Screen readers get the plain text through aria-label
+   * on `node`, because the reels themselves read as a column of digits.
+   * @param {HTMLElement} node
+   * @returns {{set: function(string|number): void}}
+   */
   function ticker(node) {
     node.classList.add("hg-num");
     var current = "";
@@ -383,15 +409,20 @@
   }
 
   // ===== 7. Orbiting satellites =====
-  // orbit(centreEl, sats) -> { node, set(sats), destroy() }
-  // sats: [{ id, label, value, accent, onPick }]; each chip is a real <button>.
-  // The chips ride a tilted ring (an ellipse seen at an angle). JS places them every frame: the ones at
+  // Each chip is a real <button> (keyboard and screen-reader reachable). The chips ride a tilted ring (an ellipse seen at an angle). JS places them every frame: the ones at
   // the bottom of the ellipse are "in front" (bigger, brighter, drawn over the core), the ones at the top
   // are "behind" (smaller, dimmer, hidden by the core's glass lens). Hover/focus pauses the ride.
   // The ring path is two half-ellipses so its front half can pass over the core and the back half under.
   var ORBIT_RX = 168,
     ORBIT_RY = 112; // fallback ellipse radii in px; mirror.css sets --orx / --ory
   var ORBIT_PERIOD_MS = 48000; // one full lap
+  /**
+   * Clickable satellite chips riding a tilted ring around a centre element.
+   * @param {HTMLElement} centreEl the element the ring circles
+   * @param {{id: string, label: string, value: *, accent?: string, onPick?: function(): void}[]} sats
+   * @returns {{node: HTMLElement, set: function(object[]): void, destroy: function(): void}}
+   *   set(sats) updates the chip values by id
+   */
   function orbit(centreEl, sats) {
     var box = el("div", "hg-orbit is-3d");
     var rx = ORBIT_RX,
@@ -520,7 +551,12 @@
   }
 
   // ===== 8. Fallback reactor core (only when AQ.hud.core is missing) =====
-  // reactor(container, {label, value, sub}) -> { set(value, sub), destroy() }  -- same shape as AQ.hud.core
+  /**
+   * A simpler arc-reactor core with the same shape as AQ.hud.core.
+   * @param {HTMLElement} container
+   * @param {{label?: string, value?: string|number, sub?: string}} [opts]
+   * @returns {{node: HTMLElement, set: function(*, string=): void, destroy: function(): void}}
+   */
   function reactor(container, opts) {
     opts = opts || {};
     var box = el("div", "hg-core");

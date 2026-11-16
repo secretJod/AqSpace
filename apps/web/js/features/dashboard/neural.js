@@ -1,16 +1,21 @@
-/*
-What: the living "neural network" layer drawn behind the dashboard cards (one <canvas>).
-      Drifting nodes linked by distance-faded lines (constellation, mouse-attracted), a central
-      "core" hub with curved threads to every card, and light packets flowing along those threads.
-How it fits: dashboard.js mounts it once the grid is in the DOM (see the "HUD + neural layer (Dev A)"
-      block in mount()). It never reads layout per frame: card rects are cached and only refreshed on
-      resize / ResizeObserver. It subscribes to AQ.activity itself and fires a packet chain on new sessions.
-Start reading at: section 7, mount().
+/* =====================================================================================================
+   What this file does:
+     The "neural network" layer drawn behind the dashboard cards (`AQ.neural`, one <canvas>): drifting
+     nodes linked by distance-faded lines, a central "core" hub with curved threads to every card, and
+     light packets flowing along those threads.
 
-AQ.neural.mount(gridEl, { cards: [{ id, el, accent }] }) -> { pulse(fromId, toId?, opts), destroy() }
-  pulse("core", "today")  -> a bright burst packet from the core to the "today" card
-  pulse("today", "time")  -> card-to-card burst (routed through the core)
-*/
+   How it fits:
+     dashboard.js mounts it once the grid is in the DOM (the "HUD and neural layer" block in its
+     mount()). achievements.js wraps mount() to keep the handle for a pulse. Optional inputs:
+     AQ.activity (a packet chain on every new session) and AQ.expand (drawing pauses while a panel is
+     open). Styles: css/neural.css.
+     Performance: layout is never read per frame (card rects are cached and refreshed on resize /
+     ResizeObserver), the frame rate is capped and small or low-core devices draw fewer nodes.
+     The canvas is aria-hidden decoration; under prefers-reduced-motion one still frame is drawn.
+
+   Start reading at:
+     `mount()` (section 7).
+   ===================================================================================================== */
 (function () {
   "use strict";
   var AQ = (window.AQ = window.AQ || {});
@@ -299,6 +304,14 @@ AQ.neural.mount(gridEl, { cards: [{ id, el, accent }] }) -> { pulse(fromId, toId
   }
 
   // ===== 7. mount() =====
+  /**
+   * Draws the neural layer behind the grid's parent (the dashboard page).
+   * @param {HTMLElement} gridEl the card grid
+   * @param {{cards?: {id: string, el: HTMLElement, accent?: string}[]}} [opts] the cards to thread to the core
+   * @returns {{pulse: function(string, string=, object=): void, chain: function(string[]): void, destroy: function(): void}}
+   *   pulse("core", "today") sends a bright packet from the core to a card; pulse("today", "time") goes
+   *   card to card through the core; chain(ids) fires a sequence of pulses.
+   */
   function mount(gridEl, opts) {
     opts = opts || {};
     var cards = (opts.cards || []).filter(function (c) {

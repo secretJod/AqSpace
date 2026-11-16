@@ -1,10 +1,16 @@
-/*
-What: styles for js/features/dashboard/hud.js: arc-reactor core, card frames (brackets, scan line,
-      Border Beam), the typed ticker and the page backdrop (hex grid, retro floor, scan sweep).
-How it fits: pure decoration; colours use --hud (cyan) and the card's own --card-accent.
-      Everything animated is transform / opacity / a registered angle, so it stays on the GPU.
-Start reading at: section 2 (core).
-*/
+/* =====================================================================================================
+   What this file styles:
+     The HUD chrome of js/features/dashboard/hud.js: the arc-reactor core, card frames (brackets, scan
+     line, border beam), the typed ticker and the page backdrop (hex grid, perspective floor, scan sweep).
+
+   How it fits:
+     Linked from index.html after dashboard.css. Pure decoration: colours use --hud (cyan, defined
+     here) and the card's own --card-accent. Everything animated is transform / opacity / a registered
+     angle, so it stays on the GPU. Section 6 stops all movement under prefers-reduced-motion.
+
+   Start reading at:
+     Section 2 (core).
+   ===================================================================================================== */
 
 /* ===== 1. Tokens ===== */
 :root {
@@ -140,7 +146,7 @@ Start reading at: section 2 (core).
   }
 }
 
-/* ===== 3. Card frame: brackets, hover scan line, Border Beam ===== */
+/* ===== 3. Card frame: brackets, hover scan line, border beam ===== */
 .hud-framed {
   position: relative;
 }
@@ -210,7 +216,7 @@ Start reading at: section 2 (core).
   }
 }
 
-/* Border Beam: a conic gradient on the border ring only (mask cuts out the inside) */
+/* border beam: a conic gradient on the border ring only (mask cuts out the inside) */
 .hud-frame__beam {
   position: absolute;
   inset: 0;
@@ -275,7 +281,7 @@ Start reading at: section 2 (core).
   }
 }
 
-/* ===== 5. Backdrop: hex/tri lattice, retro floor, scan sweep ===== */
+/* ===== 5. Backdrop: hex/tri lattice, perspective floor, scan sweep ===== */
 .hud-host {
   position: relative;
   isolation: isolate;
