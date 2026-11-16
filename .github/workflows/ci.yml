@@ -1,3 +1,6 @@
+# Continuous integration: lint, format and test each app on every push and pull request.
+# The same checks run locally from the repo root with `npm run lint`, `npm run format:check`
+# and `npm test`.
 name: CI
 
 on:
@@ -8,6 +11,9 @@ jobs:
   api:
     name: api (Node 24)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,22 +21,14 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/api/package-lock.json
-      - name: Install and test
-        working-directory: apps/api
-        run: |
-          npm ci
-          npm test
-
-  web:
-    name: web (syntax check)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: node --check
-        run: find apps/web -name "*.js" -not -path "*/node_modules/*" -print0 | xargs -0 -n1 node --check
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run format:check
+      - name: Test
+        run: npm test
 
   worker:
     name: worker (Python 3.12)
@@ -44,13 +42,37 @@ jobs:
           cache-dependency-path: apps/worker/pyproject.toml
       - name: Install
         run: pip install -e "apps/worker[web,dev]"
-      # Ubuntu 24.04 runners block unprivileged user namespaces via AppArmor,
+      - name: Lint
+        run: ruff check apps/worker
+      - name: Check formatting
+        run: ruff format --check apps/worker
+      # Ubuntu 24.04 runners block unprivileged user namespaces through AppArmor,
       # which breaks Chrome's sandbox (used by the PDF tests). Re-allow them.
       - name: Allow Chrome sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      # tests/ = notes_engine + Flask API; demo/ = model evaluation (notes_eval) tests.
+      # tests/ covers notes_engine and the Flask API; demo/ holds the notes evaluation tests.
       - name: Test
         working-directory: apps/worker
         env:
           LNA_OFFLINE: "1"
         run: python -m pytest tests demo -q
+
+  web:
+    name: web (lint and syntax)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Syntax check
+        run: find . -name "*.js" -not -path "./node_modules/*" -print0 | xargs -0 -n1 node --check
