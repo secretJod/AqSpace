@@ -1,4 +1,5 @@
-// #62 (web-dev-3): a smart-playlist run through aq-api as the Cloudflare tunnel delivers it (loopback, Host
+/* e2e-tunnel-smart.test.js - end to end through the tunnel shape. */
+// A smart-playlist run through the API as the Cloudflare tunnel delivers it (loopback, Host
 // localhost:<port>, cf-* / x-forwarded-* headers). /api/v1 smart routes work, the heavy and general rate limits still
 // apply (and a spoofed cf-connecting-ip cannot dodge them), and /dev stays 404. Fake worker only, no network.
 import { test } from "node:test";

@@ -1,4 +1,4 @@
-/* #30 (R5): hours-long local-model jobs - no expiry by age, auto-resume after a Python restart, chunk progress, localModel health. */
+/* long-jobs.test.js - hours-long local-model jobs - no expiry by age, auto-resume after a Python restart, chunk progress, localModel health. */
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { startApp, startMockPython, VID, JOB } from "./helpers.js";

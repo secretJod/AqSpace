@@ -1,3 +1,4 @@
+/* notes.test.js - /api/v1/notes and /import/youtube against the mock worker (services/notes-service.js). */
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { startApp, startMockPython, VID, JOB } from "./helpers.js";

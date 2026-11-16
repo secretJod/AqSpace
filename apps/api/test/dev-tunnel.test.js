@@ -1,5 +1,5 @@
-// #47 (web-dev-3): /dev must never be reachable through the Cloudflare tunnel. The tunnel arrives from loopback with
-// Host localhost:5180, so the only tell is the proxy headers it adds.
+/* dev-tunnel.test.js - /dev must never be reachable through the Cloudflare tunnel.
+   The tunnel arrives from loopback with Host localhost:5180, so the only tell is the proxy headers it adds. */
 import { test } from "node:test";
 import http from "node:http";
 import assert from "node:assert/strict";
@@ -25,7 +25,7 @@ const TUNNEL = [
   { forwarded: "for=203.0.113.9" },
   { "cf-visitor": '{"scheme":"https"}' },
   { origin: "https://abc.trycloudflare.com" },
-  // #57: mixed-case header names (Node lower-cases them), extra proxy headers, non-loopback IPv6 and "null" Origins
+  // Mixed-case header names (Node lower-cases them), extra proxy headers, non-loopback IPv6 and "null" Origins
   { "CF-Ray": "8abc-LHR" },
   { "X-Forwarded-For": "203.0.113.9" },
   { Via: "1.1 proxy" },

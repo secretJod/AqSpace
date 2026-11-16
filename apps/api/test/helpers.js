@@ -1,3 +1,5 @@
+/* helpers.js - shared test tools: startApp() runs the real app on a random port with an in-memory database,
+   startMockPython() is a small stand-in for the Python worker. VID(n) and JOB(n) make valid ids. */
 import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
@@ -87,7 +89,7 @@ export async function startMockPython() {
       });
     } else if (u.pathname === "/api/providers") {
       json(state.providersStatus, { providers: state.providers });
-    } else if ((m = /^\/static\/fonts\/([A-Za-z0-9._-]+)$/.exec(u.pathname))) {
+    } else if (/^\/static\/fonts\/([A-Za-z0-9._-]+)$/.test(u.pathname)) {
       res.writeHead(200, { "content-type": "font/woff2" });
       res.end("font");
     } else json(404, { error: "nope" });

@@ -1,4 +1,6 @@
-// #151 (web-dev-1): Google profile (picture), /auth/status, /me shape, ?next= round trip, auth_required, claiming local data, CSP.
+/* auth-profile.test.js - the signed-in profile: Google picture, /auth/status, the /me shape, the ?next= round trip,
+   auth_required, the first Google user claiming the local user's data, and the CSP for profile images.
+   Helpers: test/helpers.js */
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { startApp, VID } from "./helpers.js";

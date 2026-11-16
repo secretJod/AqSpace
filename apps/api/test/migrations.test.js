@@ -1,4 +1,5 @@
-// #57 (web-dev-1): sql/*.sql run in filename order, exactly once, and safely on databases made by older code.
+/* migrations.test.js - sql/*.sql run in file-name order, exactly once, and safely on databases made by older code.
+   Read next: src/db/database.js */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -59,7 +60,7 @@ test("db with 001+002 recorded but not 003: only 003 runs", () => {
   db.close();
 });
 
-test("#14 db with 001-003 recorded: only 004 runs and adds the sessions table", () => {
+test("db with 001-003 recorded: only 004 runs and adds the sessions table", () => {
   const f = tmp();
   const raw = new DatabaseSync(f);
   raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
@@ -75,7 +76,7 @@ test("#14 db with 001-003 recorded: only 004 runs and adds the sessions table", 
   db.close();
 });
 
-test("#151 db with 001-004 recorded: only 005 runs and adds users.picture; a baselined db with the column skips it", () => {
+test("db with 001-004 recorded: only 005 runs and adds users.picture; a baselined db with the column skips it", () => {
   const f = tmp();
   const raw = new DatabaseSync(f);
   raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
@@ -118,7 +119,7 @@ test("older db without a records table: existing schema is baselined, missing mi
   }
 });
 
-test("#158 db made by upstream (smart_runs recorded as 002_smart_runs.sql): 003 is recorded, not re-run; 002/004/005 apply", () => {
+test("db with the old migration name (smart_runs recorded as 002_smart_runs.sql): 003 is recorded, not re-run; 002/004/005 apply", () => {
   const f = tmp();
   const raw = new DatabaseSync(f);
   raw.exec("CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");

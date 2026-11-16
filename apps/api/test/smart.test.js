@@ -1,3 +1,4 @@
+/* smart.test.js - /api/v1/playlists/:id/smart runs (services/smart-service.js) against a fake worker. */
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { startApp, VID, JOB } from "./helpers.js";

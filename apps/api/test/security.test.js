@@ -1,3 +1,4 @@
+/* security.test.js - host guard, CORS, security headers, rate limits, worker URL checks and the static UI filter. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -198,7 +199,7 @@ test("static UI: serves web assets, hides dot-files, scripts, docs and backups; 
   }
 });
 
-test("#158 static UI: only runtime assets; package files, lint config, docs, dotfiles and screenshots are 404", async () => {
+test("static UI: only runtime assets; package files, lint config, docs, dotfiles and screenshots are 404", async () => {
   const t = await startApp({ withUi: true });
   try {
     for (const ok of ["/css/styles.css", "/js/app.js", "/vendor/chart.umd.min.js", "/index.html"])

@@ -1,3 +1,4 @@
+/* dev.test.js - the /dev tracker: request and event recording, saved history, CSV/stats, log tail and redaction. */
 import { test } from "node:test";
 import http from "node:http";
 import assert from "node:assert/strict";

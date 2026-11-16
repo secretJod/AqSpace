@@ -1,3 +1,4 @@
+/* google-auth.test.js - AUTH_MODE=google: login redirect, callback checks, sessions in SQLite, logout. */
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { startApp } from "./helpers.js";
@@ -154,7 +155,7 @@ test("google mode refuses to start without credentials / secret", async () => {
   assert.equal(loadConfig({}).authMode, "local");
 });
 
-test("#14 sessions live in SQLite: only the token hash is stored, expiry is enforced, logout revokes", async () => {
+test("sessions live in SQLite: only the token hash is stored, expiry is enforced, logout revokes", async () => {
   const { session } = await login();
   const token = session.split("=")[1];
   const rows = t.db.prepare("SELECT id FROM sessions").all();
