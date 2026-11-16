@@ -1,0 +1,18 @@
+{
+  "name": "aqspace",
+  "private": true,
+  "description": "Repo-level scripts that run the checks of every app (apps/api, apps/worker, apps/web).",
+  "scripts": {
+    "test": "npm run test:api && npm run test:worker",
+    "test:api": "npm --prefix apps/api test",
+    "test:worker": "scripts/worker-check.sh test",
+    "lint": "npm run lint:api && npm run lint:worker && npm run lint:web",
+    "lint:api": "npm --prefix apps/api run lint",
+    "lint:worker": "scripts/worker-check.sh lint",
+    "lint:web": "npm --prefix apps/web run lint",
+    "format:check": "npm run format:check:api && npm run format:check:worker && npm run format:check:web",
+    "format:check:api": "npm --prefix apps/api run format:check",
+    "format:check:worker": "scripts/worker-check.sh format-check",
+    "format:check:web": "npm --prefix apps/web run format:check"
+  }
+}
