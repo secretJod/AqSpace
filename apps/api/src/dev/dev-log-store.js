@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+/** A UTC day as used in the file names, "YYYY-MM-DD". */
 export const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FILE_RE = /^(requests|events)-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 

@@ -81,6 +81,12 @@ function latencySummary(ms) {
 
 const rate = (part, total) => (total ? +(part / total).toFixed(4) : 0);
 
+/**
+ * Statistics for one day of request entries.
+ *
+ * @param {object[]} items  request entries {layer, method, path, status, ms, ts}
+ * @returns {object} {total, errors, errorRate, p50, p95, max, paths: [...per path], hours: [24 x {hour, count, errors}]}
+ */
 export function computeStats(items) {
   const byPath = new Map();
   const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0, errors: 0 }));

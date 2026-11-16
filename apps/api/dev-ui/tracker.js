@@ -1,5 +1,9 @@
-/* AQ tracker page: polls /dev/api/* every 2 s (incremental with ?since=); History / Stats / Service logs tabs read the
-   persistent endpoints on demand. All data is written with textContent. */
+/* tracker.js - the developer tracker page (/dev/tracker.html).
+
+   What:  polls /dev/api/* every 2 s (incremental with ?since=); the History, Stats and Service logs tabs
+          read the saved-history endpoints on demand. All data is written with textContent.
+   Who loads it: dev-ui/tracker.html, served by the /dev router.
+   Read next: src/dev/dev-router.js (the endpoints it calls) */
 "use strict";
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -377,7 +381,7 @@
     if (!s) {
       out.replaceChildren();
       $("l-info").textContent =
-        `no ${$("l-stream").value} log for ${d.service} (${d.run} run) — start the app with start-all.ps1 to capture console output in .run\\`;
+        `no ${$("l-stream").value} log for ${d.service} (${d.run} run) — capture the service console output in .run/ (AQ_RUN_DIR) to see it here`;
       return;
     }
     const stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 20;

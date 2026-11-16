@@ -1,6 +1,10 @@
-﻿/* AQspace - developer "how it works" scene.
-   Hand-written 3D: points are rotated (yaw/pitch orbit camera), perspective-projected and drawn with Canvas 2D,
-   painter-sorted by depth. No libraries, no inline script, all API data goes through textContent. */
+/* flow.js - the developer "how it works" page (/dev/flow.html).
+
+   What:  a hand-written 3D scene of the services and how a request flows between them. Points are rotated
+          (yaw/pitch orbit camera), perspective-projected and drawn with Canvas 2D, painter-sorted by depth.
+          No libraries, no inline script; all API data goes through textContent.
+   Who loads it: dev-ui/flow.html, served by the /dev router (src/dev/dev-router.js).
+   Read next: tracker.js */
 "use strict";
 (() => {
   const $ = (id) => document.getElementById(id);

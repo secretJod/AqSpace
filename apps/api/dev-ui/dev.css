@@ -1,4 +1,5 @@
-/* AQspace - developer pages (hub, flow, tracker). Tokens mirror lecture-notes-ui/styles.css. */
+/* dev.css - shared styles of the developer pages (hub, flow, tracker, eval).
+   The colour tokens mirror apps/web/css/styles.css so the tools look like the app. */
 :root {
   --bg: #050505;
   --panel: #0e0e0e;

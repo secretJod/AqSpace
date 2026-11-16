@@ -1,4 +1,4 @@
-/* Notes provider evaluation page. Builds on dev.css tokens. */
+/* eval.css - extra styles for the notes provider evaluation page; builds on the dev.css tokens. */
 body.evalpage {
   height: auto;
   min-height: 100%;

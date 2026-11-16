@@ -22,7 +22,8 @@ import { LOG_FILES, tailFile } from "./service-logs.js";
 // apps/api/dev-ui (this file lives in apps/api/src/dev/)
 const DEV_UI_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dev-ui");
 
-export const CSP_DEV =
+// The dev pages load only their own files: no inline code, no third parties, no framing.
+const CSP_DEV =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,16 @@ function recentJobs(db) {
 // 4. The router
 // ---------------------------------------------------------------------------
 
+/**
+ * Builds the /dev router. app.js mounts it behind localOnly, so it is never reachable through the tunnel.
+ *
+ * @param {object} deps
+ * @param {import("node:sqlite").DatabaseSync} deps.db  read only (job lists and counts)
+ * @param {object} deps.py  a worker client used only for the health probe
+ * @param {object} deps.tracker  from createTracker()
+ * @param {string} [deps.runDir]  folder with the service console logs ("" = log viewer off)
+ * @returns {import("express").Router}
+ */
 export function devRoutes({ db, py, tracker, runDir = "" }) {
   const router = Router();
 
@@ -250,13 +261,13 @@ export function devRoutes({ db, py, tracker, runDir = "" }) {
     res.json({ date, ...computeStats(items) });
   });
 
-  // 4.4 Service console logs (.run/*.log written by start-all.ps1)
+  // 4.4 Service console logs (.run/<service>.out.log / .err.log)
   router.get("/api/logs/:service", async (req, res) => {
     const files = LOG_FILES[req.params.service];
     if (!files) throw new HttpError(404, "Unknown service (api or worker).");
     if (!runDir) throw new HttpError(404, "Service log capture is not configured (AQ_RUN_DIR).");
     const tail = queryInt(req.query.tail, 200, 2000) || 200;
-    const previousRun = req.query.run === "prev"; // start-all.ps1 keeps the previous run as *.prev.log
+    const previousRun = req.query.run === "prev"; // the launcher keeps the previous run as *.prev.log
     const streams = {};
     for (const [stream, fileName] of Object.entries(files)) {
       const name = previousRun ? fileName.replace(/\.log$/, ".prev.log") : fileName;

@@ -1,6 +1,6 @@
 /* service-logs.js - reads the end of the service console logs, with secrets masked.
 
-   What:  start-all.ps1 writes each service's console output to ../.run/*.log.
+   What:  a local launcher can capture each service's console output in ../.run/*.log (AQ_RUN_DIR).
           tailFile() reads the last lines of such a file; redactLine() hides API keys,
           tokens and passwords before anything leaves this server.
    How it fits: used by /dev/api/logs/:service in dev/dev-router.js.
@@ -11,6 +11,7 @@ import fs from "node:fs";
 // 1. Which files belong to which service
 // ---------------------------------------------------------------------------
 
+/** Service name in /dev/api/logs/:service -> its stdout and stderr file names. */
 export const LOG_FILES = {
   api: { out: "api.out.log", err: "api.err.log" },
   worker: { out: "ai.out.log", err: "ai.err.log" }
@@ -31,6 +32,12 @@ const SECRET_PATTERNS = [
   [/\b(key|api_key|apikey|api-key|token|access_token|secret|password)(["']?\s*[=:]\s*["']?)[^\s&"',;]+/gi, "$1$2***"]
 ];
 
+/**
+ * Masks API keys, bearer tokens and key=value secrets in one log line, so the /dev log viewer never shows them.
+ *
+ * @param {unknown} s
+ * @returns {string}
+ */
 export function redactLine(s) {
   let out = String(s);
   for (const [pattern, replacement] of SECRET_PATTERNS) out = out.replace(pattern, replacement);

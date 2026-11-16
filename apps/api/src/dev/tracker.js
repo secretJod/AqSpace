@@ -16,6 +16,17 @@ import { createDevLog } from "./dev-log-store.js";
 const PUBLIC_STATE = { done: "ready", expired: "none" };
 const publicState = (status) => (status == null ? null : PUBLIC_STATE[status] || status);
 
+/**
+ * Builds the tracker.
+ *
+ * @param {object} [options]
+ * @param {number} [options.max]  entries kept in memory per ring buffer
+ * @param {string} [options.logDir]  folder for the daily JSONL files ("" = memory only)
+ * @param {number} [options.keepDays]  JSONL files older than this are deleted
+ * @param {number} [options.flushMs]  how long lines wait in memory before they are written
+ * @returns {{ requests, events, log, keepDays, change: Function, wrapFetch: Function, middleware: Function }}
+ *          `log` is null when logDir is empty or cannot be created (the tracker then keeps working in memory)
+ */
 export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs } = {}) {
   // -------------------------------------------------------------------------
   // 1. Storage: optional disk log + two ring buffers
@@ -93,6 +104,7 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
   // 4. Requests to this server
   // -------------------------------------------------------------------------
 
+  /** Middleware: records every request when its response is finished (layer "dev", "api" or "ui"). */
   function middleware(req, res, next) {
     const startedAt = Date.now();
     res.on("finish", () => {
@@ -114,7 +126,6 @@ export function createTracker({ max = 2000, logDir = "", keepDays = 14, flushMs 
     events,
     log,
     keepDays,
-    request: (fields) => requests.push(fields),
     change,
     wrapFetch,
     middleware
