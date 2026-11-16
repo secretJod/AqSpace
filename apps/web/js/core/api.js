@@ -10,8 +10,8 @@
      When the API is reachable (the same origin when apps/api serves this page, otherwise
      http://127.0.0.1:5180 for a page opened another way) this file
        1. loads playlists and watch progress on start and hands them to the store, which re-renders,
-       2. uploads what was in browser storage once (the server's `bootstrapped` flag decides, so it happens
-          only the first time),
+       2. uploads what was in browser storage once, and only when there is something to upload: a new
+          account with nothing saved in this browser sends nothing and simply loads the server's (empty) data,
        3. writes every later change through to the server in order (AQ.store calls AQ.api.record(...)),
        4. sets `aq.dirty.v1` in browser storage when a write cannot be sent; the next successful connection
           then pushes the whole local state, so offline edits are never lost.
@@ -46,6 +46,7 @@
   "use strict";
 
   var DIRTY_KEY = "aq.dirty.v1"; // stored flag, per account: "there are local changes the server has not seen"
+  var SYNCED_KEY = "aq.synced.v1"; // stored flag, per account: "this browser's copy has been in sync with the server"
   var WATCH_DELAY_MS = 2000;
 
   var api = { base: "" };
@@ -75,6 +76,23 @@
     } catch {
       /* storage blocked */
     }
+  }
+  function wasSynced() {
+    try {
+      return AQ.storage.get(SYNCED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+  function markSynced() {
+    try {
+      AQ.storage.set(SYNCED_KEY, "1");
+    } catch {
+      /* storage blocked */
+    }
+  }
+  function hasLocalData(st) {
+    return st.playlists.length > 0 || Object.keys(st.progress).length > 0;
   }
   function plain(x) {
     return JSON.parse(JSON.stringify(x));
@@ -175,14 +193,23 @@
     );
   }
 
-  /** Decides between "adopt the server's data" and "push the local data" (first run / offline edits), then applies the result. */
+  /**
+   * Decides between "adopt the server's data" and "push the local data", then applies the result.
+   * The local copy is pushed only when it holds something the server has not seen:
+   *   - offline edits (the dirty flag), or
+   *   - data saved in this browser before it ever synced with this account (the server is not
+   *     bootstrapped yet and this browser has never been in sync with it).
+   * A new account with nothing saved locally uploads nothing; it just loads the server's data. The server
+   * then stays "not bootstrapped" until there is real local data to import, and the synced flag stops a
+   * cache of server data from being pushed back later (which could bring back playlists deleted elsewhere).
+   */
   function reconcile() {
     return req("GET", "/api/v1/me")
       .then(function (me) {
         if (me.status !== 200 || !me.json) throw new Error("me failed");
         var boot = !!me.json.bootstrapped;
-        if (isDirty() || !boot) {
-          var st = AQ.store.exportState();
+        var st = AQ.store.exportState();
+        if (isDirty() || (!boot && !wasSynced() && hasLocalData(st))) {
           return req(
             "POST",
             "/api/v1/sync/import",
@@ -207,6 +234,7 @@
           return reconcile();
         } // the user edited while we were loading: push theirs instead
         clearDirty();
+        markSynced();
         AQ.store.applyRemote(data.playlists, data.progress);
         state.ok = true;
         state.reconciled = true;

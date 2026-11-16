@@ -455,13 +455,24 @@
       empty.appendChild(icon("list"));
       empty.appendChild(el("h2", "empty__title", "No playlists yet"));
       empty.appendChild(
-        el("p", "muted", "Group lectures into playlists, watch them in order and generate hand-drawn notes.")
+        el(
+          "p",
+          "muted",
+          "Import a playlist from YouTube or start a new one. Watch the lectures in order and generate hand-drawn notes."
+        )
       );
-      var cb = button("Create your first playlist", { cls: "btn btn--white", icon: "plus" });
+      var acts = el("div", "pagehead__actions");
+      var ib = button("Import from YouTube", { cls: "btn btn--white", icon: "youtube" });
+      ib.addEventListener("click", function () {
+        if (AQ.importPlaylist) AQ.importPlaylist.open(ib);
+      });
+      var cb = button("New playlist", { cls: "btn btn--ghost", icon: "plus" });
       cb.addEventListener("click", function () {
         openPlaylistForm(null, cb);
       });
-      empty.appendChild(cb);
+      acts.appendChild(ib);
+      acts.appendChild(cb);
+      empty.appendChild(acts);
       homeGrid.appendChild(empty);
       return;
     }

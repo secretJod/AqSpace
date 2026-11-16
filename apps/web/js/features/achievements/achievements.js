@@ -661,7 +661,7 @@ window.AQ = window.AQ || {};
   // ===== 12. start: first-run silence, ?celebrate=<id>, then watch the streak =====
   (function start() {
     var firstRun = readSeen() === null;
-    var graceUntil = firstRun ? Date.now() + 3000 : 0; // first run: other scripts may still load/seed data
+    var graceUntil = firstRun ? Date.now() + 3000 : 0; // first run: other scripts may still be loading data
     evaluate(firstRun); // first run: mark old badges seen, no modal
     if (AQ.streak && typeof AQ.streak.subscribe === "function") {
       AQ.streak.subscribe(function (evt) {

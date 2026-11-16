@@ -50,32 +50,7 @@
     }
   }
 
-  // ===== 1. seed (first run only: when the key is absent) =====
-  function seedData() {
-    var now = new Date().toISOString();
-    function v(id, title, channel, duration) {
-      return { id: id, title: title, channel: channel, duration: duration, added: now };
-    }
-    function p(id, name, description, videos) {
-      return { id: id, name: name, description: description, created: now, updated: now, videos: videos };
-    }
-    return [
-      p("data-science", "Data Science", "Math and intuition behind modern data work.", [
-        v("WUvTyaaNkzM", "The essence of calculus", "3Blue1Brown", "17:05"),
-        v("aircAruvnKk", "But what is a neural network? | Deep learning chapter 1", "3Blue1Brown", "18:26")
-      ]),
-      p("ai-agents", "AI & Agents", "LLMs, agents and how they are built.", [
-        v("IqQFaj3oO0Q", "What is Harness Engineering?", "Piyush Garg", "14:07"),
-        v("zjkBMFhNj_g", "Intro to Large Language Models", "Andrej Karpathy", "59:48"),
-        v("kCc8FmEb1nY", "Let's build GPT: from scratch, in code, spelled out.", "Andrej Karpathy", "1:56:20")
-      ]),
-      p("programming", "Programming", "", [
-        v("rfscVS0vtbw", "Learn Python - Full Course for Beginners", "freeCodeCamp.org", "4:26:52")
-      ])
-    ];
-  }
-
-  // ===== 2. sanitising whatever comes out of storage =====
+  // ===== 1. sanitising whatever comes out of storage =====
   function str(x, max) {
     return typeof x === "string" ? x.slice(0, max) : "";
   }
@@ -147,7 +122,7 @@
     return out;
   }
 
-  // ===== 3. persistence =====
+  // ===== 2. persistence =====
   function load() {
     var raw = null;
     try {
@@ -156,9 +131,8 @@
       storageOk = false;
     }
     if (raw == null) {
-      // key absent (or storage unreadable): first run -> seed
-      playlists = seedData();
-      if (storageOk) persist();
+      // Key absent (or storage unreadable): a new account starts with an empty workspace.
+      playlists = [];
       return;
     }
     try {
@@ -206,7 +180,7 @@
     });
   });
 
-  // ===== 4. queries =====
+  // ===== 3. queries =====
   /**
    * @returns {Array<object>} Every playlist, in display order. Treat it as read-only: change data through the
    *   write functions so the change is saved, synced and shown.
@@ -244,7 +218,7 @@
     return -1;
   }
 
-  // ===== 5. playlist CRUD =====
+  // ===== 4. playlist CRUD =====
   function newId(name) {
     var base =
       name
@@ -361,7 +335,7 @@
     return true;
   }
 
-  // ===== 6. videos =====
+  // ===== 5. videos =====
   function touch(p) {
     p.updated = new Date().toISOString();
   }
@@ -704,7 +678,7 @@
     return wTxt + " of " + h(pr.totalSec) + (pr.unknown ? "+" : "");
   }
 
-  // ===== 7. sync with the API (called by api.js) =====
+  // ===== 6. sync with the API (called by api.js) =====
   /**
    * Everything the server needs for a full import.
    * @returns {{playlists: Array<object>, progress: object}}
