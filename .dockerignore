@@ -1,19 +1,29 @@
+# Files kept out of the Docker build context (the API image builds from the repo root).
+# Secrets, dependencies, runtime data and caches never enter an image.
+
+# Secrets
+**/.env
+
+# Dependencies and virtual environments (installed inside the image)
 **/node_modules
 **/.venv
+apps/api/.npmrc
+
+# Runtime data, caches and generated output
 .data
 .run
-.npm-cache
+**/.npm-cache
 .pip-cache
-.git
-**/.env
 apps/api/data
-apps/api/.npmrc
 apps/worker/backend/output
-apps/web/screenshots
-docs/*.pdf
-models
-.tools
-**/.tools
 apps/worker/backend/.cache
 apps/worker/backend/.tmp
 **/output
+
+# Local tools, model weights and large files the images do not need
+.git
+.tools
+**/.tools
+models
+docs/*.pdf
+apps/web/screenshots
