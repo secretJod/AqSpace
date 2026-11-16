@@ -12,7 +12,7 @@ import { startApp, startMockPython } from "./helpers.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SQL = path.join(HERE, "..", "sql");
-const SCRIPT = path.join(HERE, "..", "..", "scripts", "backup-db.sh");
+const SCRIPT = path.join(HERE, "..", "..", "..", "scripts", "backup-db.sh");
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "aq-db-"));
 
 function quietWarn(fn) {

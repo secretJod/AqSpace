@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 // 1. Paths
 // ---------------------------------------------------------------------------
 
-// The aq-api folder (this file lives in aq-api/src/config/).
+// The API app folder (this file lives in apps/api/src/config/).
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ export function loadConfig(env = process.env, overrides = {}) {
     port: int(env.PORT, 5180),
     dbFile: env.DB_FILE || path.join(ROOT, "data", "aq.db"),
     sqlDir: path.join(ROOT, "sql"),
-    uiDir: env.UI_DIR || path.resolve(ROOT, "..", "lecture-notes-ui"),
+    uiDir: env.UI_DIR || path.resolve(ROOT, "..", "web"),
 
     // The Python worker (notes + AI)
     pyUrl: (env.PY_NOTES_URL || "http://127.0.0.1:5055").replace(/\/+$/, ""),

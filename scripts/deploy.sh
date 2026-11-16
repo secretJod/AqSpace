@@ -117,15 +117,15 @@ if [ "$DRY_RUN" = 1 ]; then
 else
   rm -rf "$STAGE" && mkdir -p "$STAGE"
   git archive --format=tar "$SHA" | tar -x -C "$STAGE"
-  for f in .env lecture-notes-ai/backend/.env; do
+  for f in .env apps/worker/backend/.env; do
     [ ! -e "$STAGE/$f" ] || die "$f is tracked in git at $SHA; refusing to deploy secrets from git"
   done
 fi
 
 # --- 3. sync the code ------------------------------------------------------------------------
 log "3/6 rsync code to $TARGET:$REMOTE_DIR (keeps .env, .data, .tmp, models on the target)"
-RSYNC_ARGS=(-az --delete --exclude=.env --exclude=/lecture-notes-ai/backend/.env --exclude=/.data/
-  --exclude=.tmp/ --exclude=/models/ --exclude=/.run/ --exclude=/aq-api/data/ -e "ssh ${SSH_OPTS[*]}")
+RSYNC_ARGS=(-az --delete --exclude=.env --exclude=/apps/worker/backend/.env --exclude=/.data/
+  --exclude=.tmp/ --exclude=/models/ --exclude=/.run/ --exclude=/apps/api/data/ -e "ssh ${SSH_OPTS[*]}")
 if [ "$DRY_RUN" = 1 ]; then
   printf '   [dry-run] rsync %s %s/ %s:%s/\n' "${RSYNC_ARGS[*]}" "$STAGE" "$TARGET" "$REMOTE_DIR"
 else
@@ -138,7 +138,7 @@ ok "code synced"
 # --- 4. secrets (opt-in) ---------------------------------------------------------------------
 if [ "$WITH_SECRETS" = 1 ]; then
   log "4/6 Copy .env files over SSH (chmod 600, contents never printed)"
-  for f in .env lecture-notes-ai/backend/.env; do
+  for f in .env apps/worker/backend/.env; do
     [ -f "$f" ] || [ "$DRY_RUN" = 1 ] || die "local $f is missing"
     if [ "$DRY_RUN" = 1 ]; then
       printf '   [dry-run] ssh %s "umask 077; cat > %s/%s; chmod 600 ..." < %s\n' "$TARGET" "$REMOTE_DIR" "$f" "$f"
@@ -151,13 +151,13 @@ if [ "$WITH_SECRETS" = 1 ]; then
 else
   log "4/6 Secrets: skipped (pass --with-secrets to copy the .env files)"
   run_remote "check secrets exist" "
-for f in .env lecture-notes-ai/backend/.env; do [ -f \"\$f\" ] || { echo \"missing \$f on target: rerun with --with-secrets\" >&2; exit 1; }; done"
+for f in .env apps/worker/backend/.env; do [ -f \"\$f\" ] || { echo \"missing \$f on target: rerun with --with-secrets\" >&2; exit 1; }; done"
 fi
 
 # --- 5. build and start ----------------------------------------------------------------------
 log "5/6 docker compose up -d --build on the target"
 run_remote "build and start" "
-mkdir -p .data lecture-notes-ai/backend/.tmp
+mkdir -p .data apps/worker/backend/.tmp
 $COMPOSE up -d --build --remove-orphans"
 
 # --- 6. health + record ref ------------------------------------------------------------------

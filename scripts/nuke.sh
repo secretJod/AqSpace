@@ -11,10 +11,10 @@ else
 fi
 
 # Repo-local runtime state, caches, dependencies and generated output
-rm -rf .data .run .pip-cache .npm-cache .tools .gh-config models aq-api/data \
-       aq-api/node_modules \
-       lecture-notes-ai/.venv lecture-notes-ai/backend/output \
-       .cache .tmp lecture-notes-ai/backend/.cache lecture-notes-ai/backend/.tmp lecture-notes-ui/node_modules || true
+rm -rf .data .run .pip-cache .npm-cache .tools .gh-config models apps/api/data \
+       apps/api/node_modules \
+       apps/worker/.venv apps/worker/backend/output \
+       .cache .tmp apps/worker/backend/.cache apps/worker/backend/.tmp apps/web/node_modules || true
 if [ -e .data ]; then
   echo "Could not fully remove .data. Run: sudo rm -rf \"$(pwd)/.data\"" >&2
 fi

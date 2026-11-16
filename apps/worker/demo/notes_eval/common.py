@@ -15,13 +15,13 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent                      # lecture-notes-ai/
+ROOT = HERE.parent.parent                      # apps/worker/
 OUT = HERE / "out"
 TRANSCRIPTS = OUT / "transcripts"
 GOLD = OUT / "gold"
 RUNS = OUT / "runs"
 JUDGE = OUT / "judgements"
-DEV_UI = Path(os.environ.get("LNAI_EVAL_DEV_UI") or (ROOT.parent / "aq-api" / "dev-ui"))
+DEV_UI = Path(os.environ.get("LNAI_EVAL_DEV_UI") or (ROOT.parent / "api" / "dev-ui"))
 BLIND_SHEET = ROOT.parent / "docs" / "qa" / "r5-eval-blind.md"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

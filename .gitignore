@@ -28,9 +28,9 @@ dist/
 .pip-cache/
 .venv/
 **/output/
-lecture-notes-ai/backend/output/
-lecture-notes-ai/backend/.env
-aq-api/data/
+apps/worker/backend/output/
+apps/worker/backend/.env
+apps/api/data/
 *.db
 __pycache__/
 .pytest_cache/
@@ -50,8 +50,8 @@ models/
 **/.tmp/
 
 # #61: notes cache (F4 LNA_CACHE_DIR) and devlogs, explicit
-lecture-notes-ai/backend/output/cache/
-aq-api/data/devlogs/
+apps/worker/backend/output/cache/
+apps/api/data/devlogs/
 
 # Playwright MCP output (screenshots, snapshots, downloads)
 .playwright-mcp/

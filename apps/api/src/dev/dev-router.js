@@ -6,7 +6,7 @@
           /dev/api/jobs       last 50 notes + smart jobs from the database
           /dev/api/history/days, /history, /export, /stats   saved JSONL history
           /dev/api/logs/:service   tail of .run/*.log (api or worker), secrets masked
-          /dev/*              static pages from aq-api/dev-ui/
+          /dev/*              static pages from apps/api/dev-ui/
    Rules: read-only (GET/HEAD only), its own strict CSP, never cached.
    How it fits: mounted at "/dev" in app.js when the tracker is enabled.
    Read next: dev/tracker.js */
@@ -19,7 +19,7 @@ import { DAY_RE } from "./dev-log-store.js";
 import { filterEntries, toCsv, computeStats } from "./history-tools.js";
 import { LOG_FILES, tailFile } from "./service-logs.js";
 
-// aq-api/dev-ui (this file lives in aq-api/src/dev/)
+// apps/api/dev-ui (this file lives in apps/api/src/dev/)
 const DEV_UI_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dev-ui");
 
 export const CSP_DEV = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";

@@ -5,8 +5,8 @@ on:
   pull_request:
 
 jobs:
-  aq-api:
-    name: aq-api (Node 24)
+  api:
+    name: api (Node 24)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,15 +14,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: aq-api/package-lock.json
+          cache-dependency-path: apps/api/package-lock.json
       - name: Install and test
-        working-directory: aq-api
+        working-directory: apps/api
         run: |
           npm ci
           npm test
 
-  lecture-notes-ui:
-    name: lecture-notes-ui (syntax check)
+  web:
+    name: web (syntax check)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,10 +30,10 @@ jobs:
         with:
           node-version: 24
       - name: node --check
-        run: for f in lecture-notes-ui/*.js; do node --check "$f"; done
+        run: find apps/web -name "*.js" -not -path "*/node_modules/*" -print0 | xargs -0 -n1 node --check
 
-  lecture-notes-ai:
-    name: lecture-notes-ai (Python 3.12)
+  worker:
+    name: worker (Python 3.12)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,16 +41,16 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: lecture-notes-ai/pyproject.toml
+          cache-dependency-path: apps/worker/pyproject.toml
       - name: Install
-        run: pip install -e "lecture-notes-ai[web,dev]"
+        run: pip install -e "apps/worker[web,dev]"
       # Ubuntu 24.04 runners block unprivileged user namespaces via AppArmor,
       # which breaks Chrome's sandbox (used by the PDF tests). Re-allow them.
       - name: Allow Chrome sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       # tests/ = notes_engine + Flask API; demo/ = model evaluation (notes_eval) tests.
       - name: Test
-        working-directory: lecture-notes-ai
+        working-directory: apps/worker
         env:
           LNA_OFFLINE: "1"
         run: python -m pytest tests demo -q

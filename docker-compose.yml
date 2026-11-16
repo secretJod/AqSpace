@@ -6,8 +6,8 @@ services:
   # so 5055 is never reachable from the host. aq-api shares this namespace, which is why
   # aq-api's port 5180 is published here.
   notes-ai:
-    build: ./lecture-notes-ai
-    env_file: ./lecture-notes-ai/backend/.env   # GROQ_API_KEY etc. (never baked into the image)
+    build: ./apps/worker
+    env_file: ./apps/worker/backend/.env   # GROQ_API_KEY etc. (never baked into the image)
     environment:
       # R5: local Qwen3-8B on llama-server, running natively on the Mac at 127.0.0.1:8081 (scripts/llm.sh).
       LNAI_LOCAL_URL: http://host.docker.internal:8081/v1
@@ -23,8 +23,8 @@ services:
     ports:
       - "127.0.0.1:5180:5180"             # aq-api (notes app UI + API)
     volumes:
-      - ./lecture-notes-ai/backend/output:/app/backend/output   # generated notes stay in the repo
-      - ./lecture-notes-ai/backend/.tmp:/app/backend/.tmp       # #47: scratch audio / PDF browser profiles (LNA_TMP_DIR)
+      - ./apps/worker/backend/output:/app/backend/output   # generated notes stay in the repo
+      - ./apps/worker/backend/.tmp:/app/backend/.tmp       # #47: scratch audio / PDF browser profiles (LNA_TMP_DIR)
       - ./.tools/whisper-models:/app/.tools/whisper-models      # Whisper model survives rebuilds (gitignored, nuked)
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5055/api/providers', timeout=3)"]
@@ -37,14 +37,14 @@ services:
   aq-api:
     build:
       context: .
-      dockerfile: aq-api/Dockerfile
+      dockerfile: apps/api/Dockerfile
     network_mode: "service:notes-ai"
     environment:
       PY_NOTES_URL: http://127.0.0.1:5055
       PY_NOTES_PROVIDER: ${PY_NOTES_PROVIDER:-gemini}   # gemini (fast, cloud) | local (Qwen3-8B, scripts/llm.sh) | groq
       TUNNEL_ORIGINS: https://*.trycloudflare.com   # pages served through the tunnel may write
       PY_SMART_PROVIDER: ${PY_SMART_PROVIDER:-gemini}   # #47: provider for "Smart arrange" (needs its key in backend/.env)
-      # #47: /dev tracker (request/event logs in aq-api/data/devlogs). Defaults ON for local dev because
+      # #47: /dev tracker (request/event logs in apps/api/data/devlogs). Defaults ON for local dev because
       # aq-api refuses /dev for requests arriving through the tunnel. Set AQ_DEV_TOOLS=0 in your shell to turn it off.
       AQ_DEV_TOOLS: ${AQ_DEV_TOOLS:-1}
       AQ_RUN_DIR: ""                                    # empty = /dev does not tail .run/ logs; no service console logs inside the container
@@ -56,7 +56,7 @@ services:
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:5180/api/v1/auth/google/callback}
       SESSION_SECRET: ${SESSION_SECRET:-}
     volumes:
-      - ./aq-api/data:/app/aq-api/data    # SQLite aq.db stays in the repo (gitignored)
+      - ./apps/api/data:/app/api/data    # SQLite aq.db stays in the repo (gitignored)
     depends_on:
       notes-ai:
         condition: service_healthy

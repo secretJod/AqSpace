@@ -313,9 +313,9 @@ def test_get_transcript_uses_local_whisper_and_work_dir(monkeypatch, tmp_path):
 
 def test_default_work_dir_is_repo_local_and_ignored():
     root = Path(ingest._REPO_ROOT)
-    assert Path(ingest.DEFAULT_WORK_DIR).is_relative_to(root / "lecture-notes-ai" / "backend" / "output")
+    assert Path(ingest.DEFAULT_WORK_DIR).is_relative_to(root / "apps" / "worker" / "backend" / "output")
     nuke = (root / "scripts" / "nuke.sh").read_text()
-    assert ".tools" in nuke and "lecture-notes-ai/backend/output" in nuke
+    assert ".tools" in nuke and "apps/worker/backend/output" in nuke
 
 
 # --------------------------------------------------------------------------- #

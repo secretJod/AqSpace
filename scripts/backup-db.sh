@@ -2,10 +2,10 @@
 # Consistent online backup of the aq-api SQLite database (ADR-0002) using VACUUM INTO via node:sqlite.
 # Safe whether or not the stack runs (WAL: readers don't block the writer). No sqlite3 CLI needed.
 # Usage: scripts/backup-db.sh [keep]
-#   env: DB_FILE (default aq-api/data/aq.db), BACKUP_DIR (default .data/backups), BACKUP_KEEP (default 7)
+#   env: DB_FILE (default apps/api/data/aq.db), BACKUP_DIR (default .data/backups), BACKUP_KEEP (default 7)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-DB="${DB_FILE:-aq-api/data/aq.db}"
+DB="${DB_FILE:-apps/api/data/aq.db}"
 DIR="${BACKUP_DIR:-.data/backups}"
 KEEP="${1:-${BACKUP_KEEP:-7}}"
 [[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || { echo "keep must be a positive integer" >&2; exit 2; }

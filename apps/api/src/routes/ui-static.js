@@ -1,4 +1,4 @@
-/* ui-static.js - serves the web UI (lecture-notes-ui) on the same origin as the API.
+/* ui-static.js - serves the web UI (apps/web) on the same origin as the API.
 
    What:  a filter that only lets through GET/HEAD for web asset files, then express.static.
           Only what the UI loads is served: html, css, js (incl. vendored Chart.js), images, fonts.

@@ -1,6 +1,6 @@
 """Run the notes-provider evaluation end to end through the app's own pipeline (resumable).
 
-From ``lecture-notes-ai/``::
+From ``apps/worker/``::
 
   .venv/bin/python -m demo.notes_eval.run_eval --contestants gemini,groq,local --videos default
   .venv/bin/python -m demo.notes_eval.run_eval --contestants gemini,groq,local --videos default --dry-run

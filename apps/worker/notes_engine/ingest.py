@@ -135,9 +135,10 @@ MAX_VIDEO_SECONDS = 25 * 3600
 
 # local speech-to-text (faster-whisper, CPU int8); see LocalWhisperTranscriber
 LOCAL_WHISPER_MODEL = "small"
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))   # apps/worker
+_REPO_ROOT = os.path.abspath(os.path.join(_APP_ROOT, "..", ".."))
 WHISPER_MODEL_DIR = os.path.join(_REPO_ROOT, ".tools", "whisper-models")  # gitignored, nuked
-DEFAULT_WORK_DIR = os.path.join(_REPO_ROOT, "lecture-notes-ai", "backend", "output", "_cache")
+DEFAULT_WORK_DIR = os.path.join(_APP_ROOT, "backend", "output", "_cache")
 
 # shared yt-dlp options: quiet, long-video-safe timeouts and retries, never follow a playlist, no disk cache
 _YTDLP_COMMON = {
@@ -747,7 +748,7 @@ def _fetch_via_whisper(video_id: str, transcriber, cache: dict, progress,
             raise _Fail("other", "the video is longer than 24 hours")
         ffmpeg = _find_ffmpeg()
         if not ffmpeg:
-            raise _Fail("other", "ffmpeg was not found (run 'pip install -e .[whisper]' in lecture-notes-ai)")
+            raise _Fail("other", "ffmpeg was not found (run 'pip install -e .[whisper]' in apps/worker)")
         _progress(progress, "transcript", 40, "No captions found - downloading audio for speech-to-text...")
         audio = _download_audio(video_id, base, cache)
         _progress(progress, "transcript", 50, "Preparing audio...")
@@ -808,7 +809,7 @@ def get_transcript(url: str, *, groq_key: str | None = None, progress=None,
     """Fetch and clean the transcript for a YouTube video. Raises IngestError.
 
     ``work_dir`` holds the speech-to-text checkpoints (``<work_dir>/<video_id>/stt``);
-    default $LNAI_WORK_DIR or lecture-notes-ai/backend/output/_cache.
+    default $LNAI_WORK_DIR or apps/worker/backend/output/_cache.
 
     Returns {video_id, url, title, channel, duration_sec, language, source, segments}.
     """
