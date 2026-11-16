@@ -19,7 +19,7 @@ import statistics as st
 import time
 from typing import Any, Callable
 
-try:  # python -m demo.notes_eval.<module> (package) or python demo/notes_eval/<module>.py
+try:  # python -m tools.notes_eval.<module> (package) or python tools/notes_eval/<module>.py
     from . import common as C
 except ImportError:  # pragma: no cover
     import common as C  # type: ignore[no-redef]

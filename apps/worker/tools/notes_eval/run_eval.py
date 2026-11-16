@@ -2,11 +2,11 @@
 
 From ``apps/worker/``::
 
-  .venv/bin/python -m demo.notes_eval.run_eval --contestants gemini,groq,local --videos default
-  .venv/bin/python -m demo.notes_eval.run_eval --contestants gemini,groq,local --videos default --dry-run
-  .venv/bin/python -m demo.notes_eval.run_eval --contestants local:qwen3.5-9b,local:gpt-oss-20b@http://127.0.0.1:8082/v1
-  .venv/bin/python -m demo.notes_eval.run_eval --judge groq          # a judge that is not a contestant
-  .venv/bin/python -m demo.notes_eval.run_eval --judge-only
+  .venv/bin/python -m tools.notes_eval.run_eval --contestants gemini,groq,local --videos default
+  .venv/bin/python -m tools.notes_eval.run_eval --contestants gemini,groq,local --videos default --dry-run
+  .venv/bin/python -m tools.notes_eval.run_eval --contestants local:qwen3.5-9b,local:gpt-oss-20b@http://127.0.0.1:8082/v1
+  .venv/bin/python -m tools.notes_eval.run_eval --judge groq          # a judge that is not a contestant
+  .venv/bin/python -m tools.notes_eval.run_eval --judge-only
 
 Contestants: a known id (gemini, groq, nvidia-super, nvidia-lightning, local) or a spec
 ``provider[:model][@url]`` (``@url`` only for local; otherwise LNAI_LOCAL_URL is used).
@@ -28,7 +28,7 @@ import datetime as dt
 import os
 import time
 
-try:  # python -m demo.notes_eval.run_eval (package) or python demo/notes_eval/run_eval.py
+try:  # python -m tools.notes_eval.run_eval (package) or python tools/notes_eval/run_eval.py
     from . import common as C
 except ImportError:  # pragma: no cover
     import common as C  # type: ignore[no-redef]
@@ -115,7 +115,7 @@ def _csv(values: list[str]) -> list[str]:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(prog="python -m demo.notes_eval.run_eval")
+    ap = argparse.ArgumentParser(prog="python -m tools.notes_eval.run_eval")
     ap.add_argument("--videos", nargs="*", default=["default"],
                     help="video ids, comma or space separated; 'default' = the 4 fixed videos")
     ap.add_argument("--contestants", nargs="*", default=["gemini,groq,local"],

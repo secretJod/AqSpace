@@ -7,13 +7,13 @@ on 4 real library videos, 2 runs each, and publishes the results to the dev page
 ## Run (from `lecture-notes-ai/`, card #75)
 
 ```
-.venv/bin/python -m demo.notes_eval.run_eval --contestants gemini,groq,local --videos default --dry-run   # fakes only
-.venv/bin/python -m demo.notes_eval.run_eval --contestants gemini,groq,local --videos default             # real run
-.venv/bin/python -m demo.notes_eval.run_eval --contestants local:qwen3.5-9b,local:gpt-oss-20b@http://127.0.0.1:8082/v1
-.venv/bin/python -m demo.notes_eval.run_eval --judge groq          # judge that is not Gemini
-.venv/bin/python -m demo.notes_eval.run_eval --judge-only          # only judging/aggregation
-.venv/bin/python -m demo.notes_eval.run_eval --retry-failed        # redo runs that errored
-.venv/bin/python -m demo.notes_eval.blind --reveal                 # unblind AFTER scoring
+.venv/bin/python -m tools.notes_eval.run_eval --contestants gemini,groq,local --videos default --dry-run   # fakes only
+.venv/bin/python -m tools.notes_eval.run_eval --contestants gemini,groq,local --videos default             # real run
+.venv/bin/python -m tools.notes_eval.run_eval --contestants local:qwen3.5-9b,local:gpt-oss-20b@http://127.0.0.1:8082/v1
+.venv/bin/python -m tools.notes_eval.run_eval --judge groq          # judge that is not Gemini
+.venv/bin/python -m tools.notes_eval.run_eval --judge-only          # only judging/aggregation
+.venv/bin/python -m tools.notes_eval.run_eval --retry-failed        # redo runs that errored
+.venv/bin/python -m tools.notes_eval.blind --reveal                 # unblind AFTER scoring
 ```
 
 - **Contestants**: `gemini`, `groq`, `nvidia-super`, `nvidia-lightning`, `local`, or any spec
@@ -34,7 +34,7 @@ on 4 real library videos, 2 runs each, and publishes the results to the dev page
 Each run writes `docs/qa/r5-eval-blind.md` (dry run: `out/dry-run/r5-eval-blind.md`): per video, the run-1
 notes of every contestant behind shuffled letters A, B, C..., with the `docs/qa/r5-eval.md` Part B rubric
 (Accuracy, Coverage, Structure, Readability, 1-5). Model names are stripped from the notes text. The key is
-`out/blind-key.json` (git-ignored). Score first, then `python -m demo.notes_eval.blind --reveal`.
+`out/blind-key.json` (git-ignored). Score first, then `python -m tools.notes_eval.blind --reveal`.
 
 ## Judge bias
 

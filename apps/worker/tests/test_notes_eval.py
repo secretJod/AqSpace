@@ -7,7 +7,7 @@ import os
 import pytest
 import requests
 
-from demo.notes_eval import blind, common as C, evaluate, fakes, run_eval
+from tools.notes_eval import blind, common as C, evaluate, fakes, run_eval
 from notes_engine import llm
 
 
