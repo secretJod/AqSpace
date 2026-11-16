@@ -7,10 +7,19 @@
           All SQL is parameterized (the "?" placeholders).
    Read next: db/progress-repo.js */
 import { tx } from "./database.js";
-import { nowIso } from "./playlist-helpers.js";
+import { nowIso } from "../utils/time.js";
 import { bad, conflict, notFound } from "../utils/http-errors.js";
 import * as v from "../utils/validate.js";
 
+/**
+ * Builds the playlist functions of the repository. Every function below takes the owner's userId first
+ * and throws an HttpError (400 bad input, 404 unknown playlist or video, 409 name or video conflict).
+ *
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @param {object} helpers  from createPlaylistHelpers(db)
+ * @returns {object} listPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist,
+ *          addVideo, addVideos, reorder, editVideo, removeVideo, userHasVideo
+ */
 export function createPlaylistsRepo(db, helpers) {
   const {
     findPlaylistRow,
@@ -44,6 +53,7 @@ export function createPlaylistsRepo(db, helpers) {
   // 1. Playlists
   // -------------------------------------------------------------------------
 
+  /** All of the user's playlists, oldest first; with `withVideos` each one includes its video list. */
   function listPlaylists(userId, { withVideos = false } = {}) {
     return db
       .prepare("SELECT * FROM playlists WHERE user_id = ? ORDER BY pk")
@@ -51,6 +61,7 @@ export function createPlaylistsRepo(db, helpers) {
       .map((row) => playlistToJson(row, withVideos ? videosOfPlaylist(row.pk) : null));
   }
 
+  /** One playlist with its videos (404 when the user has no such playlist). */
   function getPlaylist(userId, slug) {
     const row = requirePlaylistRow(userId, slug);
     return playlistToJson(row, videosOfPlaylist(row.pk));
@@ -104,6 +115,7 @@ export function createPlaylistsRepo(db, helpers) {
     });
   }
 
+  /** body: {name?, description?} (at least one). Returns the updated playlist; 409 when the new name is taken. */
   function updatePlaylist(userId, slug, body) {
     return tx(db, () => {
       const row = requirePlaylistRow(userId, slug);
@@ -125,6 +137,7 @@ export function createPlaylistsRepo(db, helpers) {
     });
   }
 
+  /** Deletes the playlist; its videos, and its smart runs, go with it (ON DELETE CASCADE). */
   function deletePlaylist(userId, slug) {
     const result = db.prepare("DELETE FROM playlists WHERE user_id = ? AND slug = ?").run(userId, slug);
     if (!result.changes) throw notFound("Playlist not found.");
@@ -235,6 +248,7 @@ export function createPlaylistsRepo(db, helpers) {
     db.prepare("UPDATE playlist_videos SET position = ? WHERE playlist_pk = ? AND video_id = ?").run(to, pk, vid);
   }
 
+  /** Removes one video from the playlist (404 when it is not in it). */
   function removeVideo(userId, slug, vid) {
     v.videoId(vid);
     tx(db, () => {

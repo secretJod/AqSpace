@@ -1,15 +1,22 @@
-/* playlist-helpers.js - small database helpers shared by the playlist and sync-import code.
+/* playlist-helpers.js - small database helpers shared by the repository files.
 
    What:  find a playlist row, turn rows into the JSON shape the UI expects,
-          pick a free playlist id, append videos at a position.
+          pick a free playlist id, append videos at a position, make sure a video row exists.
    How it fits: created once per database by db/repository.js and handed to
-          playlists-repo.js and sync-import-repo.js.
+          playlists-repo.js, progress-repo.js and sync-import-repo.js.
    Read next: db/playlists-repo.js */
 import { notFound } from "../utils/http-errors.js";
+import { nowIso } from "../utils/time.js";
 import * as v from "../utils/validate.js";
 
-export const nowIso = () => new Date().toISOString();
-
+/**
+ * Builds the helpers for one database connection. None of them opens a transaction:
+ * callers run them inside their own tx().
+ *
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @returns {object} ensureVideo, findPlaylistRow, requirePlaylistRow, isNameTaken, findFreeSlug,
+ *          touchPlaylist, videosOfPlaylist, playlistToJson, appendVideos
+ */
 export function createPlaylistHelpers(db) {
   // -------------------------------------------------------------------------
   // 1. Videos table (one row per YouTube video, shared by all users)

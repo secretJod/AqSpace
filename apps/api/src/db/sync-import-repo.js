@@ -9,10 +9,18 @@
      - progress only overwrites a row when the incoming `updated` is newer or equal.
    Read next: services/worker-client.js */
 import { tx } from "./database.js";
-import { nowIso } from "./playlist-helpers.js";
+import { nowIso } from "../utils/time.js";
 import { bad } from "../utils/http-errors.js";
 import * as v from "../utils/validate.js";
 
+/**
+ * Builds importState() for the repository.
+ *
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @param {object} helpers  from createPlaylistHelpers(db)
+ * @param {object} readers  listPlaylists and allProgress, used to return the resulting state
+ * @returns {{ importState: Function }}
+ */
 export function createSyncImportRepo(db, helpers, { listPlaylists, allProgress }) {
   const { ensureVideo, findPlaylistRow, isNameTaken, appendVideos } = helpers;
 
@@ -136,6 +144,7 @@ export function createSyncImportRepo(db, helpers, { listPlaylists, allProgress }
     return candidate;
   }
 
+  /** "replace" mode: the server keeps only the playlists that were in the payload. */
   function deletePlaylistsNotIn(userId, keptSlugs) {
     for (const row of db.prepare("SELECT slug FROM playlists WHERE user_id = ?").all(userId)) {
       if (!keptSlugs.has(row.slug))
@@ -147,6 +156,7 @@ export function createSyncImportRepo(db, helpers, { listPlaylists, allProgress }
   // 3. Watch progress
   // -------------------------------------------------------------------------
 
+  /** Imports one progress entry; an invalid one is skipped. Client clocks may be at most a minute ahead. */
   function importOneProgress(userId, vid, entry) {
     if (!v.VIDEO_ID_RE.test(vid) || !v.isObj(entry)) return;
     const pos = Number(entry.pos),

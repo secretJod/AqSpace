@@ -10,13 +10,20 @@ import { bad } from "../utils/http-errors.js";
 import * as v from "../utils/validate.js";
 
 /** Database row -> JSON for the UI. */
-export const progressToJson = (row) => ({
+const progressToJson = (row) => ({
   pos: row.pos_sec,
   dur: row.dur_sec,
   done: !!row.done,
   updated: row.updated_ms
 });
 
+/**
+ * Builds the watch-progress functions of the repository.
+ *
+ * @param {import("node:sqlite").DatabaseSync} db
+ * @param {object} helpers  from createPlaylistHelpers(db) (ensureVideo)
+ * @returns {object} getProgress, allProgress, putProgress
+ */
 export function createProgressRepo(db, helpers) {
   const { ensureVideo } = helpers;
   const findRow = (userId, vid) =>
@@ -26,6 +33,7 @@ export function createProgressRepo(db, helpers) {
   // 1. Reading
   // -------------------------------------------------------------------------
 
+  /** {pos, dur, done, updated} for one video, or null when the user never watched it. */
   function getProgress(userId, vid) {
     const row = findRow(userId, vid);
     return row ? progressToJson(row) : null;
@@ -43,7 +51,11 @@ export function createProgressRepo(db, helpers) {
   // 2. Saving
   // -------------------------------------------------------------------------
 
-  /** body: {pos, dur, done, updated?}. An older `updated` than the stored one is ignored (returns the stored row, stale:true). */
+  /**
+   * Saves the position in one video.
+   * body: {pos, dur, done?, updated?}. An older `updated` than the stored one is ignored and the stored
+   * row is returned with stale: true. Throws a 400 for invalid values.
+   */
   function putProgress(userId, vid, body) {
     v.videoId(vid);
     if (!v.isObj(body)) throw bad("Send a JSON object {pos, dur, done}.");
