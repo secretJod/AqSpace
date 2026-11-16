@@ -11,6 +11,10 @@ Decisions worth knowing (all deterministic, no network):
   (sections may be dropped/merged during coercion).
 * ``meta`` facts (title, channel, duration, url, language) come from the
   transcript when given; the LLM only contributes the subtitle.
+
+How it fits: the last step of ``llm.generate_notes``; ``pdf.py`` renders its output.
+
+Read next: ``docs/notes-schema.md`` (the schema) and ``pdf.py`` (rendering).
 """
 from __future__ import annotations
 
@@ -19,7 +23,9 @@ import json
 import re
 from typing import Any
 
-# ---------------------------------------------------------------- limits ----
+# ---------------------------------------------------------------------------
+# 1. Limits
+# ---------------------------------------------------------------------------
 MAX_SECTIONS = 24
 MAX_BLOCKS = 14
 MAX_ITEMS = 12
@@ -32,6 +38,7 @@ MAX_LABEL = 40
 MAX_GLOSSARY = 30
 MAX_RECAP_POINTS = 8
 MAX_TAKEAWAYS = 4
+MAX_COVER_TAKEAWAYS = 6
 
 BLOCK_TYPES = ("paragraph", "bullets", "steps", "definition", "example",
                "callout", "code", "table", "formula")
@@ -67,7 +74,9 @@ _WS = re.compile(r"\s+")
 _NUM_PREFIX = re.compile(r"^\s*(?:pg\.?\s*)?\d{1,2}\s*[.):\-–]\s+")
 
 
-# --------------------------------------------------------------- helpers ----
+# ---------------------------------------------------------------------------
+# 2. Helpers
+# ---------------------------------------------------------------------------
 def _to_str(v: Any) -> str:
     if v is None:
         return ""
@@ -176,7 +185,9 @@ def _slug(s: str) -> str:
     return s[:20]
 
 
-# ---------------------------------------------------------------- blocks ----
+# ---------------------------------------------------------------------------
+# 3. Blocks
+# ---------------------------------------------------------------------------
 def _coerce_table(b: dict) -> dict | None:
     headers = _str_list(b.get("headers") or b.get("columns"), 8, 60)
     rows_raw = b.get("rows") or b.get("data") or []
@@ -253,7 +264,9 @@ def _coerce_block(b: Any) -> dict | None:
     return None
 
 
-# --------------------------------------------------------------- diagram ----
+# ---------------------------------------------------------------------------
+# 4. Diagram
+# ---------------------------------------------------------------------------
 _CHILD_KEYS = ("children", "subtopics", "branches", "subnodes")
 _PARENT_KEYS = ("parent", "parent_id", "parentId")
 
@@ -505,7 +518,9 @@ def _coerce_diagram(d: Any) -> dict | None:
             "caption": _line(d.get("caption"), 160), "nodes": nodes, "edges": edges}
 
 
-# -------------------------------------------------------------- sections ----
+# ---------------------------------------------------------------------------
+# 5. Sections
+# ---------------------------------------------------------------------------
 def _coerce_section(s: Any) -> dict | None:
     if not isinstance(s, dict):
         return None
@@ -574,9 +589,15 @@ def _unwrap(raw: Any) -> dict:
     return raw
 
 
-# ------------------------------------------------------------------ main ----
-def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | None = None) -> dict:
+# ---------------------------------------------------------------------------
+# 6. Main
+# ---------------------------------------------------------------------------
+def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | None = None,
+                   max_sections: int = MAX_SECTIONS) -> dict:
     """Coerce ``raw`` into the contract schema. Raises ValueError if unusable.
+
+    ``max_sections`` (keyword) raises the section cap for very long lectures (the local provider
+    writes up to ~200 pages for a 24 h video); the JSON shape is unchanged.
 
     ``model`` (optional, keyword) sets ``meta.model`` (e.g. "groq/llama-3.3-70b-versatile");
     otherwise any value present in ``raw['meta']['model']`` is kept.
@@ -593,7 +614,7 @@ def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | No
         cs = _coerce_section(s)
         if cs:
             sections.append(cs)
-        if len(sections) >= MAX_SECTIONS:
+        if len(sections) >= max(1, int(max_sections)):
             break
     if not sections:
         raise ValueError("notes contain no usable sections")
@@ -656,4 +677,9 @@ def validate_notes(raw: dict, transcript: dict | None = None, *, model: str | No
         "big_idea": big_idea,
         "toc": [f"{sec['number']}. {sec['title']}" for sec in sections],
     }
+    # optional lecture-level "key takeaways" for the top of the notes (key omitted when the model gave none,
+    # so older notes JSON round-trips unchanged)
+    top = _str_list(rcover.get("takeaways") or rcover.get("key_takeaways"), MAX_COVER_TAKEAWAYS, 220)
+    if top:
+        cover["takeaways"] = top
     return {"meta": meta, "cover": cover, "sections": sections, "glossary": glossary, "recap": recap}

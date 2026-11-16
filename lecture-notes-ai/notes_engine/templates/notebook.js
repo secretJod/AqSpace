@@ -1,7 +1,23 @@
 /* Lecture Notes AI - measured pagination. Runs in the browser (preview) and in headless Edge/Chrome (PDF).
-   Source units live in #source; pages are generated into #pages. Every page gets a chrome (rings, footer, pg. N / M). */
+   Source units live in #source; pages are generated into #pages. Every page gets a chrome (rings, footer, pg. N / M).
+
+   How it fits: notes_engine/render/page_layout.py inlines this script (after Rough.js) into the page.
+   Python decides WHAT is on the page (units of .item divs, diagram layout); this script decides
+   WHERE each item lands, by actually measuring it in fixed-size A4 page boxes.
+
+   Item attributes it reads (set by render/blocks.py and render/sections.py):
+     data-keep="1"     keep this item (a heading) on the same page as the next item
+     data-split="1"    the item may be split; its .sb element's children are the pieces
+     data-minkeep / data-minmove   at least this many pieces stay / move when splitting
+
+   Sections:
+     1. State and page helpers      4. Rough.js drawing
+     2. Placing and splitting items 5. Footers, page numbers and "next ->" links
+     3. Laying out units            6. Zoom and start-up (after the fonts have loaded)
+*/
 (function () {
   'use strict';
+  // ---- 1. State and page helpers -----------------------------------------------------------
   var root = document.documentElement;
   var isPrint = root.getAttribute('data-print') === '1';
   var SLACK = 1;                                   // px tolerance when testing overflow
@@ -13,6 +29,7 @@
   var pages = [];                                  // {el, content, unit}
   var cur = null;
 
+  // true when everything inside the page's content box is visible (nothing overflows)
   function fits(c) { return c.scrollHeight <= c.clientHeight + SLACK; }
 
   function makePage(kind, unit) {
@@ -23,11 +40,12 @@
     c.className = 'content';
     p.appendChild(c);
     pagesEl.appendChild(p);
-    var rec = { el: p, content: c, unit: unit };
+    var rec = { el: p, content: c, unit: unit, starts: [] };
     pages.push(rec);
     return rec;
   }
 
+  // the small "N. title … continued" heading at the top of a page that continues a section
   function contHead(unit) {
     var d = document.createElement('div');
     d.className = 'item cont-head';
@@ -60,6 +78,8 @@
     return true;
   }
 
+  // ---- 2. Placing and splitting items ------------------------------------------------------
+  // last resort for an item taller than a whole empty page: shrink it in 4 % steps until it fits
   function zoomFit(item, content) {
     var base = parseFloat(item.style.zoom || '1') || 1;
     for (var z = 0.96; z >= 0.4; z -= 0.04) {
@@ -68,6 +88,8 @@
     }
   }
 
+  // Split a data-split item: move pieces (.sb children) from its end to a copy on the next page
+  // until the current page fits. Returns false when splitting is not possible / not worth it.
   function trySplit(item, unit) {
     var sb = item.querySelector('.sb');
     if (!sb || item.getAttribute('data-split') !== '1') return false;
@@ -104,52 +126,51 @@
     return true;
   }
 
+  // Put one item on the current page. If it overflows: split it, or shrink it (page otherwise
+  // empty), or move it - with any headings right above it - to a new page.
   function place(item, unit) {
     cur.content.appendChild(item);
     if (fits(cur.content)) return;
     if (item.getAttribute('data-split') === '1' && trySplit(item, unit)) return;
     if (pageEffectivelyEmpty(cur.content, item)) { zoomFit(item, cur.content); return; }
-    // move to a fresh continuation page, dragging along keep-with-next headers directly above
+    // move to a fresh page, dragging along keep-with-next headers directly above (no orphan headings)
     cur.content.removeChild(item);
     var carry = [item];
     var kids = contentItems(cur.content);
-    while (kids.length > 1 && kids[kids.length - 1].getAttribute('data-keep') === '1' &&
-           kids[kids.length - 1].className.indexOf('sec-head') < 0) {
+    while (kids.length > 1 && kids[kids.length - 1].getAttribute('data-keep') === '1') {
       carry.unshift(kids.pop());
       cur.content.removeChild(carry[0]);
     }
+    var headMoved = carry[0].className.indexOf('sec-head') >= 0;
+    if (headMoved) { var ix = cur.starts.indexOf(unit); if (ix >= 0) cur.starts.splice(ix, 1); }
     newPageFor(unit);
-    cur.content.appendChild(contHead(unit));
+    if (headMoved) cur.starts.push(unit);
+    else cur.content.appendChild(contHead(unit));
     carry.forEach(function (el, i) {
       if (i === carry.length - 1) place(el, unit); else cur.content.appendChild(el);
     });
   }
 
-  function layoutUnit(u, z) {
-    var work = u.cloneNode(true);
+  // ---- 3. Laying out units -----------------------------------------------------------------
+  // Units flow one after another (no forced page break per section); a unit only opens a new page
+  // when the previous page is the cover or the unit is marked data-break="1".
+  function layoutUnit(u) {
+    var work = u;
     var ul0 = work.querySelector('svg.ul');
     work._ul = ul0 ? ul0.cloneNode(true) : null;
-    newPageFor(work);
+    if (!cur || !cur.content || u.getAttribute('data-break') === '1') newPageFor(work);
+    cur.starts.push(work);
     var items = Array.prototype.slice.call(work.querySelectorAll(':scope > .item'));
-    items.forEach(function (it) {
-      if (z < 1 && !/sec-head/.test(it.className)) it.style.zoom = String(/dgm/.test(it.className) ? Math.max(0.6, z - 0.1) : z);
-      place(it, work);
-    });
-    var nxt = u.getAttribute('data-next');
-    if (nxt) {
-      var nl = document.createElement('div');
-      nl.className = 'nextline';
-      nl.setAttribute('data-next', nxt);
-      cur.el.appendChild(nl);
-    }
-    pages.forEach(function (p) { if (p.unit === work) p.unit = u; });
+    items.forEach(function (it) { place(it, work); });
   }
 
-  // ---- Rough.js: python computes the layout and emits shape specs; here they are drawn hand-sketched.
+  // ---- 4. Rough.js drawing ------------------------------------------------------------------
+  // Rough.js: python computes the layout and emits shape specs; here they are drawn hand-sketched.
   // Runs BEFORE pagination (on the hidden #source, no layout needed) so measured sizes never change: the
   // svg viewBox is fixed and the drawn strokes live inside it. On any failure the plain python strokes
   // (<g class="py">) stay visible.
   var SVGNS = 'http://www.w3.org/2000/svg';
+  // one spec from render/sketch.py: k = r(ectangle) | e(llipse) | l(ine) | p(ath), a = args, o = options
   function drawSpec(rc, s) {
     var a = s.a, o = s.o || {}, node = null;
     switch (s.k) {
@@ -161,6 +182,7 @@
     if (node && s.op) node.setAttribute('opacity', String(s.op));
     return node;
   }
+  // redraw every diagram in scope with Rough.js; returns {done, failed} (failed = -1: no Rough.js)
   function roughify(scope) {
     var done = 0, failed = 0;
     if (typeof rough === 'undefined' || !rough.svg) return { done: 0, failed: -1 };
@@ -188,6 +210,7 @@
     return { done: done, failed: failed };
   }
 
+  // main flow: draw diagrams, then the cover page as-is, then every other unit item by item
   function paginate() {
     try {
       var rs = roughify(srcEl);
@@ -202,48 +225,34 @@
         pages.push({ el: pg, content: null, unit: u });
         return;
       }
-      var start = pages.length;
-      layoutUnit(u, 1);
-      var bestN = pages.length - start, bestZ = 1;
-      if (bestN > 1) {
-        var zs = [0.95, 0.91, 0.87, 0.83, 0.8];
-        for (var i = 0; i < zs.length && bestN > 1; i++) {
-          var snap = pages.length;
-          while (pages.length > start) { var q = pages.pop(); q.el.parentNode.removeChild(q.el); }
-          layoutUnit(u, zs[i]);
-          var n = pages.length - start;
-          if (n < bestN) { bestN = n; bestZ = zs[i]; }
-          else if (n >= bestN) {
-            // not better: remember to restore best at the end
-            bestZ = bestZ;
-          }
-        }
-        // re-run with the best zoom (cheap, deterministic) so DOM reflects the chosen layout
-        while (pages.length > start) { var q2 = pages.pop(); q2.el.parentNode.removeChild(q2.el); }
-        layoutUnit(u, bestZ);
-      }
+      layoutUnit(u);
     });
     finish();
   }
 
+  // ---- 5. Footers, page numbers and "next ->" links --------------------------------------------
+  // runs once all pages exist, so the total page count (M in "pg. N / M") is known
   function finish() {
     var total = pages.length;
-    // section number -> first page index (1-based) ; also first page after the numbered sections
-    var secFirst = {}, lastNum = 0, lastIdx = 0;
+    // section number -> page (1-based) where its heading sits; also the page of the first non-section unit after them
+    var secFirst = {}, lastNum = 0, afterSections = 0;
     pages.forEach(function (p, i) {
-      var u = p.unit;
-      if (!u) return;
-      var k = u.getAttribute('data-kind');
-      var num = parseInt(u.getAttribute('data-num') || '', 10);
-      if (k === 'section' && !isNaN(num)) {
-        if (!(num in secFirst)) secFirst[num] = i + 1;
-        if (num >= lastNum) { lastNum = num; lastIdx = i + 1; }
-      }
+      (p.starts || []).forEach(function (u) {
+        var k = u.getAttribute('data-kind');
+        var num = parseInt(u.getAttribute('data-num') || '', 10);
+        if (k === 'section' && !isNaN(num)) {
+          if (!(num in secFirst)) secFirst[num] = i + 1;
+          if (num >= lastNum) lastNum = num;
+          afterSections = 0;
+        } else if (k !== 'cover' && k !== 'contents' && !afterSections) afterSections = i + 1;
+      });
     });
-    var afterSections = 0;
-    for (var i = pages.length - 1; i >= 0; i--) {
-      var kk = pages[i].unit && pages[i].unit.getAttribute('data-kind');
-      if (kk === 'section') { afterSections = i + 2; break; }
+    // long notes: write each section's first page into the contents list ("p. 12")
+    var tocItems = pagesEl.querySelectorAll('.toc-list li[data-num]');
+    for (var ti = 0; ti < tocItems.length; ti++) {
+      var tn = parseInt(tocItems[ti].getAttribute('data-num'), 10);
+      var pgEl = tocItems[ti].querySelector('.pg');
+      if (pgEl && !isNaN(tn) && (tn in secFirst)) pgEl.textContent = 'p. ' + secFirst[tn];
     }
     pages.forEach(function (p, i) {
       if (p.content) p.el.setAttribute('data-fill', Math.round((p.content.lastElementChild ? p.content.lastElementChild.getBoundingClientRect().bottom : 0) - p.content.getBoundingClientRect().top) + '/' + p.content.clientHeight);
@@ -254,8 +263,7 @@
       r.className = 'foot-r';
       r.textContent = 'pg. ' + (i + 1) + ' / ' + total;
       p.el.appendChild(l); p.el.appendChild(r);
-      var nl = p.el.querySelector('.nextline');
-      if (nl) {
+      Array.prototype.forEach.call(p.el.querySelectorAll('.nextline'), function (nl) {
         var raw = nl.getAttribute('data-next');
         var m = /^\s*(?:pg\.?|page)\s*(\d+)\s*[:\-–—]?\s*(.*)$/i.exec(raw);
         var target = null, text = raw;
@@ -265,11 +273,13 @@
           else if (n === lastNum + 1 && afterSections && afterSections <= total) target = afterSections;
           text = m[2];
         }
+        // the next section usually follows right below: a pointer to the same page is just noise
+        if (target === i + 1) { nl.parentNode.removeChild(nl); return; }
         nl.textContent = '';
         nl.appendChild(document.createTextNode('next → '));
         if (target) nl.appendChild(document.createTextNode('pg. ' + target + (text ? ': ' : '')));
         nl.appendChild(document.createTextNode(text));
-      }
+      });
     });
     srcEl.parentNode.removeChild(srcEl);
     root.setAttribute('data-pages', String(total));
@@ -277,6 +287,8 @@
     if (!isPrint) applyZoom();
   }
 
+  // ---- 6. Zoom and start-up ---------------------------------------------------------------------
+  // on screen only: shrink the 794px-wide pages to fit narrow windows
   function applyZoom() {
     var w = window.innerWidth || 800;
     var z = Math.min(1, (w - 16) / 794);
@@ -292,6 +304,7 @@
 
   if (!isPrint) window.addEventListener('resize', function () { if (root.getAttribute('data-paginated')) applyZoom(); });
 
+  // wait until every embedded font has loaded - measuring with fallback fonts would break pages wrongly
   var go = function () {
     if (document.fonts && document.fonts.load) {
       var loads = [];

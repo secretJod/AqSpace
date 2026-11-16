@@ -1,47 +1,39 @@
-import { Router } from "express";
-import { Readable } from "node:stream";
-import { videoId } from "../validate.js";
+/* notes.js - /api/v1/notes : lecture notes per video.
 
-/** Streams a Python response (file) to the client with a small header allow-list. */
-async function pipeFile(res, upstream, names) {
-  res.status(upstream.status);
-  for (const n of names) { const v = upstream.headers.get(n); if (v) res.setHeader(n, v); }
-  if (!upstream.body) return res.end();
-  const src = Readable.fromWeb(upstream.body);
-  src.on("error", () => res.destroy());
-  res.on("close", () => src.destroy());
-  src.pipe(res);
-}
+   What:  list / status / start notes, and stream the finished HTML or PDF from the worker.
+   How it fits: mounted in routes/index.js; the logic lives in services/notes-service.js.
+   Read next: routes/smart.js */
+import { Router } from "express";
+import { videoId } from "../utils/validate.js";
+import { pipeFile } from "../utils/pipe-file.js";
 
 export function notesRoutes(notes, heavyLimiter) {
-  const r = Router();
-  r.get("/notes", (_req, res) => res.json({ notes: notes.list() }));
-  r.get("/notes/:videoId", async (req, res) => res.json(await notes.status(videoId(req.params.videoId))));
-  r.post("/notes/:videoId", heavyLimiter, async (req, res) => {
+  const router = Router();
+
+  router.get("/notes", (_req, res) => {
+    res.json({ notes: notes.list() });
+  });
+
+  router.get("/notes/:videoId", async (req, res) => {
+    res.json(await notes.status(videoId(req.params.videoId)));
+  });
+
+  // 202 = a new job was started, 200 = existing notes / job returned
+  router.post("/notes/:videoId", heavyLimiter, async (req, res) => {
     const out = await notes.start(req.user, videoId(req.params.videoId));
     res.status(out.started ? 202 : 200).json(out.status);
   });
-  r.get("/notes/:videoId/html", async (req, res) => {
-    const up = await notes.file(videoId(req.params.videoId), "html");
-    // Python's own CSP allows exactly the inline scripts in the generated page (by hash) - pass it through
-    await pipeFile(res, up, ["content-type", "content-security-policy", "content-length"]);
-  });
-  r.get("/notes/:videoId/pdf", async (req, res) => {
-    const up = await notes.file(videoId(req.params.videoId), "pdf");
-    await pipeFile(res, up, ["content-type", "content-disposition", "content-length"]);
-  });
-  return r;
-}
 
-/** The notes page references /static/fonts/<file>; serve those from the Python service. */
-export function fontRoutes(py) {
-  const r = Router();
-  r.get("/static/fonts/:file", async (req, res) => {
-    if (!/^[A-Za-z0-9._-]{1,100}$/.test(req.params.file) || req.params.file.includes("..")) return res.status(404).end();
-    const up = await py.raw(`/static/fonts/${req.params.file}`);
-    if (!up.ok) { await up.body?.cancel(); return res.status(404).end(); }
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    await pipeFile(res, up, ["content-type", "content-length"]);
+  router.get("/notes/:videoId/html", async (req, res) => {
+    const upstream = await notes.file(videoId(req.params.videoId), "html");
+    // The worker's own CSP allows exactly the inline scripts in the generated page (by hash) - pass it through.
+    await pipeFile(res, upstream, ["content-type", "content-security-policy", "content-length"]);
   });
-  return r;
+
+  router.get("/notes/:videoId/pdf", async (req, res) => {
+    const upstream = await notes.file(videoId(req.params.videoId), "pdf");
+    await pipeFile(res, upstream, ["content-type", "content-disposition", "content-length"]);
+  });
+
+  return router;
 }

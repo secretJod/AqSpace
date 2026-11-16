@@ -1,0 +1,84 @@
+/* AQspace - profile button + menu, sign-in and expired-session screens (#130). Uses the tokens from styles.css. */
+
+/* hide the app until /auth/status says who is here (profile.js removes the class) */
+.auth-pending body > :not(script):not(.authscreen) { visibility: hidden; }
+
+/* ---------- profile button ---------- */
+.profile { position: relative; flex: none; margin-left: auto; }
+.search:not([hidden]) + .profile { margin-left: 0; }
+.profile__btn {
+  display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--line-strong); background: var(--panel-2);
+  color: var(--accent); cursor: pointer; overflow: hidden;
+  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.profile__btn:hover, .profile__btn[aria-expanded="true"] { border-color: var(--white); }
+.profile__btn:focus-visible { outline: 2px solid var(--white); outline-offset: 3px; border-radius: 50%; }
+.profile__face { display: grid; place-items: center; width: 100%; height: 100%; }
+.profile__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.profile__initials { font: 600 13px/1 var(--font-body); letter-spacing: .02em; color: var(--text); }
+
+/* ---------- menu ---------- */
+.profile__menu {
+  position: absolute; right: 0; top: calc(100% + 10px); z-index: 60;
+  min-width: 240px; max-width: min(320px, calc(100vw - 2 * var(--gutter)));
+  padding: 6px; border-radius: var(--r-md);
+  background: var(--panel); border: 1px solid var(--line-strong);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .55);
+  animation: profile-in var(--dur) var(--ease);
+}
+.profile__menu:focus { outline: none; }
+.profile__head { padding: 10px 12px 8px; min-width: 0; }
+.profile__name { margin: 0; font: 600 14px/1.3 var(--font-body); color: var(--text); overflow-wrap: anywhere; }
+.profile__email { margin: 2px 0 0; font: 400 13px/1.3 var(--font-body); color: var(--muted); overflow-wrap: anywhere; }
+.profile__note { margin: 0; padding: 8px 12px 10px; font: 400 13px/1.4 var(--font-body); color: var(--muted); }
+.profile__sep { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.profile__item {
+  display: block; width: 100%; text-align: left; padding: 10px 12px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text); font: 500 14px/1.2 var(--font-body); cursor: pointer;
+}
+.profile__item:hover, .profile__item:focus-visible { background: rgba(255, 255, 255, .09); outline: none; }
+.profile__item:focus-visible { box-shadow: inset 0 0 0 2px var(--white); }
+@keyframes profile-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* ---------- sign-in / expired screen ---------- */
+.authscreen {
+  position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: var(--gutter);
+  background: radial-gradient(120% 80% at 50% 0%, var(--panel-2), var(--bg) 70%);
+  overflow-y: auto;
+}
+.authcard {
+  width: 100%; max-width: 400px; padding: clamp(28px, 6vw, 44px); text-align: center;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+  animation: profile-in .35s var(--ease);
+}
+.authcard__brand { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+.authcard__name { font: 600 18px/1 var(--font-body); color: var(--text); letter-spacing: .01em; }
+.authcard__title { margin: 0 0 8px; font: 500 clamp(24px, 5vw, 30px)/1.15 var(--font-display); color: var(--text); }
+.authcard__desc { margin: 0 0 28px; color: var(--muted); font: 400 15px/1.5 var(--font-body); }
+
+/* Google "Sign in with Google" button: white theme, standard G mark, Roboto-like weight, 40px tall, rounded */
+.gbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+  height: 40px; padding: 0 16px 0 12px; border-radius: 20px;
+  background: #ffffff; color: #1f1f1f; border: 1px solid #747775;
+  font: 500 14px/1 "Roboto", var(--font-body); letter-spacing: .25px; text-decoration: none;
+  transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.gbtn:hover { background: #f2f2f2; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.gbtn:active { background: #e8e8e8; }
+.gbtn:focus-visible { outline: 2px solid var(--white); outline-offset: 3px; }
+.gbtn__logo { width: 20px; height: 20px; flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .profile__btn, .gbtn { transition: none; }
+  .profile__menu, .authcard { animation: none; }
+}
+
+@media (forced-colors: active) {
+  .profile__btn, .profile__menu, .authcard, .gbtn { border: 1px solid CanvasText; }
+  .profile__btn:focus-visible, .gbtn:focus-visible { outline: 2px solid Highlight; }
+  .profile__item:focus-visible { outline: 2px solid Highlight; box-shadow: none; }
+  .gbtn { forced-color-adjust: none; }      /* keep Google's brand colours readable */
+}

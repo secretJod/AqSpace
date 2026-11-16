@@ -1,0 +1,149 @@
+/* =====================================================================================================
+   What this file does:  styles for the Sticky board (js/features/dashboard/sticky-board.js): the paper
+                         notes, the compact stack on the dashboard card, the full board and the editor.
+   How it fits:          loaded after dashboard.css; uses its --hud-* tokens for the board chrome. The
+                         notes themselves are deliberately "real paper" colours so they stand out on the HUD.
+   Start reading at:     section 1 (paper colours), then 3 (the note) and 5 (the editor).
+   ===================================================================================================== */
+
+/* ===== 1. paper colours (background, darker fold, ink) ===== */
+.sticky--yellow   { --paper: #ffe27a; --fold: #e8c54d; --ink: #3b3000; }
+.sticky--pink     { --paper: #ffb3cf; --fold: #ef8fb4; --ink: #45081f; }
+.sticky--mint     { --paper: #a8f0c9; --fold: #7fd9a9; --ink: #06351f; }
+.sticky--sky      { --paper: #a9dcff; --fold: #7fc2f0; --ink: #062b45; }
+.sticky--lavender { --paper: #d5c4ff; --fold: #b7a2f2; --ink: #251254; }
+.sticky--peach    { --paper: #ffc9a3; --fold: #f2a979; --ink: #432006; }
+
+/* ===== 2. board layout ===== */
+.sboard { display: flex; flex-direction: column; gap: 14px; }
+.sboard__empty { color: var(--hud-dim, #8b98a8); font-size: 13px; line-height: 1.5; margin: 6px 0; }
+.sboard--compact .sboard__stack {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+  padding: 4px 2px;
+}
+.sboard__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sboard__count { font: 600 11px/1 ui-monospace, "JetBrains Mono", Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--hud-dim, #8b98a8); }
+.sboard__new {
+  font: 700 12px/1 ui-monospace, "JetBrains Mono", Consolas, monospace; letter-spacing: .08em; text-transform: uppercase;
+  padding: 9px 12px; border-radius: 2px; cursor: pointer;
+  color: var(--hud-cyan, #5fd4ff); background: transparent; border: 1px solid var(--hud-line-strong, rgba(160,180,200,.45));
+  transition: background .15s, border-color .15s;
+}
+.sboard__new:hover { background: rgba(95, 212, 255, .08); border-color: var(--hud-cyan, #5fd4ff); }
+.sboard__new--primary { background: var(--hud-cyan, #5fd4ff); color: #04121c; border-color: var(--hud-cyan, #5fd4ff); }
+.sboard__new--primary:hover { background: #8fe2ff; }
+.sboard__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sboard__h { margin: 0; font-size: 18px; font-weight: 700; color: var(--hud-text, #e6edf5); }
+.sboard--full { position: relative; min-height: 420px; }
+.sboard__grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px;
+  padding: 10px 4px 20px;
+  /* a faint cork-board dot pattern behind the notes */
+  background-image: radial-gradient(rgba(138, 155, 176, .14) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* ===== 3. the paper note ===== */
+.sticky {
+  position: relative; display: flex; flex-direction: column; gap: 6px; text-align: left;
+  min-height: 150px; padding: 22px 14px 12px; border: 0; cursor: pointer;
+  color: var(--ink); background: linear-gradient(180deg, var(--paper) 0%, var(--paper) 82%, var(--fold) 100%);
+  border-radius: 2px 2px 2px 14px;                 /* lifted bottom-left corner */
+  transform: rotate(var(--tilt, 0deg));
+  box-shadow: 0 1px 0 rgba(255,255,255,.35) inset, 0 10px 18px -8px rgba(0,0,0,.65), 0 2px 4px rgba(0,0,0,.35);
+  transition: transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .2s;
+  font-family: inherit;
+}
+.sticky:hover, .sticky:focus-visible { transform: rotate(0deg) translateY(-4px) scale(1.03); box-shadow: 0 18px 28px -10px rgba(0,0,0,.75), 0 3px 6px rgba(0,0,0,.4); z-index: 1; }
+.sticky:focus-visible { outline: 2px solid var(--hud-cyan, #5fd4ff); outline-offset: 3px; }
+/* the push pin */
+.sticky__pin {
+  position: absolute; top: 7px; left: 50%; width: 11px; height: 11px; margin-left: -5px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff 0 15%, #9fb4c8 40%, #3a4a5c 100%);
+  box-shadow: 0 2px 3px rgba(0,0,0,.45);
+}
+.sticky.is-pinned .sticky__pin { background: radial-gradient(circle at 35% 30%, #fff 0 15%, #ff6b6b 40%, #8a1c1c 100%); }
+.sticky__title { font-weight: 800; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.sticky__text {
+  font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; opacity: .9;
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+}
+.sticky__when { margin-top: auto; font: 600 10px/1 ui-monospace, Consolas, monospace; letter-spacing: .06em; text-transform: uppercase; opacity: .6; }
+.sticky--small { min-height: 104px; padding: 20px 11px 10px; }
+.sticky--small .sticky__title { font-size: 13px; }
+.sticky--small .sticky__text { font-size: 12px; -webkit-line-clamp: 2; }
+
+/* new notes drop onto the board */
+@keyframes sticky-drop { from { opacity: 0; transform: translateY(-14px) rotate(-6deg) scale(.94); } }
+.sboard__grid .sticky, .sboard__stack .sticky { animation: sticky-drop .35s cubic-bezier(.2,.8,.2,1) both; }
+
+/* ===== 4. card slot on the dashboard ===== */
+.dash__card--board .sboard { margin-top: 4px; }
+
+/* ===== 5. the editor: the paper zooms open over the board ===== */
+.snote-ed {
+  position: absolute; inset: -8px; z-index: 5; display: grid; place-items: center; padding: 16px;
+  background: rgba(4, 8, 12, .72); backdrop-filter: blur(4px);
+  animation: snote-fade .2s ease both;
+}
+.snote {
+  width: min(560px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 26px 22px 18px;
+  color: var(--ink); background: var(--paper); border-radius: 3px 3px 3px 18px;
+  box-shadow: 0 30px 60px -20px rgba(0,0,0,.85), 0 4px 10px rgba(0,0,0,.4);
+  animation: snote-zoom .32s cubic-bezier(.2,.8,.2,1) both;
+}
+.snote-ed.is-closing { animation: snote-fade .2s ease reverse both; }
+.snote-ed.is-closing .snote { animation: snote-zoom .2s ease reverse both; }
+@keyframes snote-fade { from { opacity: 0; } }
+@keyframes snote-zoom { from { opacity: 0; transform: scale(.6) rotate(-4deg); } }
+
+.snote__top { display: flex; gap: 10px; align-items: center; }
+.snote__title, .snote__text {
+  width: 100%; border: 0; outline: none; background: transparent; color: inherit; font-family: inherit;
+}
+.snote__title { font-size: 22px; font-weight: 800; padding: 4px 0; border-bottom: 1px dashed rgba(0,0,0,.25); }
+.snote__title::placeholder, .snote__text::placeholder { color: inherit; opacity: .45; }
+.snote__text { min-height: 200px; resize: vertical; font-size: 15px; line-height: 1.6; }
+.snote__title:focus-visible, .snote__text:focus-visible { box-shadow: 0 2px 0 rgba(0,0,0,.45); }
+.snote__pin, .snote__btn {
+  font: 700 11px/1 ui-monospace, Consolas, monospace; letter-spacing: .08em; text-transform: uppercase;
+  padding: 8px 11px; border-radius: 2px; cursor: pointer; color: inherit;
+  background: rgba(0,0,0,.06); border: 1px solid rgba(0,0,0,.3);
+}
+.snote__pin.is-on { background: rgba(0,0,0,.82); color: var(--paper); }
+.snote__btn--primary { background: rgba(0,0,0,.85); color: var(--paper); border-color: transparent; }
+.snote__btn--danger { color: #8a0f1f; border-color: rgba(138, 15, 31, .5); }
+.snote__btn:focus-visible, .snote__pin:focus-visible, .snote__swatch:focus-visible { outline: 2px solid rgba(0,0,0,.8); outline-offset: 2px; }
+.snote__colors { display: flex; gap: 10px; flex-wrap: wrap; }
+.snote__swatch {
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer; background: var(--paper);
+  border: 2px solid rgba(0,0,0,.25); box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+.snote__swatch[aria-checked="true"] { border-color: rgba(0,0,0,.85); box-shadow: 0 0 0 3px rgba(255,255,255,.7); }
+.snote__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.snote__meta { font-size: 12px; opacity: .65; }
+.snote__actions { display: flex; gap: 8px; }
+.snote__warn { margin: 0; font-size: 13px; font-weight: 700; color: #8a0f1f; }
+
+/* ===== 6. goals progress list (expanded Goals card, dashboard.js) ===== */
+.gprog { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 14px; }
+.gprog__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.gprog__name { font-weight: 700; color: var(--hud-text, #e6edf5); text-decoration: none; }
+a.gprog__name:hover { color: var(--hud-cyan, #5fd4ff); text-decoration: underline; text-underline-offset: 3px; }
+a.gprog__name::after { content: " ↗"; font-size: 12px; color: var(--hud-cyan, #5fd4ff); }
+.gprog__pct { font: 700 13px/1 ui-monospace, Consolas, monospace; color: var(--hud-cyan, #5fd4ff); }
+.gprog__bar { position: relative; height: 4px; margin: 8px 0 6px; background: var(--hud-line, rgba(138,155,176,.22)); }
+.gprog__fill { position: absolute; inset: 0 auto 0 0; background: var(--hud-cyan, #5fd4ff); transition: width .6s cubic-bezier(.2,.8,.2,1); }
+.gprog__item.is-behind .gprog__fill { background: var(--hud-amber, #ffb020); }
+.gprog__item.is-done .gprog__fill { background: var(--hud-ok, #3ddc84); }
+.gprog__meta { font-size: 12px; color: var(--hud-dim, #8b98a8); }
+.gprog__status { font: 700 10px/1 ui-monospace, Consolas, monospace; letter-spacing: .1em; text-transform: uppercase; margin-right: 6px; }
+.gprog__item.is-behind .gprog__status { color: var(--hud-amber, #ffb020); }
+.gprog__item.is-done .gprog__status { color: var(--hud-ok, #3ddc84); }
+.gprog__h { margin: 0 0 10px; font: 700 11px/1 ui-monospace, Consolas, monospace; letter-spacing: .18em; text-transform: uppercase; color: var(--hud-dim, #8b98a8); }
+
+/* ===== 7. reduced motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  .sticky, .sboard__grid .sticky, .sboard__stack .sticky, .snote, .snote-ed { animation: none !important; transition: none !important; }
+  .sticky:hover, .sticky:focus-visible { transform: rotate(var(--tilt, 0deg)); }
+}

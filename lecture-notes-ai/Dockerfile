@@ -21,7 +21,7 @@ RUN printf '#!/bin/sh\nexec chromium --no-sandbox --disable-dev-shm-usage "$@"\n
 
 WORKDIR /app
 COPY . /app
-RUN pip install ".[web]"
+RUN pip install ".[web,whisper]"
 
 WORKDIR /app/backend
 EXPOSE 5055
