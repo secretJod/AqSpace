@@ -62,7 +62,7 @@ export function loadConfig(env = process.env, overrides = {}) {
     devTools: env.AQ_DEV_TOOLS !== "0", // /dev tracker (local only); AQ_DEV_TOOLS=0 turns it off (404)
     devLogDir: env.AQ_DEVLOG_DIR ?? path.join(ROOT, "data", "devlogs"), // persistent tracker JSONL; "" = off
     devLogDays: int(env.AQ_DEVLOG_DAYS, 14),
-    runDir: env.AQ_RUN_DIR ?? path.resolve(ROOT, "..", ".run"), // service console logs (<service>.out.log / .err.log); "" = off
+    runDir: env.AQ_RUN_DIR ?? path.resolve(ROOT, "..", "..", ".run"), // service console logs (<service>.out.log / .err.log); "" = off
 
     // Rate limits, per client IP, fixed window
     // Opt-in: give each tunnel visitor their own bucket via CF-Connecting-IP. Only honoured for proxied requests

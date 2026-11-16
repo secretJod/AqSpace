@@ -1,4 +1,4 @@
--- AQ Learning application database (SQLite via node:sqlite). Applied once, in file-name order, by src/db/database.js.
+-- AQspace application database (SQLite via node:sqlite). Applied once, in file-name order, by src/db/database.js.
 -- Timestamps: ISO-8601 UTC text, except watch_progress.updated_ms (epoch milliseconds, as the UI sends it).
 
 CREATE TABLE users (

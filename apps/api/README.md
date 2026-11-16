@@ -137,7 +137,7 @@ Start reading at `src/app.js`, then `src/routes/index.js`, then one area end to 
 | `AQ_DEV_TOOLS`                 | `1`                                                 | `0` turns the /dev tracker off (404)                                            |
 | `AQ_DEVLOG_DIR`                | `apps/api/data/devlogs`                             | saved tracker history; empty = memory only                                      |
 | `AQ_DEVLOG_DAYS`               | `14`                                                | days of saved history to keep                                                   |
-| `AQ_RUN_DIR`                   | `apps/.run`                                         | folder with service console logs for /dev; empty = off                          |
+| `AQ_RUN_DIR`                   | `.run` (repo root)                                  | folder with service console logs for /dev; empty = off                          |
 
 Secrets only come from the environment (or the repo's `.env` via docker compose); they are never logged.
 

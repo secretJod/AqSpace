@@ -591,7 +591,7 @@
   function buildHeader(tot, getLogLines) {
     var head = el("header", "dash__head");
     var left = el("div", "dash__hello");
-    left.appendChild(el("p", "dash__sys", "AQ.LEARNING // COMMAND DECK"));
+    left.appendChild(el("p", "dash__sys", "AQSPACE // COMMAND DECK"));
     var title = el("h1", "pagetitle dash__title", greeting());
     title.tabIndex = -1; // so dialogs can move focus here when they close
     title.setAttribute("data-focus-fallback", "");

@@ -55,7 +55,7 @@ jobs:
         working-directory: apps/worker
         env:
           LNA_OFFLINE: "1"
-        run: python -m pytest tests demo -q
+        run: python -m pytest tests -q
 
   web:
     name: web (lint and syntax)
