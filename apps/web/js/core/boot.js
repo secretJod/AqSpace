@@ -84,6 +84,7 @@ window.AQ = window.AQ || {};
     "js/features/dashboard/sticky-board.js",
     "js/features/dashboard/dashboard.js",
     "js/features/settings/settings-view.js", // the Settings page (#/settings): AI keys
+    "js/features/ai/ai-assistant.js", // the AI tab (#/ai): ask questions about your own notes
 
     // 5. The app: router and screens. Loaded last because it uses everything above.
     "js/app.js"

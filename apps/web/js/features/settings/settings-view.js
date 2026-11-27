@@ -236,9 +236,7 @@
         var lab = el("label", "ai-task__label");
         lab.htmlFor = "ai-task-" + task;
         lab.appendChild(el("span", "ai-task__name", meta.label));
-        lab.appendChild(
-          el("span", "ai-task__what", meta.what + (task === "assistant" || task === "doubts" ? " (coming soon)" : ""))
-        );
+        lab.appendChild(el("span", "ai-task__what", meta.what + (task === "doubts" ? " (coming soon)" : "")));
         li.appendChild(lab);
 
         var ctl = el("div", "ai-task__ctl");

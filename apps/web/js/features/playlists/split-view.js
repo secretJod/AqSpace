@@ -42,8 +42,10 @@
   }
 
   function parse() {
-    var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?$/.exec(location.hash || "");
-    return m ? { pid: m[1], vid: m[2] || null } : null;
+    var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?(?:\?t=(\d{1,6}))?$/.exec(
+      location.hash || ""
+    );
+    return m ? { pid: m[1], vid: m[2] || null, t: m[2] && m[3] != null ? Number(m[3]) : null } : null;
   }
   /**
    * Whether the current address belongs to the live split shell. app.js skips its own re-render then,
@@ -499,10 +501,33 @@
     if (!st || !st.root.isConnected) return;
     var r = parse();
     var want = r && r.pid === st.pid && r.vid && findVideo(st.pid, r.vid) ? r.vid : null;
-    if (want === st.vid) return;
-    if (!want) closeSplit(true);
-    else if (!st.vid) openSplit(want, true);
-    else switchSplit(want);
+    if (want !== st.vid) {
+      if (!want) closeSplit(true);
+      else if (!st.vid) openSplit(want, true);
+      else switchSplit(want);
+    }
+    seekFromHash();
+  }
+
+  // A link like #/playlist/<id>/notes/<videoId>?t=<sec> (the AI tab's citations) also plays the video from
+  // that second. The ?t= is dropped from the address first, so Back or a re-render does not replay it.
+  function seekFromHash() {
+    var st = cur,
+      r = parse();
+    if (!st || !r || r.t == null || r.pid !== st.pid || !AQ.player) return;
+    try {
+      history.replaceState(null, "", "#/playlist/" + st.pid + "/notes/" + r.vid);
+    } catch {
+      /* ignore */
+    }
+    var p = S.get(st.pid);
+    var index = p
+      ? p.videos.findIndex(function (v) {
+          return v.id === r.vid;
+        })
+      : -1;
+    if (index < 0) return;
+    AQ.player.open({ queue: p.videos.slice(), index: index, start: r.t });
   }
 
   // ===== 6. public =====
@@ -619,8 +644,10 @@
       },
       true
     );
-    if (o.openId && findVideo(p.id, o.openId)) openSplit(o.openId, false);
-    else if (o.openId) {
+    if (o.openId && findVideo(p.id, o.openId)) {
+      openSplit(o.openId, false);
+      setTimeout(seekFromHash, 0); // after app.js has put the shell on the page
+    } else if (o.openId) {
       try {
         history.replaceState(null, "", "#/playlist/" + p.id);
       } catch {

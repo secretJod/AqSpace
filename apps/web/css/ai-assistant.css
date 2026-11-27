@@ -1,0 +1,271 @@
+/* =====================================================================================================
+   ai-assistant.css - the AI tab (#/ai): ask questions about your own notes
+
+   What this file styles:
+     The chat screen built by js/features/ai/ai-assistant.js (classes start with `aia`): header and privacy
+     line, the conversation list, answers rendered from markdown, citation chips and the question form.
+     The form sticks above the bottom navbar (navbar.css provides --nb-space). Linked after ai.css.
+     Sections: 1 layout | 2 conversation | 3 answers and citations | 4 form | 5 responsive | 6 reduced motion
+   ===================================================================================================== */
+
+/* ===== 1. layout ===== */
+.aia {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(100%, 760px);
+  min-width: 0;
+  margin: 0 auto;
+  padding: 24px 16px 190px; /* room for the fixed question form */
+}
+.aia__title {
+  font-family: "Playfair Display", serif;
+  font-weight: 500;
+  font-size: clamp(26px, 5vw, 34px);
+}
+.aia__privacy,
+.aia__empty,
+.aia-muted {
+  color: #a8a8a8;
+  font-size: 13px;
+}
+.aia__empty {
+  padding: 24px 0;
+  text-align: center;
+}
+.aia-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ===== 2. conversation ===== */
+.aia__log {
+  list-style: none;
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+}
+.aia-turn {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  animation: aia-in 0.25s ease-out;
+}
+.aia-q {
+  justify-self: end;
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px 16px 4px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.aia-scope {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #a8a8a8;
+}
+.aia-a {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px 16px 16px 4px;
+  background: linear-gradient(165deg, #101317 0%, #07090b 60%);
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+/* ===== 3. answers and citations ===== */
+.aia-a > * + * {
+  margin-top: 10px;
+}
+.aia-a ul,
+.aia-a ol {
+  padding-left: 22px;
+}
+.aia-a ul {
+  list-style: disc;
+}
+.aia-a ol {
+  list-style: decimal;
+}
+.aia-a code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.92em;
+}
+.aia-a pre {
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.aia-a pre code {
+  padding: 0;
+  background: none;
+}
+.aia-a--loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #c4c4c4;
+}
+.aia-a--loading > * + * {
+  margin-top: 0;
+}
+.aia-dots {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: aia-pulse 1s ease-in-out infinite;
+}
+.aia-a--error {
+  border-color: rgba(255, 138, 138, 0.4);
+}
+.aia-nf {
+  color: #ffd27a;
+  font-weight: 500;
+}
+.aia-cites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.aia-cites__label {
+  width: 100%;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a8a8a8;
+}
+.aia-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  font-size: 12px;
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.aia-chip:hover {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ===== 4. form ===== */
+/* fixed, not sticky: body has overflow-x hidden, which stops sticky from working */
+.aia__form {
+  position: fixed;
+  z-index: 5;
+  left: 50%;
+  bottom: var(--nb-space, 16px);
+  transform: translateX(-50%);
+  width: min(calc(100% - 32px), 728px);
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(8, 10, 12, 0.94);
+}
+.aia__row,
+.aia__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.aia__scope-lbl,
+.aia__hint,
+.aia__count {
+  font-size: 12px;
+  color: #a8a8a8;
+}
+.aia__select {
+  flex: 1 1 160px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: #0b0d10;
+  color: inherit;
+}
+.aia__clear {
+  margin-left: auto;
+}
+.aia__input {
+  width: 100%;
+  min-height: 52px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  background: #0b0d10;
+  color: inherit;
+  font: inherit;
+}
+.aia__hint {
+  flex: 1 1 auto;
+}
+.aia__send:disabled,
+.aia__clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.aia a:focus-visible,
+.aia button:focus-visible,
+.aia select:focus-visible,
+.aia textarea:focus-visible {
+  outline: 2px solid #9cc1ff;
+  outline-offset: 2px;
+}
+
+/* ===== 5. responsive ===== */
+@media (max-width: 560px) {
+  .aia {
+    padding-top: 16px;
+  }
+  .aia__hint {
+    display: none;
+  }
+  .aia__count {
+    flex: 1 1 auto;
+  }
+  .aia-q {
+    max-width: 100%;
+  }
+}
+
+/* ===== 6. reduced motion ===== */
+@keyframes aia-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes aia-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aia-turn,
+  .aia-dots {
+    animation: none;
+  }
+}
