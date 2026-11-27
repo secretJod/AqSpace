@@ -63,6 +63,9 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:5180/api/v1/auth/google/callback}
       SESSION_SECRET: ${SESSION_SECRET:-}
+      # Encrypts each user's own AI keys at rest (base64 of 32 bytes, from the root .env). Empty: a random
+      # secret is created once in apps/api/data/.key-secret. Changing it makes saved keys unreadable.
+      AQ_KEY_SECRET: ${AQ_KEY_SECRET:-}
     volumes:
       - ./apps/api/data:/app/api/data    # SQLite database (aq.db) stays in the repo
     depends_on:

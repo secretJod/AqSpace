@@ -57,6 +57,8 @@ src/
     worker-client.js     HTTP client for the worker
     notes-service.js     notes jobs: start, poll, cache, resume after a worker restart, expire, stream files
     smart-service.js     smart playlist runs: fingerprint, poll, store the result
+    ai-keys-service.js   each user's own AI keys, task -> provider choices, which key a job uses
+    key-box.js           AES-256-GCM encryption of saved keys (master secret AQ_KEY_SECRET)
     job-helpers.js       shared per-key lock, progress mapping, error mapping
   db/                    everything that touches SQLite
     database.js          open the database, run migrations, tx(), write-contention counter
@@ -109,35 +111,37 @@ Start reading at `src/app.js`, then `src/routes/index.js`, then one area end to 
 
 ## Environment variables
 
-| Variable                       | Default                                             | Meaning                                                                         |
-| ------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `HOST`                         | `127.0.0.1`                                         | listen address; `0.0.0.0` only inside the container                             |
-| `PORT`                         | `5180`                                              | listen port                                                                     |
-| `DB_FILE`                      | `apps/api/data/aq.db`                               | SQLite file, created and migrated on start                                      |
-| `UI_DIR`                       | `apps/web`                                          | the web app served on `/`                                                       |
-| `PY_NOTES_URL`                 | `http://127.0.0.1:5055`                             | the worker; must be loopback unless `ALLOW_REMOTE_PY=1`                         |
-| `ALLOW_REMOTE_PY`              | off                                                 | `1` allows a worker on another host                                             |
-| `PY_NOTES_PROVIDER`            | `groq`                                              | provider sent to the worker for notes jobs                                      |
-| `PY_SMART_PROVIDER`            | `gemini`                                            | provider sent to the worker for smart runs                                      |
-| `PY_SMART_MODEL`               | empty                                               | model for smart runs; empty = the worker's default                              |
-| `NOTES_REQUIRE_MEMBERSHIP`     | `1`                                                 | `0` lets a user start notes for any video, not only ones in their playlists     |
-| `NOTES_MAX_AUTO_RESUMES`       | `3`                                                 | how often a notes job is re-submitted after the worker lost it                  |
-| `BODY_LIMIT`                   | `256kb`                                             | JSON body limit (`/sync/import` allows 2 MB)                                    |
-| `LOG`                          | `1`                                                 | `0` silences the request log                                                    |
-| `RATE_LIMIT_PER_MIN`           | `600`                                               | requests per client per minute on `/api/v1`                                     |
-| `RATE_LIMIT_HEAVY_PER_MIN`     | `20`                                                | starting notes or smart runs, and YouTube imports, per client per minute        |
-| `TRUST_CF_HEADERS`             | off                                                 | `1` rate-limits each tunnel visitor by `CF-Connecting-IP` (loopback proxy only) |
-| `TUNNEL_ORIGINS`               | empty                                               | extra page origins allowed by CORS, e.g. `https://*.trycloudflare.com`          |
-| `AUTH_MODE`                    | `local`                                             | `local` (one built-in user) or `google`                                         |
-| `GOOGLE_CLIENT_ID` / `_SECRET` | empty                                               | Google OAuth web client (required for `google`)                                 |
-| `GOOGLE_REDIRECT_URI`          | `http://localhost:5180/api/v1/auth/google/callback` | must match the Google Cloud Console exactly                                     |
-| `SESSION_SECRET`               | empty                                               | at least 32 characters, signs the OAuth state cookie (required for `google`)    |
-| `SESSION_MAX_AGE_HOURS`        | `168`                                               | session lifetime                                                                |
-| `AUTH_AFTER_LOGIN`             | `/`                                                 | where sign-in lands when no `?next=` was given                                  |
-| `AQ_DEV_TOOLS`                 | `1`                                                 | `0` turns the /dev tracker off (404)                                            |
-| `AQ_DEVLOG_DIR`                | `apps/api/data/devlogs`                             | saved tracker history; empty = memory only                                      |
-| `AQ_DEVLOG_DAYS`               | `14`                                                | days of saved history to keep                                                   |
-| `AQ_RUN_DIR`                   | `.run` (repo root)                                  | folder with service console logs for /dev; empty = off                          |
+| Variable                       | Default                                             | Meaning                                                                             |
+| ------------------------------ | --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `HOST`                         | `127.0.0.1`                                         | listen address; `0.0.0.0` only inside the container                                 |
+| `PORT`                         | `5180`                                              | listen port                                                                         |
+| `DB_FILE`                      | `apps/api/data/aq.db`                               | SQLite file, created and migrated on start                                          |
+| `UI_DIR`                       | `apps/web`                                          | the web app served on `/`                                                           |
+| `PY_NOTES_URL`                 | `http://127.0.0.1:5055`                             | the worker; must be loopback unless `ALLOW_REMOTE_PY=1`                             |
+| `ALLOW_REMOTE_PY`              | off                                                 | `1` allows a worker on another host                                                 |
+| `PY_NOTES_PROVIDER`            | `groq`                                              | provider sent to the worker for notes jobs                                          |
+| `PY_SMART_PROVIDER`            | `gemini`                                            | provider sent to the worker for smart runs                                          |
+| `PY_SMART_MODEL`               | empty                                               | model for smart runs; empty = the worker's default                                  |
+| `NOTES_REQUIRE_MEMBERSHIP`     | `1`                                                 | `0` lets a user start notes for any video, not only ones in their playlists         |
+| `NOTES_MAX_AUTO_RESUMES`       | `3`                                                 | how often a notes job is re-submitted after the worker lost it                      |
+| `BODY_LIMIT`                   | `256kb`                                             | JSON body limit (`/sync/import` allows 2 MB)                                        |
+| `LOG`                          | `1`                                                 | `0` silences the request log                                                        |
+| `RATE_LIMIT_PER_MIN`           | `600`                                               | requests per client per minute on `/api/v1`                                         |
+| `RATE_LIMIT_HEAVY_PER_MIN`     | `20`                                                | starting notes or smart runs, YouTube imports and AI key tests, per minute          |
+| `TRUST_CF_HEADERS`             | off                                                 | `1` rate-limits each tunnel visitor by `CF-Connecting-IP` (loopback proxy only)     |
+| `TUNNEL_ORIGINS`               | empty                                               | extra page origins allowed by CORS, e.g. `https://*.trycloudflare.com`              |
+| `AUTH_MODE`                    | `local`                                             | `local` (one built-in user) or `google`                                             |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | empty                                               | Google OAuth web client (required for `google`)                                     |
+| `GOOGLE_REDIRECT_URI`          | `http://localhost:5180/api/v1/auth/google/callback` | must match the Google Cloud Console exactly                                         |
+| `SESSION_SECRET`               | empty                                               | at least 32 characters, signs the OAuth state cookie (required for `google`)        |
+| `AQ_KEY_SECRET`                | empty                                               | base64 of 32 bytes; encrypts users' AI keys. Empty: created in `AQ_KEY_SECRET_FILE` |
+| `AQ_KEY_SECRET_FILE`           | `apps/api/data/.key-secret`                         | where the generated secret is kept (owner-only file, git-ignored)                   |
+| `SESSION_MAX_AGE_HOURS`        | `168`                                               | session lifetime                                                                    |
+| `AUTH_AFTER_LOGIN`             | `/`                                                 | where sign-in lands when no `?next=` was given                                      |
+| `AQ_DEV_TOOLS`                 | `1`                                                 | `0` turns the /dev tracker off (404)                                                |
+| `AQ_DEVLOG_DIR`                | `apps/api/data/devlogs`                             | saved tracker history; empty = memory only                                          |
+| `AQ_DEVLOG_DAYS`               | `14`                                                | days of saved history to keep                                                       |
+| `AQ_RUN_DIR`                   | `.run` (repo root)                                  | folder with service console logs for /dev; empty = off                              |
 
 Secrets only come from the environment (or the repo's `.env` via docker compose); they are never logged.
 
@@ -163,6 +167,10 @@ and 502/503 (worker problems, `py_offline`). Everything after `authenticate` is 
 | `GET /notes`, `GET /notes/:videoId`                        | notes state `none / queued / running / ready / error`                                        |
 | `POST /notes/:videoId`                                     | start notes: 202 new job, 200 existing job or cached notes                                   |
 | `GET /notes/:videoId/html`, `/pdf`                         | the finished file, streamed from the worker                                                  |
+| `GET /notes/:videoId/draft`                                | live preview while the user's job runs: the pages finished so far (`pages` in the status)    |
+| `GET /ai`                                                  | the user's AI keys and task choices (see "AI keys" below)                                    |
+| `PUT /ai/keys/:provider`, `POST .../test`, `DELETE`        | save (after a live test), re-test or remove one of the user's keys                           |
+| `PUT /ai/tasks/:task`                                      | `{provider}` (or `null` for the default): which provider a task uses                         |
 | `GET` / `POST /playlists/:id/smart`                        | smart arrange runs for a playlist (2 to 20 videos)                                           |
 | `GET /import/youtube?url=`                                 | reads a YouTube playlist through the worker (only the validated `list=` id is forwarded)     |
 | `POST /sync/import`                                        | `{mode: "merge" or "replace", playlists, progress}`: imports the browser's localStorage data |
@@ -174,7 +182,20 @@ Outside `/api`: `GET /static/fonts/:file` (fonts for the notes page, from the wo
 SQLite in WAL mode. `src/db/database.js` runs every `sql/NNN_*.sql` file once, in numeric order, each in a
 transaction, and records it in `schema_migrations`. Never edit a migration that has shipped; add a new file instead.
 All SQL uses `?` placeholders; user input is never concatenated into SQL. Main tables: `users`, `sessions`, `videos`,
-`playlists`, `playlist_videos`, `watch_progress`, `notes_jobs`, `smart_runs` (see the `sql/` files for columns).
+`playlists`, `playlist_videos`, `watch_progress`, `notes_jobs`, `smart_runs`, `ai_keys`, `ai_task_providers`
+(see the `sql/` files for columns).
+
+## AI keys
+
+Each signed-in user can connect their own key for `gemini`, `groq`, `nvidia`, `xai` or `huggingface` (Settings page
+in the web app). `PUT /ai/keys/:provider {key}` asks the worker to test the key (`POST /api/keys/test`) and only then
+encrypts it (AES-256-GCM, bound to `<user id>:<provider>`) into `ai_keys`. Responses only ever contain `last4`.
+
+When `POST /notes/:videoId` or `POST /playlists/:id/smart` starts a new worker job, `ai.resolve(user, task)` picks the
+provider for the task (the user's choice, else `PY_NOTES_PROVIDER` / `PY_SMART_PROVIDER`) and then the key: the job
+owner's own key (decrypted for that one request and sent as `api_key`), else the worker's own `.env` key, else
+`409 {code: "ai_key_required", provider, task}`. Ready or running jobs never need a key. A key is only ever used for its
+owner's jobs.
 
 ## Security model
 
@@ -188,6 +209,8 @@ All SQL uses `?` placeholders; user input is never concatenated into SQL. Main t
 - Google sessions are server-side: the cookie holds a random token, the database only its SHA-256, logout deletes it.
 - `/dev` answers only on this machine: anything that came through the tunnel (proxy headers) gets a plain 404.
 - The request log holds method, path, status and time only.
+- AI keys travel only in request bodies, are stored encrypted, are never returned (only `last4`) and never logged;
+  `/ai` replies are `no-store`. A key saved by one user is never used for, or visible to, another.
 
 ## Developer tracker (`/dev`)
 
@@ -203,7 +226,7 @@ Worked example: **video bookmarks**, so a user can save moments in a video they 
 `GET /api/v1/bookmarks/:videoId` lists them and `POST /api/v1/bookmarks/:videoId` adds one `{atSec, label}`.
 Work from the bottom up: schema, repository, service, route, test.
 
-### 1. Migration: `sql/006_bookmarks.sql`
+### 1. Migration: `sql/009_bookmarks.sql`
 
 Use the next free number. The file runs once on every database, in a transaction.
 

@@ -103,12 +103,14 @@ All routes return JSON errors as `{"error": "..."}`.
 |---|---|---|
 | GET | `/api/providers` | `{providers: [{id, label, default_model, key_hint, needs_key, server_key, online?}]}` (`server_key` is a boolean) |
 | POST | `/api/jobs` | `{url, provider, api_key?, model?, groq_key?}` -> `202 {job_id}` |
-| GET | `/api/jobs/<id>` | `{job_id, status: queued/running/done/error, stage, pct, message, error?, meta?, links?, warning?, chunk?, chunks?}` |
+| GET | `/api/jobs/<id>` | `{job_id, status: queued/running/done/error, stage, pct, message, pages, error?, meta?, links?, warning?, chunk?, chunks?}` |
 | GET | `/api/jobs/<id>/notes.json` | the structured notes ([docs/notes-schema.md](docs/notes-schema.md)) |
 | GET | `/api/jobs/<id>/notes.pdf` | the PDF (download) |
 | GET | `/api/jobs/<id>/notes.html` | the HTML preview |
+| GET | `/api/jobs/<id>/draft.html` | live preview while the job runs: the pages finished so far (`pages` in the status) |
+| POST | `/api/keys/test` | `{provider, api_key, model?}` -> `200 {ok: true}` or `{ok: false, kind: invalid/quota/network/other, error}`: one tiny real call to check a user's key (rate limited; the key is never logged or echoed) |
 | GET | `/api/playlist?url=...` | the videos of a YouTube playlist (metadata only) |
-| POST | `/api/smart` | start a smart-playlist analysis -> `202 {job_id}` ([contract](docs/smart-playlist-contract.md)) |
+| POST | `/api/smart` | start a smart-playlist analysis -> `202 {job_id}` ([contract](docs/smart-playlist-contract.md)); an optional `api_key` (the user's own, sent by the API) wins over the server key |
 | GET | `/api/smart/<id>` | its progress and result |
 
 ## Environment variables
