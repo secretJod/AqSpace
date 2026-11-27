@@ -2,10 +2,14 @@
 
 Routes:
     GET  /api/providers                           AI providers (+ whether a server key exists)
+    POST /api/keys/test                           test a user's own key with one tiny real call
+                                                  -> 200 {ok:true} | {ok:false, kind, error}
     POST /api/jobs                                start a lecture -> notes job      -> 202 {job_id}
     GET  /api/jobs/<id>                           job progress
     GET  /api/jobs/<id>/notes.json | notes.pdf | notes.html
+    GET  /api/jobs/<id>/draft.html                live preview: pages finished so far (running jobs)
     POST /api/smart                               start a smart-playlist analysis   -> 202 {job_id}
+                                                  (optional api_key overrides the server key)
     GET  /api/smart/<id>                          its progress / result
     GET  /api/playlist?url=...                    list the videos of a YouTube playlist (metadata only)
 
@@ -33,7 +37,17 @@ from flask import Flask, Response, jsonify, request, send_file
 from .helpers import redact, slugify
 from .jobs import run_note_job, run_smart_job
 from .providers import provider_rows, provider_table, server_key
-from .settings import CSP_NOTES, ENV_KEYS, JOB_ID_RE, KEY_RE, KEYLESS, MODEL_RE, PROVIDER_ORDER, VIDEO_ID_RE
+from .settings import (
+    BYOK_PROVIDERS,
+    CSP_NOTES,
+    ENV_KEYS,
+    JOB_ID_RE,
+    KEY_RE,
+    KEYLESS,
+    MODEL_RE,
+    PROVIDER_ORDER,
+    VIDEO_ID_RE,
+)
 from .state import State
 
 log = logging.getLogger("lna")
@@ -118,6 +132,63 @@ def register_routes(app: Flask, state: State) -> None:
     def providers() -> Response:
         """GET /api/providers -> {providers: [...]} (see ``providers.provider_rows``)."""
         return jsonify(providers=provider_rows())
+
+    @app.post("/api/keys/test")
+    def keys_test() -> Response | tuple[Response, int]:
+        """POST /api/keys/test {provider, api_key, model?} -> 200 {ok:true} | {ok:false, kind, error}.
+
+        ``kind`` is invalid / quota / network / other. Called by aq-api before it saves a user's
+        key. The key is never logged or echoed back (every message goes through ``redact``).
+        """
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return bad("Send a JSON body with a provider and an api_key.")
+        provider = data.get("provider")
+        table = provider_table()
+        if not isinstance(provider, str) or provider not in BYOK_PROVIDERS:
+            return bad("Unknown provider. Key testing supports: " + ", ".join(BYOK_PROVIDERS) + ".")
+        api_key, err = clean_key(data.get("api_key"), "API key")
+        if err:
+            return bad(err)
+        if not api_key:
+            return bad(f"Paste your {table[provider]['label']} key first.")
+        model, ok = clean_model(data.get("model"))
+        if not ok:
+            return bad("The model name looks invalid.")
+
+        try:
+            llm = state.load_llm()
+        except ImportError:
+            return bad("The notes engine is not fully installed yet.", 503)
+        check = getattr(llm, "check_key", None)
+        if check is None:
+            return bad("This notes engine cannot test keys yet. Restart the worker.", 503)
+        with state.lock:
+            if state.rate_limited(state.recent_keytest):
+                return bad("Too many requests - please slow down a little.", 429)
+
+        LLMError = getattr(llm, "LLMError", ())
+        try:
+            result = check(provider, api_key, model)
+        except Exception as e:
+            if LLMError and isinstance(e, LLMError):
+                return bad(redact(str(e), (api_key,))[:300] or "That key could not be tested.")
+            log.error("key test crashed (%s): %s", provider, redact(f"{type(e).__name__}: {e}", (api_key,)))
+            result = {
+                "ok": False,
+                "kind": "other",
+                "error": f"Couldn't test the {table[provider]['label']} key. Please try again.",
+            }
+        result = result if isinstance(result, dict) else {}
+        if result.get("ok") is True:
+            log.info("key test for %s: ok", provider)
+            return jsonify(ok=True)
+        kind = result.get("kind") if result.get("kind") in ("invalid", "quota", "network", "other") else "other"
+        msg = redact(str(result.get("error") or ""), (api_key,)).strip()[:300]
+        log.info("key test for %s: %s", provider, kind)
+        return jsonify(
+            ok=False, kind=kind, error=msg or f"Couldn't test the {table[provider]['label']} key. Please try again."
+        )
 
     # ------------------------------------------------------------------------------------------
     # 4. Note jobs
@@ -219,12 +290,15 @@ def register_routes(app: Flask, state: State) -> None:
     # ------------------------------------------------------------------------------------------
     # 5. Job files (notes.json / notes.pdf / notes.html)
     # ------------------------------------------------------------------------------------------
-    def job_file(job_id: str, name: str) -> Path | None:
-        """Path of a finished job's file, or None. Refuses anything outside the output folder."""
+    def job_file(job_id: str, name: str, *, while_running: bool = False) -> Path | None:
+        """Path of a finished job's file, or None. Refuses anything outside the output folder.
+
+        ``while_running`` allows the live preview (draft.html) before the job is done.
+        """
         if not valid_job_id(job_id):
             return None
         job = state.jobs.get(job_id)
-        if job is not None and job["status"] != "done":
+        if job is not None and job["status"] != "done" and not (while_running and job["status"] == "running"):
             return None
         path = state.output_dir / job_id / name
         try:
@@ -263,7 +337,15 @@ def register_routes(app: Flask, state: State) -> None:
     @app.get("/api/jobs/<job_id>/notes.html")
     def notes_html(job_id: str) -> Response | tuple[Response, int]:
         """GET /api/jobs/<id>/notes.html -> the notebook preview, with a CSP that allows only its own scripts."""
-        path = job_file(job_id, "notes.html")
+        return html_page(job_file(job_id, "notes.html"))
+
+    @app.get("/api/jobs/<job_id>/draft.html")
+    def draft_html(job_id: str) -> Response | tuple[Response, int]:
+        """GET /api/jobs/<id>/draft.html -> live preview: the pages finished so far, while the job runs."""
+        return html_page(job_file(job_id, "draft.html", while_running=True))
+
+    def html_page(path: Path | None) -> Response | tuple[Response, int]:
+        """Serve a notebook page with a CSP that allows exactly its own inline scripts (404 when missing)."""
         if path is None:
             return bad("File not found.", 404)
         html = path.read_text(encoding="utf-8", errors="replace")
@@ -280,7 +362,10 @@ def register_routes(app: Flask, state: State) -> None:
     # ------------------------------------------------------------------------------------------
     @app.post("/api/smart")
     def create_smart() -> tuple[Response, int]:
-        """POST /api/smart {goal, videos:[{id,title,channel,duration_sec}], provider, model?} -> 202 {job_id}."""
+        """POST /api/smart {goal, videos:[{id,title,channel,duration_sec}], provider, model?, api_key?} -> 202 {job_id}.
+
+        ``api_key`` is the signed-in user's own key, sent by aq-api; without it the server key is used.
+        """
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return bad("Send a JSON body with a goal, a list of videos and a provider.")
@@ -323,7 +408,12 @@ def register_routes(app: Flask, state: State) -> None:
         table = provider_table()
         if not isinstance(provider, str) or provider not in table:
             return unknown_provider_error()
-        api_key = server_key(provider)  # keys never come from the browser here
+        # The browser never sends a key here; aq-api may pass the signed-in user's own key as api_key
+        # (decrypted only for this request), which wins over the server's .env key.
+        api_key, err = clean_key(data.get("api_key"), "API key")
+        if err:
+            return bad(err)
+        api_key = api_key or server_key(provider)
         if not api_key:
             return bad(f"No API key for {table[provider]['label']}. Put {ENV_KEYS[provider]} in backend/.env.")
 

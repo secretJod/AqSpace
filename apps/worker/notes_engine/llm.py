@@ -36,6 +36,7 @@ How the file is organised
 4. ``_Client``      - builds requests, retries HTTP errors, extracts text, asks for JSON.
 5. Pipeline helpers - checkpoints, single pass, parallel single pass, digest, merge, compose, map-reduce.
 6. ``generate_notes`` - the public entry point, with the provider fallback chain.
+7. ``check_key``    - one tiny call to test a user's key (worker route POST /api/keys/test).
 
 The API key is only ever put in a request header (never a URL) and is scrubbed from every error
 message.  Size / token reasoning per provider is explained in ``ai/providers.py``.
@@ -97,6 +98,7 @@ __all__ = [
     "PROVIDERS",
     "LOCAL_READ_TIMEOUT",
     "generate_notes",
+    "check_key",
     "default_checkpoint_dir",
     "local_base_url",
     "local_key",
@@ -611,9 +613,24 @@ def _get_chunker() -> Callable[..., list[dict]]:
 
 
 class _Reporter:
-    def __init__(self, cb: Progress | None):
+    """Wraps the user's progress callback: clamps percent to 0-100 and swallows callback errors.
+
+    ``sections(list)`` hands the finished sections so far (raw, in lecture order) to the optional
+    ``on_sections`` callback, so the app can show pages while the rest is still being written.
+    """
+
+    def __init__(self, cb: Progress | None, on_sections: Callable[[list], None] | None = None):
         self.cb = cb
+        self.on_sections = on_sections
         self.last = 0  # last percentage, reused by "waiting for rate limit" messages
+
+    def sections(self, so_far: list) -> None:
+        """Hand the finished sections so far to the live preview (errors there never stop the job)."""
+        if self.on_sections and so_far:
+            try:
+                self.on_sections(list(so_far))
+            except Exception:  # noqa: BLE001 - a broken preview must not kill the job
+                pass
 
     def __call__(self, pct: int, msg: str) -> None:
         self.last = pct
@@ -775,7 +792,23 @@ def _parallel_single(
         jobs.append((i, sl["text"], n))
     done = {"n": 0}
     lock = threading.Lock()
+    finished: dict[int, list] = {}  # slice number -> its sections (for the live preview)
+    preview_lock = threading.Lock()
     report(10, f"Writing {len(jobs)} notebook parts in parallel...")
+
+    def preview(i: int, part: list) -> None:
+        """Hand the sections of the leading run of finished slices to the live preview."""
+        with preview_lock:
+            finished[i] = part
+            if i != 0 and 0 not in finished:
+                return
+            joined: list = []
+            k = 0
+            while k in finished:
+                joined = _join_parts(joined, finished[k]) if joined else list(finished[k])
+                k += 1
+            if i < k:  # this slice extended (or is inside) the leading run
+                report.sections(joined)
 
     def tick() -> None:
         with lock:
@@ -807,6 +840,7 @@ def _parallel_single(
             if _usable_count(got) >= coverage_needed(n):
                 break
         tick()
+        preview(i, got)
         return got
 
     def front() -> dict:
@@ -1032,6 +1066,7 @@ def _map_reduce(
             if ckpt:
                 ckpt.put(name, got)
         sections += got
+        report.sections(sections)
     if _usable_count(sections, max_sec) < coverage_needed(target):
         report(86, "Fewer pages than the lecture length suggests; the video may contain little teachable content.")
 
@@ -1171,8 +1206,13 @@ def generate_notes(
     model: str | None = None,
     progress: Progress | None = None,
     checkpoint_dir: str | Path | None = None,
+    on_sections: Callable[[list], None] | None = None,
 ) -> dict:
     """Transcript -> validated Notes dict. Raises LLMError (user-safe message) on failure.
+
+    ``transcript`` is what ``ingest.get_transcript`` returns; ``progress(stage, pct, msg)`` is
+    optional and is called with stage ``"notes"``. ``on_sections(raw_sections)`` (optional) is
+    called each time more finished sections are available, in lecture order (live preview).
 
     ``checkpoint_dir`` (default: $LNAI_CHECKPOINT_DIR, else off): finished steps are saved under
     ``<checkpoint_dir>/<video_id>/`` and reused by a later call for the same video, provider, model
@@ -1186,7 +1226,13 @@ def generate_notes(
     ckdir = checkpoint_dir or default_checkpoint_dir()
     try:
         return _generate_notes(
-            transcript, provider=provider, api_key=api_key, model=model, progress=progress, checkpoint_dir=ckdir
+            transcript,
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            progress=progress,
+            checkpoint_dir=ckdir,
+            on_sections=on_sections,
         )
     except _TransientError as e:
         if not _fallback_enabled():
@@ -1215,6 +1261,7 @@ def generate_notes(
                 progress=progress,
                 checkpoint_dir=ckdir,
                 cache_writes=False,
+                on_sections=on_sections,
             )
         except LLMError as e2:
             raise LLMError(
@@ -1235,6 +1282,7 @@ def _generate_notes(
     progress: Progress | None,
     checkpoint_dir: str | Path | None = None,
     cache_writes: bool = True,
+    on_sections: Callable[[list], None] | None = None,
 ) -> dict:
     if provider not in PROVIDERS:
         raise LLMError(
@@ -1266,7 +1314,7 @@ def _generate_notes(
         profile_name = local_profile_name(local_server_ctx(base, key), force_small=alias_of == "colab")
 
     client = _Client(provider, key, model, base_url=base_url, profile_name=profile_name, cache_writes=cache_writes)
-    report = _Reporter(progress)
+    report = _Reporter(progress, on_sections)
     client.notify = lambda msg: report(report.last, msg)
     meta = _meta_for_prompt(transcript)
     model_tag = f"{provider}/{model}"
@@ -1318,3 +1366,72 @@ def _generate_notes(
         raise LLMError(f"Unexpected error while generating notes ({type(e).__name__}). Please retry.") from None
     report(100, "Notes ready.")
     return notes
+
+
+# --------------------------------------------------------------------------- #
+# 7. Testing a user's own key
+# --------------------------------------------------------------------------- #
+
+KEY_CHECK_TIMEOUT = 15  # seconds; one tiny request, no retries
+KEY_CHECK_MAX_TOKENS = 8
+_KEY_PROBLEM = re.compile(
+    r"api[ _-]?key|api_key_invalid|incorrect.{0,20}key|invalid.{0,20}(key|token)"
+    r"|unauthori[sz]ed|authenticat|permission[ _]denied",
+    re.I,
+)
+
+
+def check_key(provider: str, api_key: str, model: str | None = None, timeout: float = KEY_CHECK_TIMEOUT) -> dict:
+    """Make the smallest possible real call with ``api_key`` and say whether the key works.
+
+    Returns ``{"ok": True}`` or ``{"ok": False, "kind": "invalid"|"quota"|"network"|"other",
+    "error": "<one friendly line>"}``. One request, no retries, short timeout. The key goes only
+    into a request header and never into the returned text. Raises ``LLMError`` for a provider
+    that takes no user key (local, colab), an empty or malformed key, or a bad model name.
+    """
+    if provider not in PROVIDERS or (provider != "gemini" and provider not in ENDPOINTS):
+        raise LLMError("Key testing is not available for this provider.")
+    key = clean_api_key(api_key)
+    model = (model or "").strip() or PROVIDERS[provider]["default_model"]
+    if provider == "gemini":
+        model = model.removeprefix("models/")
+    if not re.fullmatch(r"[A-Za-z0-9._\-/:]+", model) or (provider == "gemini" and "/" in model):
+        raise LLMError("Invalid model name.")
+    client = _Client(provider, key, model)
+    client.json_mode = client.schema_ok = False  # plain text: JSON mode needs a "json" prompt
+    client.reasoning_effort = None
+    url, headers, body = client.build_request("Answer with one word.", "Say OK.", KEY_CHECK_MAX_TOKENS, 0.0)
+    if provider == "gemini":
+        body["generationConfig"].pop("responseMimeType", None)
+    label = client.label
+
+    def fail(kind: str, msg: str) -> dict:
+        return {"ok": False, "kind": kind, "error": scrub_secrets(msg, key, 300)}
+
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=(min(5.0, timeout), timeout))
+    except requests.RequestException:
+        return fail("network", f"Couldn't reach {label} to test the key. Check your internet connection and try again.")
+
+    status = resp.status_code
+    if 200 <= status < 300:
+        return {"ok": True}
+    body_text = ""
+    try:
+        body_text = resp.text or ""
+    except Exception:  # noqa: BLE001
+        pass
+    detail = client._http_error(status, resp, body_text).detail  # scrubbed, lower-cased
+    if status in (401, 403) or (status == 400 and _KEY_PROBLEM.search(detail)):
+        return fail("invalid", f"This key was rejected by {label}. Check you copied all of it.")
+    if status in (402, 429):
+        return fail(
+            "quota",
+            f"{label} accepted the key but says its rate limit or quota is used up. "
+            "Wait a minute and try again, or check your plan.",
+        )
+    if status in (408, 500, 502, 503, 504, 529):
+        return fail("other", f"{label} is temporarily unavailable (HTTP {status}). Please try again in a minute.")
+    if status == 404:
+        return fail("other", f"{label} does not know the model '{scrub_secrets(model, key, 80)}' (HTTP 404).")
+    return fail("other", f"{label} could not test the key (HTTP {status}).")

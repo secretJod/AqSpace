@@ -549,8 +549,24 @@ def test_smart_needs_json_and_a_server_key(smart_client, monkeypatch):
     client, _, _ = smart_client()
     assert client.post("/api/smart", data="x", content_type="text/plain").status_code == 400
     monkeypatch.delenv("GEMINI_API_KEY")
-    r = client.post("/api/smart", json=body(api_key="AIzaFromTheBrowser"))  # a key in the body is ignored
+    r = client.post("/api/smart", json=body())
     assert r.status_code == 400 and "GEMINI_API_KEY" in r.get_json()["error"]
+
+
+def test_smart_accepts_api_key_over_server_key(smart_client, monkeypatch):
+    client, _, mod = smart_client()
+    user_key = "AIzaUSERKEY-0123456789abcdef"
+    data = wait_smart(client, client.post("/api/smart", json=body(api_key=user_key)).get_json()["job_id"])
+    assert data["status"] == "done" and mod.calls[-1]["api_key"] == user_key  # overrides the .env key
+    assert user_key not in json.dumps(data)
+    monkeypatch.delenv("GEMINI_API_KEY")  # works with no server key at all
+    r = client.post("/api/smart", json=body(api_key="  " + user_key + " "))
+    assert r.status_code == 202
+    wait_smart(client, r.get_json()["job_id"])
+    assert mod.calls[-1]["api_key"] == user_key
+    for bad_key in ("has space inside", 12345, "x" * 600):
+        r = client.post("/api/smart", json=body(api_key=bad_key))
+        assert r.status_code == 400 and "API key" in r.get_json()["error"]
 
 
 def test_smart_busy_and_rate_limit(smart_client):

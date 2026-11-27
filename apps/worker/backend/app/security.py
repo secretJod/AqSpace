@@ -44,13 +44,13 @@ def register_security(app: Flask) -> None:
     def _headers(resp: Response):
         resp.headers["X-Content-Type-Options"] = "nosniff"
         # notes.html may be framed by the local UI; it uses CSP frame-ancestors instead (see routes.py)
-        if not request.path.endswith("/notes.html"):
+        if not request.path.endswith(("/notes.html", "/draft.html")):
             resp.headers["X-Frame-Options"] = "SAMEORIGIN"
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Cross-Origin-Resource-Policy"] = "same-origin"
         resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if "Content-Security-Policy" not in resp.headers:  # a route may have set a stricter one
-            if request.path.endswith("/notes.html"):
+            if request.path.endswith(("/notes.html", "/draft.html")):
                 resp.headers["Content-Security-Policy"] = CSP_NOTES
             elif request.path.startswith("/api/"):
                 resp.headers["Content-Security-Policy"] = CSP_FILE

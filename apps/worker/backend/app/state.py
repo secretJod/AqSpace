@@ -31,6 +31,7 @@ class State:
         self.recent: deque[float] = deque()  # times of recent note jobs (rate limit)
         self.recent_smart: deque[float] = deque()
         self.recent_playlist: deque[float] = deque()  # separate bucket so playlist lookups can't starve note jobs
+        self.recent_keytest: deque[float] = deque()  # POST /api/keys/test (each one is a real provider call)
         self.playlist_slots = threading.BoundedSemaphore(2)  # at most 2 yt-dlp playlist fetches at once
 
     # --- 1. Loading the notes engine (lazy, so the server starts even if a module is broken) ---
@@ -49,6 +50,12 @@ class State:
             from notes_engine import ingest
 
             return ingest
+
+    def load_llm(self) -> ModuleType:
+        """Import and return ``notes_engine.llm`` (lazy, like load_modules; key tests need only llm)."""
+        from notes_engine import llm
+
+        return llm
 
     def load_smart(self) -> ModuleType:
         """Import and return ``notes_engine.smart_playlist`` (tests monkeypatch this)."""
@@ -98,6 +105,7 @@ class State:
         """The fields of a note job that the browser may see (never keys)."""
         with self.lock:
             out = {k: job[k] for k in ("status", "stage", "pct", "message") if k in job}
+            out["pages"] = int(job.get("pages") or 0)  # sections already readable in draft.html
             for k in ("error", "meta", "links", "warning", "chunk", "chunks"):
                 if job.get(k):
                     out[k] = job[k]

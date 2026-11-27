@@ -17,6 +17,8 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import os
+import threading
 import traceback
 from collections.abc import Callable
 
@@ -64,7 +66,67 @@ def scaled_progress(state: State, job: dict, lo: float, hi: float, stage: str) -
 
 
 # ----------------------------------------------------------------------------------------------
-# 2. Note job
+# 2. Live preview (draft.html while the notes are still being written)
+# ----------------------------------------------------------------------------------------------
+def draft_writer(state: State, job: dict, job_dir, transcript: dict, llm, pdf, secrets: list):
+    """Return an ``on_sections`` callback that renders the finished sections so far to draft.html.
+
+    Drawing runs on its own background thread (only the newest set of sections is drawn), so the
+    preview never slows down the AI calls.  The page is written to a temp file and swapped in, so a
+    reader never gets half a file.  ``job['pages']`` tells the browser how many pages are ready.
+    ``on_sections.close()`` stops the thread; failures only log a warning.
+    """
+    validate = getattr(llm, "validate_notes", None)
+    cond = threading.Condition()
+    box = {"latest": None, "closed": False}
+
+    def draw(raw_sections: list) -> None:
+        partial = validate({"sections": raw_sections}, transcript)
+        n = len(partial.get("sections") or [])
+        if n <= int(job.get("pages") or 0):
+            return
+        html = pdf.render_html(partial)
+        if job.get("status") != "running":
+            return
+        job_dir.mkdir(parents=True, exist_ok=True)
+        tmp = job_dir / "draft.html.tmp"
+        tmp.write_text(html, encoding="utf-8")
+        os.replace(tmp, job_dir / "draft.html")
+        state.update(job, pages=n)
+
+    def loop() -> None:
+        while True:
+            with cond:
+                while box["latest"] is None and not box["closed"]:
+                    cond.wait()
+                if box["closed"]:
+                    return
+                raw, box["latest"] = box["latest"], None
+            try:
+                draw(raw)
+            except Exception as e:  # the preview is optional: never fail the job for it
+                log.warning("draft preview failed: %s", redact(e, secrets))
+
+    def on_sections(raw_sections: list) -> None:
+        if validate is None:
+            return
+        with cond:
+            if not box["closed"]:
+                box["latest"] = raw_sections
+                cond.notify()
+
+    def close() -> None:
+        with cond:
+            box["closed"] = True
+            cond.notify()
+
+    threading.Thread(target=loop, name="lna-draft", daemon=True).start()
+    on_sections.close = close
+    return on_sections
+
+
+# ----------------------------------------------------------------------------------------------
+# 3. Note job
 # ----------------------------------------------------------------------------------------------
 def run_note_job(
     state: State, job_id: str, url: str, provider: str, api_key: str, model: str | None, groq_key: str | None
@@ -88,6 +150,7 @@ def run_note_job(
     job = state.jobs[job_id]
     secrets = [api_key, groq_key]
     job_dir = state.output_dir / job_id
+    on_sections = None  # live preview writer (see draft_writer)
     try:
         state.update(job, status="running", stage="transcript", pct=1, message="Fetching transcript...")
         try:
@@ -117,7 +180,9 @@ def run_note_job(
         )
 
         # Step 2: notes (25-85 %)
-        # per-video checkpoints (output/checkpoints/<video_id>/) let a retry resume finished chunks
+        # per-video checkpoints (output/checkpoints/<video_id>/) let a retry resume finished chunks;
+        # on_sections draws the finished pages to draft.html while the rest is still being written
+        on_sections = draft_writer(state, job, job_dir, transcript, llm, pdf, secrets)
         notes = llm.generate_notes(
             transcript,
             provider=provider,
@@ -125,6 +190,7 @@ def run_note_job(
             model=model,
             progress=scaled_progress(state, job, 25, 85, "notes"),
             checkpoint_dir=str(state.output_dir / "checkpoints"),
+            on_sections=on_sections,
         )
         job_dir.mkdir(parents=True, exist_ok=True)
         (job_dir / "notes.json").write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -206,12 +272,18 @@ def run_note_job(
             )
         state.update(job, status="error", error=msg[:600])
     finally:
+        if on_sections is not None:
+            on_sections.close()
+            try:  # the live preview is only for while the job runs
+                (job_dir / "draft.html").unlink(missing_ok=True)
+            except OSError:
+                pass
         # drop references to the keys as soon as possible
         secrets.clear()
 
 
 # ----------------------------------------------------------------------------------------------
-# 3. Smart-playlist job
+# 4. Smart-playlist job
 # ----------------------------------------------------------------------------------------------
 def run_smart_job(
     state: State,

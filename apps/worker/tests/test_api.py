@@ -71,7 +71,9 @@ def make_fakes(*, gate=None, transcript_exc=None, llm_exc=None, pdf_exc=None, ht
         "huggingface": {"label": "HF", "default_model": "hf-x", "needs_key": True, "key_hint": "hint h"},
     }
 
-    def generate_notes(transcript, *, provider, api_key, model=None, progress=None, checkpoint_dir=None):
+    def generate_notes(
+        transcript, *, provider, api_key, model=None, progress=None, checkpoint_dir=None, on_sections=None
+    ):
         calls["llm"] = {"provider": provider, "api_key": api_key, "model": model}
         calls["checkpoint_dir"] = checkpoint_dir
         if progress:
@@ -353,6 +355,49 @@ def test_files_not_served_before_done(make_client):
     assert client.get(f"/api/jobs/{job_id}/notes.json").status_code == 404
     gate.set()
     wait_done(client, job_id)
+
+
+def test_live_draft_served_while_running(make_client):
+    """on_sections -> draft.html + pages while running; draft is not served once the job is done."""
+    gate, drawn = threading.Event(), threading.Event()
+    (ingest, llm, pdf), calls = make_fakes()
+    finished = llm.generate_notes
+
+    def generate_notes(transcript, *, on_sections=None, **kw):
+        on_sections([{"title": "one"}, {"title": "two"}])
+        gate.wait(5)
+        return finished(transcript, **kw)
+
+    def validate_notes(raw, transcript=None):
+        return {"sections": list(raw["sections"])}
+
+    def render_html(notes):
+        out = f"<html><body>draft {len(notes['sections'])}</body></html>"
+        drawn.set()
+        return out
+
+    llm.generate_notes, llm.validate_notes = generate_notes, validate_notes
+    real_render, pdf.render_html = pdf.render_html, render_html
+    client, _, _ = make_client(((ingest, llm, pdf), calls))
+    job_id = post(client).get_json()["job_id"]
+    assert drawn.wait(5)
+    end = time.time() + 5
+    while client.get(f"/api/jobs/{job_id}").get_json().get("pages") != 2 and time.time() < end:
+        time.sleep(0.02)
+    status = client.get(f"/api/jobs/{job_id}").get_json()
+    assert status["status"] == "running" and status["pages"] == 2
+    r = client.get(f"/api/jobs/{job_id}/draft.html")
+    assert r.status_code == 200 and b"draft 2" in r.data
+    assert "frame-ancestors" in r.headers["Content-Security-Policy"]
+    assert "X-Frame-Options" not in r.headers
+    assert client.get(f"/api/jobs/{job_id}/notes.html").status_code == 404  # final notes only when done
+    pdf.render_html = real_render
+    gate.set()
+    assert wait_done(client, job_id)["status"] == "done"
+    end = time.time() + 5  # the draft is removed right after the job reports done
+    while client.get(f"/api/jobs/{job_id}/draft.html").status_code != 404 and time.time() < end:
+        time.sleep(0.02)
+    assert client.get(f"/api/jobs/{job_id}/draft.html").status_code == 404
 
 
 def test_concurrency_limit(make_client):

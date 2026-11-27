@@ -1936,3 +1936,22 @@ def test_part_count_stays_below_gemini_rpm(monkeypatch):
     monkeypatch.setenv("LNAI_GEMINI_RPM", "3")
     c = llm._Client("gemini", "k" * 39, "gemini-2.5-flash")
     assert llm._part_count(c, 18) == 2
+
+
+def test_reporter_sections_hook_is_safe():
+    """The live-preview hook gets a copy of the sections, and a broken hook never raises."""
+    from notes_engine import llm as L
+
+    got = []
+    r = L._Reporter(None, got.append)
+    secs = [{"title": "a"}]
+    r.sections(secs)
+    r.sections([])  # nothing to show -> not called
+    secs.append({"title": "b"})  # later changes do not leak into what was handed over
+    assert got == [[{"title": "a"}]]
+
+    def boom(_):
+        raise RuntimeError("x")
+
+    L._Reporter(None, boom).sections([{"title": "a"}])  # must not raise
+    L._Reporter(None).sections([{"title": "a"}])  # no hook -> no-op

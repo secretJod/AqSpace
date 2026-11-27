@@ -84,6 +84,8 @@ FALLBACK_PROVIDERS = {
     },
 }
 PROVIDER_ORDER = ["local", "gemini", "groq", "xai", "huggingface", "nvidia", "colab"]
+# providers whose keys a user may bring and test (POST /api/keys/test); local and Colab are self-hosted
+BYOK_PROVIDERS = [p for p in PROVIDER_ORDER if p not in ("local", "colab")]
 
 # unfinished per-video checkpoints (output/checkpoints/<video_id>/) are kept this long for a retry
 CHECKPOINT_MAX_AGE_SEC = 7 * 24 * 3600
