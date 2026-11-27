@@ -60,7 +60,9 @@ js/
   features/           one folder per feature
     playlists/        split view (notes next to the list), Import from YouTube
     player/           YouTube player dialog, saves watch progress
-    notes/            Get notes jobs, the notes button, the notes panel
+    notes/            Get notes jobs, the notes button, the notes panel (with a live preview while notes are written)
+    ai/               the user's own AI keys: the key setup card and the "connect a key in Settings" prompt
+    settings/         the Settings page (#/settings, from the profile menu): AI keys and which AI does what
     smart/            Smart arrange (best order + missing topics) and its animation
     profile/          profile menu, sign-in and expired-session screens
     navbar/           bottom navigation bar

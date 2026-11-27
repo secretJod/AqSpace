@@ -7,7 +7,9 @@
        #/                                  playlists home (section 3)
        #/playlist/<id>[/notes/<videoId>]   playlist detail, optionally with the notes panel open (section 4)
        #/dashboard                         AQ.dashboardView (features/dashboard/dashboard.js)
-       #/ai, #/goals                       AQ.comingSoonView placeholders
+       #/settings                          AQ.settingsView (features/settings/settings-view.js), from the profile menu
+       #/ai, #/goals                       AQ.comingSoonView placeholders (the AI tab also points to Settings
+                                           when the assistant has no key yet, via AQ.aiKeys.mountKeyHint)
 
    How it fits:
      Loaded last because it uses everything else: AQ.util, AQ.store, AQ.dialog, AQ.player, AQ.noteButton,
@@ -1250,7 +1252,7 @@
     var h = location.hash || "";
     var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?$/.exec(h);
     if (m) return { name: "playlist", id: m[1], notes: m[2] || null };
-    var t = /^#\/(dashboard|ai|goals)\/?$/.exec(h);
+    var t = /^#\/(dashboard|ai|goals|settings)\/?$/.exec(h);
     return t ? { name: t[1] } : { name: "home" };
   }
 
@@ -1266,9 +1268,17 @@
     if (name === "dashboard") {
       document.title = "Dashboard - AQspace";
       if (AQ.dashboardView) screen = AQ.dashboardView.mount(view);
+    } else if (name === "settings") {
+      document.title = "Settings - AQspace";
+      if (AQ.settingsView) screen = AQ.settingsView.mount(view);
     } else {
       document.title = SOON[name].doc + " - AQspace";
       if (AQ.comingSoonView) screen = AQ.comingSoonView.mount(view, SOON[name]);
+      // the assistant will use the user's own key: say where to add one before it is needed
+      if (name === "ai" && AQ.aiKeys && AQ.aiKeys.mountKeyHint) {
+        var soon = view.querySelector(".soon") || view;
+        AQ.aiKeys.mountKeyHint(soon, "assistant");
+      }
     }
   }
 
@@ -1323,7 +1333,7 @@
       var p = S.get(r.id);
       if (p) renderDetail(p);
       else renderNotFound();
-    } else if (r.name === "dashboard" || SOON[r.name]) renderScreen(r.name);
+    } else if (r.name === "dashboard" || r.name === "settings" || SOON[r.name]) renderScreen(r.name);
     else renderHome();
     $("#storage-warning").hidden = S.storageOk();
     if (pendingFocus) {

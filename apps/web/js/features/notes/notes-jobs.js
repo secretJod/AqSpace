@@ -14,6 +14,13 @@
      Only through the API's /api/v1/notes/* endpoints (apps/api), which hand the work to the worker.
      The server keeps one job per video and caches finished notes, so a video that is already "ready"
      comes back at once. Without a reachable API every job fails with OFFLINE_MSG.
+     While a job runs, `pages` counts the notebook pages already written; draftUrl(videoId) points at
+     that live preview (/api/v1/notes/<id>/draft, visible only to the signed-in owner of the job).
+
+   AI keys:
+     start() and retry() first ask features/ai/ai-keys.js (AQ.aiKeys.requireKey("notes", ...)): when the
+     notes AI needs a key the user has not connected, the user is pointed to Settings first. A 409
+     {code:"ai_key_required"} from the server is handled the same way.
 
    Storage:
      {videoId: {jobId, state}} is kept in localStorage (`aq.notes.v1`) so queued and running jobs resume
@@ -84,6 +91,7 @@
       message: "",
       jobId: jobId || null,
       error: "",
+      pages: 0,
       startedAt: Date.now(),
       needsCheck: false,
       polling: false,
@@ -122,22 +130,24 @@
   // ===== 2. public reads =====
   function snapshot(id) {
     var e = entries[id];
-    if (!e) return { state: "none", pct: 0, stage: "", message: "", jobId: null, error: "" };
+    if (!e) return { state: "none", pct: 0, stage: "", message: "", jobId: null, error: "", pages: 0 };
     return {
       state: e.state,
       pct: Math.max(0, Math.min(100, Math.round(e.pct || 0))),
       stage: e.stage || "",
       message: e.message || "",
       jobId: e.jobId,
-      error: e.error || ""
+      error: e.error || "",
+      pages: e.state === "running" ? e.pages || 0 : 0
     };
   }
   /**
    * Current notes state of a video. A "ready" entry restored from localStorage is re-checked with
    * the server the first time it is read.
    * @param {string} id YouTube video id.
-   * @returns {{state: string, pct: number, stage: string, message: string, jobId: (string|null), error: string}}
-   *   state is one of "none", "queued", "running", "ready", "error"; pct is 0-100.
+   * @returns {{state: string, pct: number, stage: string, message: string, jobId: (string|null), error: string,
+   *   pages: number}} state is one of "none", "queued", "running", "ready", "error"; pct is 0-100; pages counts
+   *   the notebook pages already readable in the live preview (only while running).
    */
   function status(id) {
     var e = entries[id];
@@ -157,6 +167,21 @@
     if (!e || e.state !== "ready" || !e.jobId) return null;
     if (!serverMode()) return null;
     return { html: nurl(id) + "/html", pdf: nurl(id) + "/pdf" };
+  }
+  /**
+   * Live preview of a running job: the pages finished so far.
+   * @param {string} id YouTube video id.
+   * @returns {string|null} The API URL, or null unless the job is running and at least one page is ready.
+   */
+  function draftUrl(id) {
+    var e = entries[id];
+    if (!e || e.state !== "running" || !e.pages || !e.jobId || !serverMode()) return null;
+    return nurl(id) + "/draft";
+  }
+  /* pages count from a server status: only ever grows */
+  function takePages(e, n) {
+    n = Math.round(Number(n));
+    if (isFinite(n) && n > (e.pages || 0)) e.pages = Math.min(100, n);
   }
   /**
    * Listen for notes state changes of any video.
@@ -183,34 +208,53 @@
   }
 
   // ===== 3. starting =====
+  function busyOrReady(id) {
+    var e = entries[id];
+    return !!(e && (e.state === "queued" || e.state === "running" || e.state === "ready"));
+  }
   /**
    * Queue a notes job for a video. Does nothing while a job for it is queued, running or ready.
+   * When the notes AI needs a key the user has not connected, ai-keys.js asks for it first.
    * @param {{id: string, title?: string}} video The video; the id must be a valid YouTube id.
    * @returns {void}
    */
   function start(video) {
     var id = video && video.id;
-    if (!id || !u.ID_RE.test(id)) return;
-    var e = entries[id];
-    if (e && (e.state === "queued" || e.state === "running" || e.state === "ready")) return; // no duplicates
-    e = entries[id] = make("queued");
+    if (!id || !u.ID_RE.test(id) || busyOrReady(id)) return;
+    if (AQ.aiKeys && AQ.aiKeys.requireKey)
+      AQ.aiKeys.requireKey("notes", function () {
+        startNow(video);
+      });
+    else startNow(video);
+  }
+  /**
+   * Forget the previous result (usually an error) and start the job again (same key check as start()).
+   * @param {string} id YouTube video id.
+   * @returns {void}
+   */
+  function retry(id) {
+    if (AQ.aiKeys && AQ.aiKeys.requireKey)
+      AQ.aiKeys.requireKey("notes", function () {
+        retryNow(id);
+      });
+    else retryNow(id);
+  }
+  function startNow(video) {
+    var id = video && video.id;
+    if (!id || !u.ID_RE.test(id) || busyOrReady(id)) return; // no duplicates
+    var e = (entries[id] = make("queued"));
     e.video = video;
     e.message = "Waiting for a free slot…";
     if (waiting.indexOf(id) < 0) waiting.push(id);
     changed(id);
     pump();
   }
-  /**
-   * Forget the previous result (usually an error) and start the job again.
-   * @param {string} id YouTube video id.
-   * @returns {void}
-   */
-  function retry(id) {
+  function retryNow(id) {
     var e = entries[id],
       video = (e && e.video) || { id: id };
     removeWaiting(id);
     delete entries[id];
-    start(video);
+    startNow(video);
   }
   function removeWaiting(id) {
     var i = waiting.indexOf(id);
@@ -266,6 +310,7 @@
     if (isFinite(pct) && pct >= (e.pct || 0)) e.pct = Math.min(100, pct);
     e.stage = String(d.stage || "").slice(0, 20);
     e.message = String(d.message || "").slice(0, 160);
+    takePages(e, d.pages);
     changed(id);
     return true;
   }
@@ -293,6 +338,11 @@
         }
         if (!o.res.ok) {
           fail(id, String(o.data.error || "The server answered with status " + o.res.status + ".").slice(0, 300));
+          // 409 ai_key_required: point the user to Settings; once a key is saved the job starts again
+          if (o.res.status === 409 && AQ.aiKeys && AQ.aiKeys.handleError)
+            AQ.aiKeys.handleError(o.data, function () {
+              retryNow(id);
+            });
           return;
         }
         e.startedAt = Date.now();
@@ -327,6 +377,7 @@
           );
           e.pct = d.state === "ready" ? 100 : Math.max(0, Math.min(100, Number(d.pct) || 0));
           e.message = d.state === "ready" ? "Notes ready" : String(d.message || "").slice(0, 160);
+          if (d.state !== "ready") takePages(e, d.pages);
           if (d.state === "ready") e.needsCheck = true;
           entries[id] = e;
           removeWaiting(id);
@@ -432,7 +483,7 @@
   }
 
   load();
-  AQ.notesJobs = { status: status, start: start, subscribe: subscribe, urls: urls, retry: retry };
+  AQ.notesJobs = { status: status, start: start, subscribe: subscribe, urls: urls, draftUrl: draftUrl, retry: retry };
 
   // resume anything that was in flight when the page was closed
   function resume() {

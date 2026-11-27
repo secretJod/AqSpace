@@ -50,6 +50,7 @@ window.AQ = window.AQ || {};
 
     // 2. Shared widgets and the playlist features (notes, player, split view, import, smart arrange)
     "js/ui/dialog.js",
+    "js/features/ai/ai-keys.js", // AI keys: the Settings prompt + requireKey gate used by notes and Smart arrange below
     "js/features/notes/notes-jobs.js",
     "js/features/notes/note-button.js",
     "js/features/notes/notes-view.js",
@@ -82,6 +83,7 @@ window.AQ = window.AQ || {};
     "js/features/dashboard/hud-gauges.js",
     "js/features/dashboard/sticky-board.js",
     "js/features/dashboard/dashboard.js",
+    "js/features/settings/settings-view.js", // the Settings page (#/settings): AI keys
 
     // 5. The app: router and screens. Loaded last because it uses everything above.
     "js/app.js"

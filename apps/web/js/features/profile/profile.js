@@ -2,7 +2,7 @@
    profile.js - profile menu, Google sign-in screen and expired-session screen (AQ.profile)
 
    What this file does:
-     Replaces the top bar's avatar placeholder with a profile button and menu (name, email, Sign out),
+     Replaces the top bar's avatar placeholder with a profile button and menu (name, email, Settings, Sign out),
      and shows a full-page sign-in screen when the server requires Google sign-in, or a
      "Your session has ended" screen when a call is refused later.
 
@@ -282,8 +282,18 @@
     if (u && u.email) head.appendChild(h("p", "profile__email", u.email));
     menu.appendChild(head);
 
+    // Settings (#/settings, features/settings/settings-view.js): the user's own AI keys live there.
+    menu.appendChild(h("hr", "profile__sep"));
+    var settings = h("a", "profile__item", "Settings");
+    settings.href = "#/settings";
+    settings.setAttribute("role", "menuitem");
+    settings.tabIndex = -1;
+    settings.addEventListener("click", function () {
+      closeMenu(false);
+    });
+    menu.appendChild(settings);
+
     if (google) {
-      menu.appendChild(h("hr", "profile__sep"));
       var out = h("button", "profile__item", "Sign out");
       out.type = "button";
       out.setAttribute("role", "menuitem");

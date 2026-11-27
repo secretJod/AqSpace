@@ -1101,7 +1101,7 @@ code {
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
-  z-index: 150;
+  z-index: 1200; /* above dialogs */
   width: min(92vw, 460px);
   pointer-events: none;
 }
@@ -1172,7 +1172,7 @@ code {
 .modal {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 1100; /* above the bottom navbar (900) and expanded panels (1000) */
   display: grid;
   place-items: center;
   padding: 16px;
@@ -1582,6 +1582,77 @@ code {
     background-position: -120% 0;
   }
 }
+/* live preview while the notes are being written: frames overlap so new pages swap in without a flash */
+.nview__stage--live {
+  display: grid;
+  grid-template: 1fr / 1fr;
+}
+.nview__stage--live .nview__frame {
+  grid-area: 1 / 1;
+}
+.nview__frame--next {
+  pointer-events: none;
+}
+.nview__live {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(10px, 2.4vw, 26px);
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 8px 10px 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 12, 14, 0.86);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  color: #f2f2f2;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.nview__live-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nview__live-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent);
+  animation: nview-live 1.6s ease-out infinite;
+}
+@keyframes nview-live {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 9px transparent;
+  }
+}
+.nview__live-more {
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 11px;
+  background: var(--accent);
+  color: #0b0b0c;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.nview__live-more[hidden] {
+  display: none;
+}
+.nview__live-more:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
 .nview__hint {
   position: absolute;
   left: 0;
@@ -1689,7 +1760,8 @@ code {
 }
 @media (prefers-reduced-motion: reduce) {
   .nview__sheet,
-  .nview__card {
+  .nview__card,
+  .nview__live-dot {
     animation: none !important;
   }
   .nview__frame {

@@ -155,7 +155,11 @@
         m || "This playlist cannot be arranged yet. It needs between " + MIN_VIDEOS + " and " + MAX_VIDEOS + " videos."
       );
     }
-    if (s === 503) return "The analysis engine is not available right now.";
+    if (s === 503)
+      return (
+        (res.json && res.json.code === "py_offline" && str(res.json.error, 200)) ||
+        "The analysis engine is not available right now."
+      );
     return "Smart arrange could not be started. Please try again.";
   }
 
@@ -396,12 +400,35 @@
             paintViews(r);
             return;
           }
+          if (res.status === 409 && res.json && res.json.code === "ai_key_required") {
+            fail(r, str(res.json.error, 240) || "Connect an AI key to use Smart arrange.");
+            // point the user to Settings; once a key is saved the run starts again
+            if (AQ.aiKeys && AQ.aiKeys.handleError)
+              AQ.aiKeys.handleError(res.json, function () {
+                if (!busy(runOf(pid))) start(pid);
+              });
+            return;
+          }
           fail(r, failText(res));
         },
         function () {
           if (gen === r.gen) fail(r, "Could not reach the server. Check that it is running and try again.");
         }
       );
+  }
+  /** A click on Smart arrange / Retry: ask for an AI key first when the "smart" task needs one (ai-keys.js), then start. */
+  function gatedStart(pid, opener) {
+    if (!AQ.aiKeys || !AQ.aiKeys.requireKey) {
+      start(pid);
+      return;
+    }
+    AQ.aiKeys.requireKey(
+      "smart",
+      function () {
+        if (!busy(runOf(pid))) start(pid);
+      },
+      { opener: opener }
+    );
   }
 
   /** Leaving a playlist stops its poll; coming back (or another playlist) reads the stored run again. */
@@ -495,7 +522,7 @@
       magic = AQ.smartmagic,
       r = runOf(pid);
     var b = magic.button(pid, sparkle("smart-wbtn__spark"), function () {
-      if (!busy(r)) start(pid);
+      if (!busy(r)) gatedStart(pid, b);
     }); // liquid-glass lens (water-button.js) + sparkle
     var label = b.querySelector(".wbtn__label");
 
@@ -1314,7 +1341,7 @@
     card.appendChild(msg);
     var retry = u.button("Retry", { cls: "btn btn--ghost btn--sm smart-glass" });
     retry.addEventListener("click", function () {
-      start(pid);
+      gatedStart(pid, retry);
     });
     card.appendChild(retry);
     return card;

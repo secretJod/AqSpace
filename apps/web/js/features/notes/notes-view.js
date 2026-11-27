@@ -4,9 +4,11 @@
    What this file does:
      Draws a header (title, channel, Download PDF, Open in new tab, Close) and a body that shows the
      finished notes page in an iframe, or the notes button with its progress while the notes are not ready.
+     While the notes are still being written, the pages finished so far (the draft) are shown live, so
+     the reader can start straight away; new pages are swapped in without losing the reading position.
 
    Depends on:
-     AQ.util, AQ.notesJobs (status, subscribe, urls, start, retry) and AQ.noteButton. The two notes
+     AQ.util, AQ.notesJobs (status, subscribe, urls, draftUrl, start, retry) and AQ.noteButton. The two notes
      pieces are optional: every call is guarded, so the panel still renders without them.
      The API must allow this origin to frame the notes page (CSP frame-ancestors).
 
@@ -39,6 +41,43 @@
     } catch {
       return {};
     }
+  }
+  function getDraftUrl(video) {
+    var j = jobs();
+    if (!j || typeof j.draftUrl !== "function") return "";
+    try {
+      return j.draftUrl(video.id) || "";
+    } catch {
+      return "";
+    }
+  }
+  /* scroll position inside a notes frame (null when it cannot be read, e.g. another origin) */
+  function readScroll(frame) {
+    try {
+      return frame && frame.contentWindow ? frame.contentWindow.scrollY : null;
+    } catch {
+      return null;
+    }
+  }
+  /* the page paginates itself after it loads, so the position is applied again a moment later */
+  function restoreScroll(frame, y, done) {
+    if (!y) {
+      if (done) done();
+      return;
+    }
+    var go = function () {
+      try {
+        frame.contentWindow.scrollTo(0, y);
+      } catch {
+        /* other origin */
+      }
+    };
+    go();
+    setTimeout(function () {
+      go();
+      if (done) done();
+    }, 260);
+    setTimeout(go, 900);
   }
   function restart(video) {
     var j = jobs();
@@ -94,6 +133,7 @@
       unsub = null,
       destroyed = false,
       loadTimer = 0;
+    var live = null; // live preview: {stage, frame, pill, text, more, pages, swapping}
 
     /* ----- header ----- */
     var head = el("header", "nview__head");
@@ -141,12 +181,105 @@
       }
     }
 
+    /* ----- live preview: the pages written so far, while the rest is still being made ----- */
+    function liveText(st) {
+      var n = st.pages || 0;
+      return "Writing your notes · " + n + (n === 1 ? " page" : " pages") + " ready · " + (st.pct || 0) + "%";
+    }
+    function makeFrame(cls) {
+      var f = el("iframe", cls);
+      f.title = "Notes (being written): " + video.title;
+      f.setAttribute("referrerpolicy", "no-referrer");
+      return f;
+    }
+    function withPages(src, pages) {
+      return src + (src.indexOf("?") < 0 ? "?" : "&") + "p=" + pages; // a new URL per page count: no stale cache
+    }
+    function swapLive(src, pages) {
+      if (!live || live.swapping) return;
+      live.swapping = true;
+      live.more.hidden = true;
+      var y = readScroll(live.frame),
+        cur = live;
+      var next = makeFrame("nview__frame nview__frame--next");
+      var took = false;
+      next.addEventListener("load", function () {
+        if (took || destroyed || live !== cur) return;
+        try {
+          if (next.contentWindow.location.href === "about:blank") return;
+        } catch {
+          /* other origin: it is the real page */
+        }
+        took = true;
+        restoreScroll(next, y, function () {
+          if (destroyed || live !== cur) return;
+          var old = live.frame;
+          next.classList.remove("nview__frame--next");
+          next.classList.add("is-in");
+          live.frame = next;
+          live.pages = pages;
+          live.swapping = false;
+          setTimeout(function () {
+            if (old.parentNode) old.parentNode.removeChild(old);
+          }, 450);
+          render(); // more pages may have arrived meanwhile
+        });
+      });
+      next.src = withPages(src, pages); // src first: no about:blank load
+      live.stage.insertBefore(next, live.pill);
+    }
+    function drawLive(src, st) {
+      if (shownMode !== "live" || !live) {
+        clearTimeout(loadTimer);
+        shownSrc = null;
+        body.textContent = "";
+        body.className = "nview__body nview__body--ready";
+        var stage = el("div", "nview__stage nview__stage--live");
+        var frame = makeFrame("nview__frame");
+        frame.addEventListener("load", function () {
+          frame.classList.add("is-in");
+        });
+        var pill = el("div", "nview__live");
+        pill.setAttribute("role", "status");
+        var dot = el("span", "nview__live-dot");
+        dot.setAttribute("aria-hidden", "true");
+        var text = el("span", "nview__live-text", liveText(st));
+        var more = el("button", "nview__live-more", "Show new pages");
+        more.type = "button";
+        more.hidden = true;
+        pill.appendChild(dot);
+        pill.appendChild(text);
+        pill.appendChild(more);
+        stage.appendChild(frame);
+        stage.appendChild(pill);
+        body.appendChild(stage);
+        live = { stage: stage, frame: frame, pill: pill, text: text, more: more, pages: st.pages, swapping: false };
+        frame.src = withPages(src, st.pages);
+        return;
+      }
+      live.text.textContent = liveText(st);
+      if (st.pages > live.pages && !live.swapping) {
+        /* same origin: swap in the new pages and keep the reading position; otherwise let the reader choose */
+        if (readScroll(live.frame) !== null) swapLive(src, st.pages);
+        else {
+          var fresh = st.pages - live.pages;
+          live.more.textContent = "Show " + fresh + " new " + (fresh === 1 ? "page" : "pages");
+          live.more.hidden = false;
+          live.more.onclick = function () {
+            swapLive(src, st.pages);
+          };
+        }
+      }
+    }
+
     /* ----- body states ----- */
     function drawReady(urls) {
       var src = safeUrl(urls.html);
       if (!src)
         return drawState("error", { message: "The finished notes could not be located. Try generating them again." });
       if (shownMode === "ready" && shownSrc === src) return;
+      var keepY = live ? readScroll(live.frame) : null; // carry the reading position over from the preview
+      live = null;
       body.textContent = "";
       body.className = "nview__body nview__body--ready";
       var stage = el("div", "nview__stage");
@@ -161,6 +294,7 @@
       frame.setAttribute("referrerpolicy", "no-referrer");
       frame.addEventListener("load", function () {
         clearTimeout(loadTimer);
+        if (keepY) restoreScroll(frame, keepY);
         frame.classList.add("is-in");
         skel.classList.add("is-out");
         status.textContent = "Notes loaded";
@@ -190,6 +324,7 @@
 
     function drawState(mode, st) {
       if (shownMode === mode && mode !== "error") return;
+      live = null;
       clearTimeout(loadTimer);
       shownSrc = null;
       body.textContent = "";
@@ -261,8 +396,13 @@
       var urls = getUrls(video);
       setLink(pdfLink, mode === "ready" ? safeUrl(urls.pdf) : "");
       setLink(tabLink, mode === "ready" ? safeUrl(urls.html) : "");
+      var draft = mode === "running" ? safeUrl(getDraftUrl(video)) : "";
       if (mode === "ready") drawReady(urls);
-      else drawState(mode, st);
+      else if (draft && st.pages > 0) {
+        drawLive(draft, st);
+        shownMode = "live";
+        return;
+      } else drawState(mode, st);
       shownMode = mode === "ready" && !shownSrc ? "error" : mode;
     }
 
