@@ -4,6 +4,8 @@ Routes:
     GET  /api/providers                           AI providers (+ whether a server key exists)
     POST /api/keys/test                           test a user's own key with one tiny real call
                                                   -> 200 {ok:true} | {ok:false, kind, error}
+    POST /api/ask                                 answer a question from the user's own notes
+                                                  -> 200 {answer, found, citations, used_notes}
     POST /api/jobs                                start a lecture -> notes job      -> 202 {job_id}
     GET  /api/jobs/<id>                           job progress
     GET  /api/jobs/<id>/notes.json | notes.pdf | notes.html
@@ -189,6 +191,70 @@ def register_routes(app: Flask, state: State) -> None:
         return jsonify(
             ok=False, kind=kind, error=msg or f"Couldn't test the {table[provider]['label']} key. Please try again."
         )
+
+    @app.post("/api/ask")
+    def ask() -> Response | tuple[Response, int]:
+        """POST /api/ask {question, provider, api_key?, model?, jobs:[{job_id, video_id, title}]}.
+
+        Answers a question from the user's own finished notes. Called only by aq-api, which picks
+        the jobs (so only that user's notes are read). ``api_key`` null means the server's key.
+        -> 200 {answer, found, citations:[{video_id, title, heading, start_sec}], used_notes}
+        Errors: 400 invalid input, 422 {error, kind} for a bad key / quota / network.
+        Privacy: neither the key nor the question is logged, only lengths and counts.
+        """
+        from notes_engine import assistant
+
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return bad("Send a JSON body with a question.")
+        question = data.get("question")
+        if not isinstance(question, str) or not question.strip():
+            return bad("Type a question first.")
+        question = question.strip()
+        if len(question) > assistant.MAX_QUESTION_CHARS:
+            return bad(f"Keep the question under {assistant.MAX_QUESTION_CHARS} characters.")
+        provider = data.get("provider")
+        if not isinstance(provider, str) or provider not in BYOK_PROVIDERS:
+            return bad("Unknown provider. Choose one of: " + ", ".join(BYOK_PROVIDERS) + ".")
+        api_key, err = clean_key(data.get("api_key"), "API key")
+        if err:
+            return bad(err)
+        model, ok = clean_model(data.get("model"))
+        if not ok:
+            return bad("The model name looks invalid.")
+        jobs = data.get("jobs", [])
+        if not isinstance(jobs, list) or len(jobs) > assistant.MAX_JOBS or not all(isinstance(j, dict) for j in jobs):
+            return bad(f"Send at most {assistant.MAX_JOBS} notes as a list.")
+        for j in jobs:
+            if not valid_job_id(str(j.get("job_id") or "")):
+                return bad("A job id looks invalid.")
+            vid = j.get("video_id")
+            if vid not in (None, "") and not (isinstance(vid, str) and VIDEO_ID_RE.match(vid)):
+                return bad("A video id looks invalid.")
+            if j.get("title") is not None and not isinstance(j.get("title"), str):
+                return bad("A title must be text.")
+        jobs = [{**j, "title": (j.get("title") or "")[:200]} for j in jobs]
+
+        # no key at all is only an error once there is something to ask the model about
+        api_key = api_key or server_key(provider)
+        try:
+            result = assistant.answer_question(question, provider, api_key, model, jobs, state.output_dir)
+        except assistant.AskError as e:
+            log.info("ask (%s): failed, kind=%s", provider, e.kind)
+            return jsonify(error=redact(str(e), (api_key,))[:300], kind=e.kind), 422
+        except Exception as e:
+            log.error("ask crashed (%s): %s", provider, type(e).__name__)
+            return jsonify(error="Couldn't answer right now. Please try again.", kind="other"), 422
+        log.info(
+            "ask (%s): question_len=%d jobs=%d used=%d found=%s citations=%d",
+            provider,
+            len(question),
+            len(jobs),
+            result["used_notes"],
+            result["found"],
+            len(result["citations"]),
+        )
+        return jsonify(result)
 
     # ------------------------------------------------------------------------------------------
     # 4. Note jobs
