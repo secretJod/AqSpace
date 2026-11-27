@@ -86,6 +86,7 @@
    * @param {object} opts
    * @param {Array<{id: string, title: string}>} opts.queue Videos to step through; entries with an invalid id are dropped.
    * @param {number} [opts.index=0] Position in the queue to start at.
+   * @param {number} [opts.start] Second to start the first video at (instead of the saved resume point).
    * @param {HTMLElement} [opts.opener] Element that gets focus back when the dialog closes.
    * @param {function(): HTMLElement} [opts.restore] Returns the element to focus when the opener was re-rendered
    *   meanwhile (closing the player saves progress, which re-renders the page behind it).
@@ -97,6 +98,7 @@
     });
     if (!queue.length) return null;
     var i = Math.max(0, Math.min(opts.index || 0, queue.length - 1));
+    var firstStart = opts.start > 0 ? Math.floor(opts.start) : null; // used by the first render only
     var cur = null; // {id, yt, timer, ended, sawPlay, learned, gen}
     var gen = 0;
 
@@ -241,6 +243,10 @@
       var v = queue[i];
       var info = S.watchInfo(v.id, u.parseDuration(v.duration));
       var start = info.state === "partial" ? Math.floor(info.pos) : 0;
+      if (firstStart != null) {
+        start = firstStart;
+        firstStart = null;
+      }
       d.body.textContent = "";
       d.setTitle(v.title || "YouTube video " + v.id);
       d.setKind("Watch");

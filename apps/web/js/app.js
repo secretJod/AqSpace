@@ -8,8 +8,8 @@
        #/playlist/<id>[/notes/<videoId>]   playlist detail, optionally with the notes panel open (section 4)
        #/dashboard                         AQ.dashboardView (features/dashboard/dashboard.js)
        #/settings                          AQ.settingsView (features/settings/settings-view.js), from the profile menu
-       #/ai, #/goals                       AQ.comingSoonView placeholders (the AI tab also points to Settings
-                                           when the assistant has no key yet, via AQ.aiKeys.mountKeyHint)
+       #/ai                                AQ.aiAssistant (features/ai/ai-assistant.js): ask about your notes
+       #/goals                             AQ.comingSoonView placeholder
 
    How it fits:
      Loaded last because it uses everything else: AQ.util, AQ.store, AQ.dialog, AQ.player, AQ.noteButton,
@@ -1250,7 +1250,7 @@
   // never reach the screens with anything else.
   function route() {
     var h = location.hash || "";
-    var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?$/.exec(h);
+    var m = /^#\/playlist\/([a-z0-9-]{1,48})(?:\/notes\/([A-Za-z0-9_-]{11}))?\/?(?:\?t=(\d{1,6}))?$/.exec(h);
     if (m) return { name: "playlist", id: m[1], notes: m[2] || null };
     var t = /^#\/(dashboard|ai|goals|settings)\/?$/.exec(h);
     return t ? { name: t[1] } : { name: "home" };
@@ -1259,7 +1259,6 @@
   /* ----- dashboard / AI / goals screens (dashboard.js) + bottom navbar (navbar.js) ----- */
   var screen = null; // {destroy()} of the mounted dashboard / coming-soon view
   var SOON = {
-    ai: { title: "AI assistant", text: "Ask questions about your lectures. Coming soon.", doc: "AI" },
     goals: { title: "Goals", text: "Set learning goals and track them. Coming soon.", doc: "Goals" }
   };
   function renderScreen(name) {
@@ -1268,17 +1267,15 @@
     if (name === "dashboard") {
       document.title = "Dashboard - AQspace";
       if (AQ.dashboardView) screen = AQ.dashboardView.mount(view);
+    } else if (name === "ai") {
+      document.title = "AI - AQspace";
+      if (AQ.aiAssistant) screen = AQ.aiAssistant.mount(view);
     } else if (name === "settings") {
       document.title = "Settings - AQspace";
       if (AQ.settingsView) screen = AQ.settingsView.mount(view);
     } else {
       document.title = SOON[name].doc + " - AQspace";
       if (AQ.comingSoonView) screen = AQ.comingSoonView.mount(view, SOON[name]);
-      // the assistant will use the user's own key: say where to add one before it is needed
-      if (name === "ai" && AQ.aiKeys && AQ.aiKeys.mountKeyHint) {
-        var soon = view.querySelector(".soon") || view;
-        AQ.aiKeys.mountKeyHint(soon, "assistant");
-      }
     }
   }
 
@@ -1307,7 +1304,11 @@
   function syncNav(r) {
     if (!navbar || typeof navbar.setActive !== "function") return;
     var id =
-      r.name === "home" || r.name === "playlist" ? "playlists" : SOON[r.name] || r.name === "dashboard" ? r.name : null;
+      r.name === "home" || r.name === "playlist"
+        ? "playlists"
+        : SOON[r.name] || r.name === "dashboard" || r.name === "ai"
+          ? r.name
+          : null;
     try {
       navbar.setActive(id);
     } catch {
@@ -1333,7 +1334,7 @@
       var p = S.get(r.id);
       if (p) renderDetail(p);
       else renderNotFound();
-    } else if (r.name === "dashboard" || r.name === "settings" || SOON[r.name]) renderScreen(r.name);
+    } else if (r.name === "dashboard" || r.name === "settings" || r.name === "ai" || SOON[r.name]) renderScreen(r.name);
     else renderHome();
     $("#storage-warning").hidden = S.storageOk();
     if (pendingFocus) {
