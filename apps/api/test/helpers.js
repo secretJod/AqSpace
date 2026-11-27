@@ -31,6 +31,20 @@ export async function startMockPython() {
     providersStatus: 200,
     serverKeys: ALL_SERVER_KEYS(), // provider -> the worker has its own .env key
     keyTests: [], // bodies of POST /api/keys/test
+    askBodies: [], // bodies of POST /api/ask
+    // -> [status, body]; by default cites the first job it was given at 75.4 s
+    askAnswer: (body) => [
+      200,
+      {
+        answer: "From your notes: " + body.jobs.length,
+        found: true,
+        citations: body.jobs
+          .slice(0, 1)
+          .map((j) => ({ video_id: j.video_id, title: j.title, heading: "Intro", start_sec: 75.4 })),
+        used_notes: body.jobs.length,
+        provider: body.provider
+      }
+    ],
     keyTestAnswer: (body) =>
       body.api_key.includes("BAD")
         ? { ok: false, kind: "invalid", error: "That key was rejected by the provider." }
@@ -116,6 +130,14 @@ export async function startMockPython() {
         const body = JSON.parse(b);
         state.keyTests.push(body);
         json(200, state.keyTestAnswer(body));
+      });
+    } else if (req.method === "POST" && u.pathname === "/api/ask") {
+      let b = "";
+      req.on("data", (c) => (b += c));
+      req.on("end", () => {
+        const body = JSON.parse(b);
+        state.askBodies.push(body);
+        json(...state.askAnswer(body));
       });
     } else if (/^\/static\/fonts\/([A-Za-z0-9._-]+)$/.test(u.pathname)) {
       res.writeHead(200, { "content-type": "font/woff2" });

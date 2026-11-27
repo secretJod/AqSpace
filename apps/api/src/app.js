@@ -19,6 +19,7 @@ import { createPyClient, assertPyUrl } from "./services/worker-client.js";
 import { createNotesService } from "./services/notes-service.js";
 import { createSmartService } from "./services/smart-service.js";
 import { createAiKeysService } from "./services/ai-keys-service.js";
+import { createAssistantService } from "./services/assistant-service.js";
 import { localAuth, LOCAL_USER } from "./middleware/local-auth.js";
 import { createGoogleAuth } from "./middleware/google-auth.js";
 import { securityHeaders } from "./middleware/security-headers.js";
@@ -71,6 +72,7 @@ export function createApp(config, deps = {}) {
   const ai = createAiKeysService({ db, py, config, clock });
   const notes = createNotesService({ db, repo, py, ai, config, clock, onChange });
   const smart = createSmartService({ db, repo, py, ai, config, clock, onChange });
+  const assistant = createAssistantService({ db, repo, py, ai });
   // AUTH_MODE=google: Google sign-in with server-side sessions; otherwise the single local user.
   const google =
     config.authMode === "google" && !deps.authenticate
@@ -122,6 +124,7 @@ export function createApp(config, deps = {}) {
       notes,
       smart,
       ai,
+      assistant,
       config,
       authenticate,
       google,
