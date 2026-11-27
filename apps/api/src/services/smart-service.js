@@ -10,7 +10,9 @@
      - worker job ids are lost when the worker restarts: a 404 turns a queued/running run into
        an error ("interrupted");
      - a ready run is complete in the database and never asks the worker again;
-     - a failed run never blocks a new start.
+     - a failed run never blocks a new start;
+     - a new run uses the user's provider + key for task "smart" (ai.resolve: the user's own key,
+       else the worker's server key, else 409 ai_key_required).
    Read next: routes/index.js (how services are wired to URLs) */
 import { createHash } from "node:crypto";
 import { HttpError } from "../utils/http-errors.js";
@@ -38,13 +40,14 @@ const fingerprintOf = (goal, ids) =>
  * @param {import("node:sqlite").DatabaseSync} deps.db
  * @param {object} deps.repo     the repository
  * @param {object} deps.py       the worker client (services/worker-client.js)
+ * @param {object} deps.ai       the AI keys service (services/ai-keys-service.js): resolve(user, task)
  * @param {object} deps.config   uses config.notes timings, config.pySmartProvider and config.pySmartModel
  * @param {() => number} [deps.clock]  current time in ms
  * @param {Function | null} [deps.onChange]  onChange(kind, ids, before, after) after every row change
  *        (the dev tracker records these as job events)
  * @returns {{ status: Function, start: Function }}
  */
-export function createSmartService({ db, repo, py, config, clock = Date.now, onChange = null }) {
+export function createSmartService({ db, repo, py, ai, config, clock = Date.now, onChange = null }) {
   const timings = config.notes;
   const withLock = createKeyedLock(); // key: playlist pk
 
@@ -214,8 +217,11 @@ export function createSmartService({ db, repo, py, config, clock = Date.now, onC
         const row = await refresh(existing);
         if (row.status !== "error") return { started: false, status: toPublic(row, fingerprint, { cached: true }) };
       }
-      const jobId = await startWorkerJob(playlist);
-      const id = insertRunRow(pk, fingerprint, jobId, user.id);
+      const { provider, apiKey } = await ai.resolve(user, "smart"); // may throw 409 ai_key_required
+      // PY_SMART_MODEL names a model of PY_SMART_PROVIDER; another provider uses the worker's default model.
+      const model = provider === config.pySmartProvider ? config.pySmartModel : "";
+      const jobId = await startWorkerJob(playlist, provider, model, apiKey);
+      const id = insertRunRow(pk, fingerprint, jobId, user.id, provider, model);
       if (onChange) onChange("smart", { playlistId: slug }, null, findRowById(id));
       return { started: true, status: toPublic(findRowById(id), fingerprint) };
     });
@@ -226,7 +232,7 @@ export function createSmartService({ db, repo, py, config, clock = Date.now, onC
   // -------------------------------------------------------------------------
 
   /** POST /api/smart on the worker. Returns the new job id or throws an HttpError. */
-  async function startWorkerJob(playlist) {
+  async function startWorkerJob(playlist, provider, model, apiKey) {
     const body = {
       goal: playlist.name,
       videos: playlist.videos.map((v) => ({
@@ -235,9 +241,10 @@ export function createSmartService({ db, repo, py, config, clock = Date.now, onC
         channel: v.channel,
         duration_sec: v.durationSec
       })),
-      provider: config.pySmartProvider
+      provider
     };
-    if (config.pySmartModel) body.model = config.pySmartModel;
+    if (model) body.model = model;
+    if (apiKey) body.api_key = apiKey; // decrypted just now, only for this request
 
     const answer = await py.json("/api/smart", { method: "POST", timeout: timings.pyTimeoutMs, body });
     if (answer.status === 429)
@@ -248,15 +255,14 @@ export function createSmartService({ db, repo, py, config, clock = Date.now, onC
     return answer.json.job_id;
   }
 
-  function insertRunRow(pk, fingerprint, jobId, userId) {
+  function insertRunRow(pk, fingerprint, jobId, userId, provider, model) {
     const now = nowIso();
     return Number(
       db
         .prepare(
           "INSERT INTO smart_runs (playlist_pk, fingerprint, job_id, status, pct, message, provider, model, requested_by, created_at, updated_at, checked_at) VALUES (?, ?, ?, 'queued', 0, 'Queued...', ?, ?, ?, ?, ?, ?)"
         )
-        .run(pk, fingerprint, jobId, config.pySmartProvider, short(config.pySmartModel, 80), userId, now, now, clock())
-        .lastInsertRowid
+        .run(pk, fingerprint, jobId, provider, short(model, 80), userId, now, now, clock()).lastInsertRowid
     );
   }
 

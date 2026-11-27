@@ -5,7 +5,15 @@ import { startApp, VID, JOB } from "./helpers.js";
 
 /** A stand-in for the Python worker's /api/smart, handed to the app as its fetch (no network). */
 function fakeWorker() {
-  const w = { created: [], jobs: new Map(), next: 1, offline: false, busy: false, hits: 0 };
+  const w = {
+    created: [],
+    jobs: new Map(),
+    next: 1,
+    offline: false,
+    busy: false,
+    hits: 0,
+    serverKeys: { gemini: true }
+  };
   const reply = (code, o) =>
     new Response(JSON.stringify(o), { status: code, headers: { "content-type": "application/json" } });
   w.fetch = async (url, init = {}) => {
@@ -13,6 +21,10 @@ function fakeWorker() {
     const p = new URL(url).pathname,
       method = init.method || "GET";
     let m;
+    if (method === "GET" && p === "/api/providers") {
+      return reply(200, { providers: Object.entries(w.serverKeys).map(([id, k]) => ({ id, server_key: k })) });
+    }
+    if (method === "POST" && p === "/api/keys/test") return reply(200, { ok: true });
     if (method === "POST" && p === "/api/smart") {
       if (w.busy) return reply(429, { error: "busy" });
       const body = JSON.parse(init.body),
@@ -283,4 +295,56 @@ test("worker busy -> 429 with Retry-After; worker offline -> 503 py_offline, GET
   r = await t.get(S); // status refresh keeps the record
   assert.equal(r.status, 200);
   assert.equal(r.json.state, "queued");
+});
+
+// ---------------------------------------------------------------------------
+// The user's own AI key (task "smart")
+// ---------------------------------------------------------------------------
+
+const FAKE_GEMINI = "AIzaFAKEsmartKEY0123456789abcdLMNO";
+const FAKE_GROQ = "gsk_FAKEsmartKEY0123456789abcdefEFGH";
+
+test("own key: the user's key is sent as api_key; without it the worker's server key is used", async () => {
+  let r = await t.post(S);
+  assert.equal(r.status, 202);
+  assert.equal(w.created[0].body.provider, "gemini");
+  assert.equal("api_key" in w.created[0].body, false);
+
+  assert.equal((await t.put("/api/v1/ai/keys/gemini", { key: FAKE_GEMINI })).status, 200);
+  await t.post("/api/v1/playlists/goal/videos", { videos: [{ id: VID(4), title: "four" }] });
+  r = await t.post(S);
+  assert.equal(r.status, 202);
+  assert.equal(w.created[1].body.api_key, FAKE_GEMINI);
+  assert.ok(!r.text.includes(FAKE_GEMINI));
+});
+
+test("own key: no user key and no server key -> 409 ai_key_required, nothing started", async () => {
+  w.serverKeys = {};
+  const r = await t.post(S);
+  assert.equal(r.status, 409);
+  assert.deepEqual(r.json, {
+    error: "Connect Google Gemini to use this feature.",
+    code: "ai_key_required",
+    provider: "gemini",
+    task: "smart"
+  });
+  assert.equal(w.created.length, 0);
+  assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM smart_runs").get().n, 0);
+});
+
+test("own key: a task override picks another provider (its key, no PY_SMART_MODEL) and is stored on the run", async () => {
+  await t.close();
+  t = await startApp({ fetchImpl: w.fetch, overrides: { pySmartModel: "gemini-2.5-flash" } });
+  await t.post("/api/v1/playlists", { id: "goal", name: "Goal", videos: [{ id: VID(1) }, { id: VID(2) }] });
+  w.serverKeys = {};
+  assert.equal((await t.put("/api/v1/ai/tasks/smart", { provider: "groq" })).json.ready, false);
+  assert.equal((await t.post(S)).json.provider, "groq"); // the 409 body names the provider to connect
+  await t.put("/api/v1/ai/keys/groq", { key: FAKE_GROQ });
+  const r = await t.post(S);
+  assert.equal(r.status, 202);
+  assert.equal(w.created[0].body.provider, "groq");
+  assert.equal(w.created[0].body.api_key, FAKE_GROQ);
+  assert.equal("model" in w.created[0].body, false);
+  assert.equal(r.json.provider, "groq");
+  assert.equal(r.json.model, "");
 });

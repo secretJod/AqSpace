@@ -9,7 +9,7 @@
      3. authenticate            (sets req.user; 401 code "auth_required" when signed out)
      4. /me, /sync/import       (sync has its own 2mb JSON parser, so it comes before the shared one)
      5. express.json()          (shared body parser, config.bodyLimit)
-     6. playlists, progress, notes, smart, YouTube import
+     6. playlists, progress, notes, smart, AI keys, YouTube import
      7. anything else -> 404
    Read next: routes/playlists.js */
 import express from "express";
@@ -22,12 +22,13 @@ import { playlistRoutes } from "./playlists.js";
 import { progressRoutes } from "./progress.js";
 import { notesRoutes } from "./notes.js";
 import { smartRoutes } from "./smart.js";
+import { aiRoutes } from "./ai.js";
 import { youtubeImportRoutes } from "./youtube-import.js";
 
 /**
  * Builds the /api/v1 router.
  *
- * @param {object} deps  everything app.js built: db, repo, py (worker client), notes and smart services, config,
+ * @param {object} deps  everything app.js built: db, repo, py (worker client), notes, smart and ai services, config,
  *        authenticate (middleware), google (null in AUTH_MODE=local), localUserId, the two rate limiters, version
  * @returns {import("express").Router}
  */
@@ -37,6 +38,7 @@ export function createApiRouter({
   py,
   notes,
   smart,
+  ai,
   config,
   authenticate,
   google,
@@ -59,6 +61,7 @@ export function createApiRouter({
   api.use(progressRoutes(repo));
   api.use(notesRoutes(notes, heavyLimiter));
   api.use(smartRoutes(smart, heavyLimiter));
+  api.use(aiRoutes(ai, heavyLimiter));
   api.use(youtubeImportRoutes(py, config, heavyLimiter));
   api.use(notFoundHandler);
 

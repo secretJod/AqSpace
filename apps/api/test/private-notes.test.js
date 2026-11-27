@@ -295,3 +295,55 @@ test("migration 006 gives existing notes jobs an owner from requested_by (unknow
   );
   db.close();
 });
+
+test("live preview: a running job's pages are only visible to its owner", async () => {
+  await startGoogle();
+  const ann = await userWithVideos("g-ann", "Ann", [VID(1)]);
+  const bob = await userWithVideos("g-bob", "Bob", [VID(1)]);
+  await t.post(`${N}/${VID(1)}`, undefined, { cookie: ann.cookie });
+
+  // No pages yet: 404 even for the owner.
+  assert.equal((await t.get(`${N}/${VID(1)}/draft`, { cookie: ann.cookie })).status, 404);
+
+  py.state.jobs.get(JOB(1)).pages = 2;
+  const st = await t.get(`${N}/${VID(1)}`, { cookie: ann.cookie });
+  assert.equal(st.json.state, "running");
+  assert.equal(st.json.pages, 2);
+  const own = await t.get(`${N}/${VID(1)}/draft`, { cookie: ann.cookie });
+  assert.equal(own.status, 200);
+  assert.match(own.text, /draft 2/);
+
+  // Bob sees neither the page count nor the draft.
+  assert.equal((await t.get(`${N}/${VID(1)}`, { cookie: bob.cookie })).json.pages, 0);
+  const other = await t.get(`${N}/${VID(1)}/draft`, { cookie: bob.cookie });
+  assert.equal(other.status, 404);
+  assert.ok(!other.text.includes("draft 2"));
+  assert.equal((await t.get(`${N}/${VID(1)}/draft`)).status, 401);
+});
+
+test("own AI keys are per user: listed, used and deletable only by their owner", async () => {
+  await startGoogle();
+  const KEY = "gsk_FAKEannKEY0123456789abcdefANNK";
+  const ann = await userWithVideos("g-ann", "Ann", [VID(1)]);
+  const bob = await userWithVideos("g-bob", "Bob", [VID(1)]);
+  py.state.serverKeys = {}; // the worker has no key of its own
+  assert.equal((await t.put("/api/v1/ai/keys/groq", { key: KEY }, { cookie: ann.cookie })).status, 200);
+
+  const groq = (r) => r.json.providers.find((p) => p.id === "groq");
+  assert.equal(groq(await t.get("/api/v1/ai", { cookie: ann.cookie })).connected, true);
+  assert.equal(groq(await t.get("/api/v1/ai", { cookie: bob.cookie })).connected, false);
+
+  // Ann's job carries her key, Bob is asked to connect his own
+  // (Ann's key is never borrowed) and no worker job is started for him.
+  await t.post(`${N}/${VID(1)}`, undefined, { cookie: ann.cookie });
+  assert.equal(py.state.jobsCreated[0].body.api_key, KEY);
+  const r = await t.post(`${N}/${VID(1)}`, undefined, { cookie: bob.cookie });
+  assert.equal(r.status, 409);
+  assert.equal(r.json.code, "ai_key_required");
+  assert.equal(py.state.jobsCreated.length, 1);
+
+  // Bob deleting "his" groq key does not touch Ann's.
+  assert.equal((await t.del("/api/v1/ai/keys/groq", { cookie: bob.cookie })).status, 204);
+  assert.equal(groq(await t.get("/api/v1/ai", { cookie: ann.cookie })).connected, true);
+  assert.equal((await t.get("/api/v1/ai")).status, 401);
+});

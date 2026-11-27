@@ -62,6 +62,9 @@ function fakeWorker() {
     const p = new URL(url).pathname,
       method = init.method || "GET";
     let m;
+    // the worker has its own gemini key, so smart runs need no user key
+    if (method === "GET" && p === "/api/providers")
+      return reply(200, { providers: [{ id: "gemini", server_key: true }] });
     if (method === "POST" && p === "/api/smart") {
       const id = JOB(w.next++);
       w.created.push({ id, body: JSON.parse(init.body) });

@@ -9,13 +9,17 @@ import crypto from "node:crypto";
 import { tx } from "./database.js";
 
 /* Every table keyed by a user id (sessions excluded). When the first Google user claims the local user's
-   data (upsertExternalUser), these are the rows that move. Add every new user-owned table here. */
+   data (upsertExternalUser), these are the rows that move. Add every new user-owned table here.
+   ai_keys is deliberately not listed: each key is encrypted for exactly one user id (key-box.js binds the
+   ciphertext to "<user_id>:<provider>"), so a moved key could not be decrypted. A key saved by the local user
+   stays with the local user; the Google account connects its own. */
 const USER_KEYED = [
   ["playlists", "user_id"],
   ["watch_progress", "user_id"],
   ["notes_jobs", "user_id"],
   ["notes_jobs", "requested_by"],
-  ["smart_runs", "requested_by"]
+  ["smart_runs", "requested_by"],
+  ["ai_task_providers", "user_id"]
 ];
 
 /**

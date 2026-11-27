@@ -56,12 +56,19 @@ const BASELINE_PROBES = {
   "003_smart_runs.sql": (db) => hasTable(db, "smart_runs"),
   "004_sessions.sql": (db) => hasTable(db, "sessions"),
   "005_user_picture.sql": (db) => hasColumn(db, "users", "picture"),
-  "006_notes_per_user.sql": (db) => hasColumn(db, "notes_jobs", "user_id")
+  "006_notes_per_user.sql": (db) => hasColumn(db, "notes_jobs", "user_id"),
+  "007_notes_pages.sql": (db) => hasColumn(db, "notes_jobs", "pages"),
+  "008_ai_keys.sql": (db) => hasTable(db, "ai_keys")
 };
 /* Migrations that were once shipped under another file name: old name -> current name. smart_runs used to be
    002_smart_runs.sql; a database that recorded that name already has the table, so 003 is recorded as done
-   instead of failing on CREATE TABLE. */
-const RENAMED = { "002_smart_runs.sql": "003_smart_runs.sql" };
+   instead of failing on CREATE TABLE. The live notes preview and AI keys migrations were once numbered 003 and
+   004 in another branch of the schema; they are 007 and 008 here. */
+const RENAMED = {
+  "002_smart_runs.sql": "003_smart_runs.sql",
+  "003_notes_pages.sql": "007_notes_pages.sql",
+  "004_ai_keys.sql": "008_ai_keys.sql"
+};
 
 /** Numeric order (2 before 10), then by name. */
 const byNumber = (a, b) => parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b);

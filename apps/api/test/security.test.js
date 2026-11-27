@@ -238,6 +238,8 @@ test("migrations are idempotent and create the expected tables", async () => {
     "watch_progress",
     "notes_jobs",
     "smart_runs",
+    "ai_keys",
+    "ai_task_providers",
     "schema_migrations"
   ])
     assert.ok(names.includes(n), n);

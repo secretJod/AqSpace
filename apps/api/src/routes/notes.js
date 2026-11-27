@@ -1,6 +1,6 @@
 /* notes.js - /api/v1/notes : lecture notes per video.
 
-   What:  list / status / start notes, and stream the finished HTML or PDF from the worker.
+   What:  list / status / start notes, and stream the finished HTML or PDF (or the live draft) from the worker.
    How it fits: mounted in routes/index.js; the logic lives in services/notes-service.js.
    Read next: routes/smart.js */
 import { Router } from "express";
@@ -38,6 +38,16 @@ export function notesRoutes(notes, heavyLimiter) {
   router.get("/notes/:videoId/html", async (req, res) => {
     const upstream = await notes.file(req.user, videoId(req.params.videoId), "html");
     // The worker's own CSP allows exactly the inline scripts in the generated page (by hash) - pass it through.
+    await pipeFile(res, upstream, ["content-type", "content-security-policy", "content-length"]);
+  });
+
+  /**
+   * GET /notes/:videoId/draft - live preview: the pages finished so far while the user's job runs
+   * (404 until the first page is ready, and for anyone but the job's owner).
+   */
+  router.get("/notes/:videoId/draft", async (req, res) => {
+    const upstream = await notes.file(req.user, videoId(req.params.videoId), "draft");
+    res.set("Cache-Control", "no-store");
     await pipeFile(res, upstream, ["content-type", "content-security-policy", "content-length"]);
   });
 

@@ -17,7 +17,11 @@
        the same video (the worker resumes from its per-video chunk checkpoints) up to maxAutoResumes
        times, then the record becomes an error. A 404 for a ready record (files gone) still marks it
        "expired" (a new job may then be started);
-     - progress messages carry "(chunk i/N)" when the worker reports chunk counters.
+     - progress messages carry "(chunk i/N)" when the worker reports chunk counters;
+     - a new (or resumed) job uses the owner's provider + key for task "notes" (ai.resolve: the user's
+       own key, else the worker's server key, else 409 ai_key_required). Cached notes never need a key;
+     - while a job runs, `pages` counts the notebook pages finished so far; file(..., "draft") streams
+       that live preview, again only to the job's owner.
    States: DB status queued/running/done/error/expired -> UI state queued/running/ready/error/none.
    Read next: services/smart-service.js */
 import { HttpError } from "../utils/http-errors.js";
@@ -35,13 +39,14 @@ const EXPIRED_MESSAGE = "Notes expired - generate again";
  * @param {import("node:sqlite").DatabaseSync} deps.db
  * @param {object} deps.repo     the repository
  * @param {object} deps.py       the worker client (services/worker-client.js)
- * @param {object} deps.config   uses config.notes timings, config.pyProvider and config.requireMembership
+ * @param {object} deps.ai       the AI keys service (services/ai-keys-service.js): resolve(user, task)
+ * @param {object} deps.config   uses config.notes timings and config.requireMembership
  * @param {() => number} [deps.clock]  current time in ms
  * @param {Function | null} [deps.onChange]  onChange(kind, ids, before, after) after every row change
  *        (the dev tracker records these as job events)
  * @returns {{ status: Function, list: Function, start: Function, file: Function }}
  */
-export function createNotesService({ db, repo, py, config, clock = Date.now, onChange = null }) {
+export function createNotesService({ db, repo, py, ai, config, clock = Date.now, onChange = null }) {
   const timings = config.notes;
   const withLock = createKeyedLock(); // key: lockKey(userId, videoId)
   const lockKey = (userId, videoId) => `${userId}:${videoId}`;
@@ -79,7 +84,8 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
 
   /** Row -> what the UI sees. No row -> state "none". */
   function toPublic(videoId, row, extra = {}) {
-    if (!row) return { videoId, state: "none", pct: 0, stage: "", message: "", error: "", jobId: null, ...extra };
+    if (!row)
+      return { videoId, state: "none", pct: 0, stage: "", message: "", error: "", jobId: null, pages: 0, ...extra };
     const state = PUBLIC_STATE[row.status];
     return {
       videoId,
@@ -90,6 +96,7 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
       error: row.error,
       jobId: row.status === "expired" ? null : row.job_id,
       resumes: row.resumes || 0,
+      pages: state === "running" ? row.pages || 0 : 0, // live preview pages (draft) while running
       ...extra
     };
   }
@@ -99,7 +106,18 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
   // -------------------------------------------------------------------------
 
   const maxResumes = () => (Number.isInteger(timings.maxAutoResumes) ? timings.maxAutoResumes : 3);
-  const jobBody = (videoId) => ({ url: "https://www.youtube.com/watch?v=" + videoId, provider: config.pyProvider });
+
+  /**
+   * The worker request body for a video, with the owner's provider and (when they saved one) their key.
+   * The key is decrypted just for this request and never stored or logged here.
+   * Throws 409 ai_key_required when neither the user nor the worker has a key for the provider.
+   */
+  async function jobBody(userId, videoId) {
+    const { provider, apiKey } = await ai.resolve({ id: userId }, "notes");
+    const body = { url: "https://www.youtube.com/watch?v=" + videoId, provider };
+    if (apiKey) body.api_key = apiKey;
+    return body;
+  }
 
   /** The worker lost a queued/running job (restart): submit the same video again so it resumes from its checkpoints. */
   function resume(row) {
@@ -116,13 +134,18 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
         });
         return findRowById(cur.id);
       }
+      let body;
+      try {
+        body = await jobBody(cur.user_id, cur.video_id);
+      } catch (err) {
+        // The owner removed their key since the job started: stop with the same explanation start() gives.
+        const msg = short(err.message);
+        updateRow(cur.id, { status: "error", error: msg, message: short(msg, 160), checked_at: clock() });
+        return findRowById(cur.id);
+      }
       let answer;
       try {
-        answer = await py.json("/api/jobs", {
-          method: "POST",
-          timeout: timings.pyTimeoutMs,
-          body: jobBody(cur.video_id)
-        });
+        answer = await py.json("/api/jobs", { method: "POST", timeout: timings.pyTimeoutMs, body });
       } catch {
         return cur;
       } // worker down again: try on the next poll
@@ -196,7 +219,12 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
         checked_at: clock()
       });
     } else {
-      updateRow(row.id, { ...inProgressFields(row, job, clock), message: progressMessage(job) });
+      const pages = Number(job.pages);
+      updateRow(row.id, {
+        ...inProgressFields(row, job, clock),
+        message: progressMessage(job),
+        pages: Number.isFinite(pages) ? Math.max(row.pages || 0, Math.min(100, Math.round(pages))) : row.pages || 0
+      });
     }
     return findRowById(row.id);
   }
@@ -261,7 +289,7 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
       if (existing && existing.status !== "expired" && existing.status !== "error") {
         return { started: false, status: toPublic(videoId, existing, { cached: true }) };
       }
-      const jobId = await startWorkerJob(videoId);
+      const jobId = await startWorkerJob(user.id, videoId);
       const id = insertJobRow(videoId, jobId, user.id);
       if (onChange) onChange("notes", { videoId }, null, findRowById(id));
       return { started: true, status: toPublic(videoId, findRowById(id)) };
@@ -271,13 +299,23 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
   /**
    * The user's finished file for a video: a Response from the worker to stream through.
    * Throws 404 when the user has no ready notes for it (also when only another user has).
+   * kind "draft" is the live preview of the pages finished so far, only while the user's own job runs.
    *
    * @param {{id: number}} user
    * @param {string} videoId
-   * @param {"html" | "pdf"} kind
+   * @param {"html" | "pdf" | "draft"} kind
    */
   async function file(user, videoId, kind) {
     const row = findLiveRow(user.id, videoId);
+    if (kind === "draft") {
+      if (!row || row.status !== "running" || !row.pages) throw new HttpError(404, "No pages are ready yet.");
+      const res = await py.raw(`/api/jobs/${row.job_id}/draft.html`);
+      if (!res.ok) {
+        await res.body?.cancel();
+        throw new HttpError(404, "No pages are ready yet.");
+      }
+      return res;
+    }
     if (!row || row.status !== "done") throw new HttpError(404, "Notes are not ready for this video.");
     const res = await py.raw(`/api/jobs/${row.job_id}/notes.${kind}`);
     if (res.status === 404) {
@@ -297,8 +335,9 @@ export function createNotesService({ db, repo, py, config, clock = Date.now, onC
   // -------------------------------------------------------------------------
 
   /** POST /api/jobs on the worker. Returns the new job id or throws an HttpError. */
-  async function startWorkerJob(videoId) {
-    const answer = await py.json("/api/jobs", { method: "POST", timeout: timings.pyTimeoutMs, body: jobBody(videoId) });
+  async function startWorkerJob(userId, videoId) {
+    const body = await jobBody(userId, videoId); // may throw 409 ai_key_required
+    const answer = await py.json("/api/jobs", { method: "POST", timeout: timings.pyTimeoutMs, body });
     if (answer.status === 429)
       throw new HttpError(429, "The notes service is busy. Try again in a few seconds.", { retryAfter: 6 });
     if (answer.status !== 202 || !answer.json || !JOB_ID_RE.test(String(answer.json.job_id || ""))) {

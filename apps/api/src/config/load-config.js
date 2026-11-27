@@ -54,6 +54,12 @@ export function loadConfig(env = process.env, overrides = {}) {
     allowRemotePy: env.ALLOW_REMOTE_PY === "1",
     requireMembership: env.NOTES_REQUIRE_MEMBERSHIP !== "0", // notes can only be started for videos in the user's playlists
 
+    // Users' own AI provider keys are encrypted at rest with this master secret.
+    // AQ_KEY_SECRET = base64 of 32 bytes; without it a random secret is created once in keySecretFile.
+    keySecret: env.AQ_KEY_SECRET || "",
+    keySecretFile: env.AQ_KEY_SECRET_FILE || path.join(ROOT, "data", ".key-secret"),
+    ai: { testTimeoutMs: 30_000, providersTimeoutMs: 3_000, providersCacheMs: 60_000 },
+
     // HTTP
     bodyLimit: env.BODY_LIMIT || "256kb",
     log: env.LOG !== "0",
@@ -70,7 +76,7 @@ export function loadConfig(env = process.env, overrides = {}) {
     trustCfHeaders: env.TRUST_CF_HEADERS === "1",
     rate: {
       general: { max: int(env.RATE_LIMIT_PER_MIN, 600), windowMs: 60_000 },
-      heavy: { max: int(env.RATE_LIMIT_HEAVY_PER_MIN, 20), windowMs: 60_000 } // starting notes / YouTube imports
+      heavy: { max: int(env.RATE_LIMIT_HEAVY_PER_MIN, 20), windowMs: 60_000 } // starting notes / YouTube imports / AI key tests
     },
 
     // Sign-in: local = single built-in user (default); google = Google OAuth (middleware/google-auth.js)

@@ -1,7 +1,8 @@
 /* error-handler.js - the "not found" fallback and the final error handler.
 
    What:  notFoundHandler turns "no route matched" into a 404 error.
-          errorHandler turns any error into a JSON reply {error, code?} - never a stack trace.
+          errorHandler turns any error into a JSON reply {error, code?, ...details} - never a stack trace.
+          `details` (an object on an exposed HttpError) adds safe extra fields, e.g. {provider, task}.
    How it fits: registered last in app.js. Routes and services just `throw` (Express 5
           forwards errors from async handlers here automatically).
    Read next: routes/index.js */
@@ -21,7 +22,7 @@ export function notFoundHandler(_req, _res, next) {
 // ---------------------------------------------------------------------------
 
 // Error codes the UI understands; only these are sent back as `code`, so internal codes (SQLite, Node) never leak.
-const PUBLIC_CODES = new Set(["py_offline", "not_in_playlist", "auth_required"]);
+const PUBLIC_CODES = new Set(["py_offline", "not_in_playlist", "auth_required", "ai_key_required"]);
 
 /**
  * Express error handler: turns any error into {error, code?} with a sensible status.
@@ -33,7 +34,8 @@ export function errorHandler(err, req, res, _next) {
 
   const { status, message } = describeError(err, req);
   if (err.retryAfter) res.setHeader("Retry-After", String(err.retryAfter));
-  res.status(status).json({ error: message, ...(PUBLIC_CODES.has(err.code) ? { code: err.code } : {}) });
+  const details = err.expose && err.details && typeof err.details === "object" ? err.details : {};
+  res.status(status).json({ ...details, error: message, ...(PUBLIC_CODES.has(err.code) ? { code: err.code } : {}) });
 }
 
 /** Picks the status and the user-facing message. Unexpected 5xx errors are logged (short, no stack). */

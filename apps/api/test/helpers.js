@@ -9,6 +9,9 @@ import { createApp } from "../src/app.js";
 
 export const VID = (n) => String(n).padStart(11, "a"); // valid 11-char ids: aaaaaaaaaa1 ...
 export const JOB = (n) => String(n).padStart(32, "0"); // valid 32-hex job ids
+// A fixed test-only master secret for encrypted AI keys (never the real data/.key-secret).
+export const TEST_KEY_SECRET = Buffer.alloc(32, 7).toString("base64");
+export const ALL_SERVER_KEYS = () => ({ gemini: true, groq: true, nvidia: true, xai: true, huggingface: true });
 
 function listen(server) {
   return new Promise((res) => server.listen(0, "127.0.0.1", () => res(server.address().port)));
@@ -23,9 +26,15 @@ export async function startMockPython() {
     busy: false,
     rejectWith: null,
     playlistUrls: [],
-    hits: { status: 0, html: 0 },
-    providers: [],
-    providersStatus: 200
+    hits: { status: 0, html: 0, providers: 0 },
+    providers: [], // extra /api/providers entries (e.g. the local model)
+    providersStatus: 200,
+    serverKeys: ALL_SERVER_KEYS(), // provider -> the worker has its own .env key
+    keyTests: [], // bodies of POST /api/keys/test
+    keyTestAnswer: (body) =>
+      body.api_key.includes("BAD")
+        ? { ok: false, kind: "invalid", error: "That key was rejected by the provider." }
+        : { ok: true }
   };
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, "http://x");
@@ -57,8 +66,17 @@ export async function startMockPython() {
         message: j.message ?? "m",
         job_id: m[1],
         ...(j.error ? { error: j.error } : {}),
-        ...(j.chunk != null ? { chunk: j.chunk, chunks: j.chunks } : {})
+        ...(j.chunk != null ? { chunk: j.chunk, chunks: j.chunks } : {}),
+        ...(j.pages != null ? { pages: j.pages } : {})
       });
+    } else if ((m = /^\/api\/jobs\/([a-f0-9]{32})\/draft\.html$/.exec(u.pathname))) {
+      const j = state.jobs.get(m[1]);
+      if (!j || !j.pages) return json(404, { error: "No pages yet." });
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": "default-src 'none'"
+      });
+      res.end(`<h1>draft ${j.pages}</h1>`);
     } else if ((m = /^\/api\/jobs\/([a-f0-9]{32})\/notes\.(html|pdf)$/.exec(u.pathname))) {
       if (m[2] === "html") state.hits.html++;
       const j = state.jobs.get(m[1]);
@@ -88,7 +106,17 @@ export async function startMockPython() {
         skipped: 0
       });
     } else if (u.pathname === "/api/providers") {
-      json(state.providersStatus, { providers: state.providers });
+      state.hits.providers++;
+      const withKeys = Object.entries(state.serverKeys).map(([id, k]) => ({ id, label: id, server_key: k }));
+      json(state.providersStatus, { providers: [...state.providers, ...withKeys] });
+    } else if (req.method === "POST" && u.pathname === "/api/keys/test") {
+      let b = "";
+      req.on("data", (c) => (b += c));
+      req.on("end", () => {
+        const body = JSON.parse(b);
+        state.keyTests.push(body);
+        json(200, state.keyTestAnswer(body));
+      });
     } else if (/^\/static\/fonts\/([A-Za-z0-9._-]+)$/.test(u.pathname)) {
       res.writeHead(200, { "content-type": "font/woff2" });
       res.end("font");
@@ -149,6 +177,8 @@ export async function startApp({
       devLogDir: "",
       runDir: "",
       pyUrl: py ? py.url : "http://127.0.0.1:9",
+      keySecret: TEST_KEY_SECRET,
+      keySecretFile: "",
       notes: { pollMinMs: 0, verifyMs: 0, pyTimeoutMs: 2000, importTimeoutMs: 2000 },
       rate: { general: { max: 100000, windowMs: 60000 }, heavy: { max: 100000, windowMs: 60000 } },
       ...overrides
