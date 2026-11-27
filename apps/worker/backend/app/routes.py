@@ -198,7 +198,7 @@ def register_routes(app: Flask, state: State) -> None:
 
         Answers a question from the user's own finished notes. Called only by aq-api, which picks
         the jobs (so only that user's notes are read). ``api_key`` null means the server's key.
-        -> 200 {answer, found, citations:[{video_id, title, heading, start_sec}], used_notes}
+        -> 200 {answer, found, citations:[{video_id, title, heading, start_sec}], used_notes, provider}
         Errors: 400 invalid input, 422 {error, kind} for a bad key / quota / network.
         Privacy: neither the key nor the question is logged, only lengths and counts.
         """
@@ -254,7 +254,7 @@ def register_routes(app: Flask, state: State) -> None:
             result["found"],
             len(result["citations"]),
         )
-        return jsonify(result)
+        return jsonify({**result, "provider": provider})
 
     # ------------------------------------------------------------------------------------------
     # 4. Note jobs

@@ -208,7 +208,7 @@ def test_route_answers_and_logs_nothing_private(ask_client, caplog):
     assert r.status_code == 200
     data = r.get_json()
     assert data["found"] is True and data["citations"][0]["start_sec"] == 760
-    assert set(data) == {"answer", "found", "citations", "used_notes"}
+    assert set(data) == {"answer", "found", "citations", "used_notes", "provider"} and data["provider"] == "groq"
     assert calls[0]["headers"]["Authorization"] == f"Bearer {FAKE_KEY}"
     assert FAKE_KEY not in caplog.text and QUESTION not in caplog.text and "positional" not in caplog.text
 
